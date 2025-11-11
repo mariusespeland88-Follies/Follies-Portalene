@@ -1,8 +1,17 @@
+// lib/supabase/client.ts
 "use client";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
-/** Bruk denne fra server-komponenter som trenger en klient i browser */
-export function getSupabaseBrowserClient() {
-  return createClientComponentClient();
+import { createClient } from "@supabase/supabase-js";
+
+let _browser: ReturnType<typeof createClient> | null = null;
+
+export default function getSupabaseBrowserClient() {
+  if (_browser) return _browser;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  _browser = createClient(url, anon);
+  return _browser;
 }
-export default getSupabaseBrowserClient;
+
+// shim navnet som enkelte filer forventer
+export const supabaseBrowser = getSupabaseBrowserClient;
