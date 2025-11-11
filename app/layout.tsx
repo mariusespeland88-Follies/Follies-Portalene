@@ -1,7 +1,7 @@
 // app/layout.tsx
 import './globals.css';
 import type { Metadata } from 'next';
-import AppHeader from '@/components/layout/AppHeader';
+import AppHeader from '../components/layout/AppHeader';
 
 export const metadata: Metadata = { title: 'Follies Portal' };
 
