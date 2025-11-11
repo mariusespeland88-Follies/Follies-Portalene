@@ -1,0 +1,213 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+
+type AnyObj = Record<string, any>;
+type ActivityType = "offer" | "event" | "show";
+type Activity = {
+  id: string;
+  name: string;
+  type: ActivityType;
+  archived?: boolean;
+  slug?: string | null;
+  raw?: AnyObj;
+};
+
+const LS_ACT_V1 = "follies.activities.v1";
+const LS_ACT_OLD = "follies.activities";
+const LS_FILES = "follies.activityFiles.v1";
+const LS_COVERS = "follies.activityCovers.v1"; // { [activityId]: { dataUrl, mime, updated_at } }
+
+const safeJSON = <T,>(s: string | null): T | null => { try { return s ? (JSON.parse(s) as T) : null; } catch { return null; } };
+
+const slugify = (s: string) =>
+  s.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+    .replace(/--+/g, "-");
+
+const pickFirst = (obj: AnyObj | null | undefined, keys: string[]): any => {
+  if (!obj) return null;
+  for (const k of keys) {
+    const v = (obj as any)[k];
+    if (v !== undefined && v !== null && String(v).trim?.() !== "") return v;
+  }
+  return null;
+};
+
+function firstUrlLike(v: any): string | null {
+  if (!v) return null;
+  if (typeof v === "string") return v;
+  if (Array.isArray(v)) {
+    for (const it of v) {
+      const u = firstUrlLike(it?.url || it?.src || it?.image || it?.href || it);
+      if (u) return u;
+    }
+  } else if (typeof v === "object") {
+    return (
+      v.url || v.src || v.image || v.href ||
+      firstUrlLike(v.file) || firstUrlLike(v.cover) || firstUrlLike(v.photo) || null
+    );
+  }
+  return null;
+}
+
+function readCoverStore(): Record<string, { dataUrl: string; mime: string; updated_at: string }> {
+  return safeJSON<Record<string, { dataUrl: string; mime: string; updated_at: string }>>(localStorage.getItem(LS_COVERS)) ?? {};
+}
+
+/** Hent cover: prioriter opplastet cover; ellers fallbacks fra aktivitetens egne felt; ellers logo */
+function coverOf(a: Activity): string {
+  const covers = readCoverStore();
+  const coverEntry = covers[a.id];
+  if (coverEntry?.dataUrl) return coverEntry.dataUrl;
+
+  const r = a.raw || {};
+  const candidates: (string | null)[] = [
+    pickFirst(r, ["image_url","imageUrl","image","cover_url","cover","banner_url","poster_url","thumbnail","thumb","picture","photo","hero","img"]),
+    firstUrlLike(r.cover),
+    firstUrlLike(r.banner),
+    firstUrlLike(r.poster),
+    firstUrlLike(r.images),
+    firstUrlLike(r.media),
+  ];
+  return candidates.find(Boolean) || "/images/follies-logo.jpg";
+}
+
+/** Normaliser aktiviteter fra begge nøkler */
+function normalizeActivities(): Activity[] {
+  const v1 = safeJSON<any[]>(localStorage.getItem(LS_ACT_V1)) ?? [];
+  const old = safeJSON<any[]>(localStorage.getItem(LS_ACT_OLD)) ?? [];
+  const merged = [...old, ...v1];
+
+  const norm = merged.map((a, i) => {
+    const id = String(a?.id ?? a?.uuid ?? a?._id ?? `a-${i}`);
+    const name = a?.name ?? a?.title ?? a?.navn ?? a?.programName ?? `Aktivitet ${id}`;
+    const rawType = String(a?.type ?? a?.category ?? a?.kategori ?? "").toLowerCase();
+
+    let type: ActivityType = "offer";
+    if (rawType.includes("forest")) type = "show";               // forestilling
+    else if (rawType.includes("event") || rawType.includes("konsert") || rawType.includes("åpen") || rawType.includes("open")) type = "event";
+    else type = "offer";
+
+    const archived = !!(a?.archived || a?.is_archived || String(a?.status || "").toLowerCase() === "archived");
+    const slug = String(a?.slug ?? a?.seo_slug ?? slugify(name));
+    return { id, name, type, archived, slug, raw: a };
+  });
+
+  const map = new Map<string, Activity>();
+  for (const a of norm) map.set(a.id, a);
+  return Array.from(map.values());
+}
+
+export default function ActivitiesPage() {
+  const [all, setAll] = useState<Activity[]>([]);
+  const [q, setQ] = useState("");
+  const [tab, setTab] = useState<ActivityType>("offer");
+
+  useEffect(() => {
+    setAll(normalizeActivities());
+    const onStorage = (e: StorageEvent) => {
+      if ([LS_ACT_V1, LS_ACT_OLD, LS_FILES, LS_COVERS].includes(e.key || "")) {
+        setAll(normalizeActivities());
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const list = all.filter((a) => a.type === tab && !a.archived);
+    const query = q.trim().toLowerCase();
+    if (!query) return list;
+    return list.filter((a) => a.name.toLowerCase().includes(query));
+  }, [all, q, tab]);
+
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-8">
+      {/* Tittel + søk + Ny */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-3xl font-semibold tracking-tight text-black">Aktiviteter</h1>
+        <div className="flex items-center gap-2">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={`Søk i ${tab === "offer" ? "Tilbud" : tab === "event" ? "Eventer" : "Forestilling"}…`}
+            className="w-64 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-[15px] text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-red-600"
+          />
+          <Link href="/activities/new" className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700">
+            Ny aktivitet
+          </Link>
+        </div>
+      </div>
+
+      {/* Faner: Tilbud / Eventer / Forestilling */}
+      <div className="mb-6 flex gap-2">
+        {([
+          ["offer", "Tilbud"],
+          ["event", "Eventer"],
+          ["show", "Forestilling"],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`rounded-lg px-3.5 py-2 text-sm font-semibold ring-1 ${
+              tab === key
+                ? "bg-black text-white ring-black"
+                : "bg-white text-neutral-900 ring-neutral-300 hover:bg-neutral-100"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Grid med store bildekort */}
+      {filtered.length === 0 ? (
+        <div className="rounded-xl border border-neutral-200 bg-white p-6 text-neutral-800">
+          Ingen {tab === "offer" ? "tilbud" : tab === "event" ? "eventer" : "forestilling"} funnet.
+        </div>
+      ) : (
+        <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((a) => {
+            const img = coverOf(a);
+            return (
+              <li key={a.id} className="group overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md">
+                {/* Bilde (16:9) */}
+                <div className="relative">
+                  <div className="pt-[56.25%]" />
+                  <div className="absolute inset-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img} alt="" className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/25 to-black/5" />
+                    <div className="absolute left-3 top-3">
+                      <span className="rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-neutral-900 shadow ring-1 ring-black/10">
+                        {a.type === "event" ? "Event" : a.type === "show" ? "Forestilling" : "Tilbud"}
+                      </span>
+                    </div>
+                    <div className="absolute bottom-3 left-3 right-3">
+                      <h3 className="line-clamp-2 text-[15px] font-semibold leading-5 text-white drop-shadow">
+                        {a.name}
+                      </h3>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Handlinger – **Slett** fjernet; bare Åpne/Rediger */}
+                <div className="flex items-center justify-end gap-2 p-3">
+                  <Link href={`/activities/${a.id}`} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 transition hover:bg-neutral-100">
+                    Åpne
+                  </Link>
+                  <Link href={`/activities/${a.id}/edit`} className="rounded-lg bg-black px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-neutral-800">
+                    Rediger
+                  </Link>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,8 @@
+{
+  "/login/page": "app/login/page.js",
+  "/(protected)/activities/page": "app/(protected)/activities/page.js",
+  "/(protected)/dashboard/page": "app/(protected)/dashboard/page.js",
+  "/(protected)/members/page": "app/(protected)/members/page.js",
+  "/(protected)/members/[id]/page": "app/(protected)/members/[id]/page.js",
+  "/(protected)/members/[id]/edit/page": "app/(protected)/members/[id]/edit/page.js"
+}
