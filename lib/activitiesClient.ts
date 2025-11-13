@@ -32,12 +32,12 @@ function safeJSON<T>(s: string | null): T | null {
   }
 }
 
-function ensureWindow(): boolean {
+function hasWindow(): boolean {
   return typeof window !== "undefined";
 }
 
 function loadAllFromLocalStorage(): Activity[] {
-  if (!ensureWindow()) return [];
+  if (!hasWindow()) return [];
 
   // Ny nøkkel først
   const fromNew = safeJSON<Activity[]>(localStorage.getItem(LS_KEY));
@@ -51,36 +51,45 @@ function loadAllFromLocalStorage(): Activity[] {
 }
 
 function saveAllToLocalStorage(list: Activity[]): void {
-  if (!ensureWindow()) return;
+  if (!hasWindow()) return;
   localStorage.setItem(LS_KEY, JSON.stringify(list));
 }
 
 /**
  * Hent ALLE aktiviteter (fra localStorage inntil vi kobler på DB).
+ * Matcher eksisterende bruk: `const res = await fetchActivities(); res.data ...`
  */
-export async function fetchActivities(): Promise<Activity[]> {
-  return loadAllFromLocalStorage();
+export async function fetchActivities(): Promise<{ data: Activity[] }> {
+  const data = loadAllFromLocalStorage();
+  return { data };
 }
 
 /**
  * Hent én aktivitet etter id.
+ * Matcher bruk: `const { data } = await fetchActivity(id);`
  */
-export async function fetchActivity(id: string): Promise<Activity | null> {
+export async function fetchActivity(
+  id: string
+): Promise<{ data: Activity | null }> {
   const all = loadAllFromLocalStorage();
-  const found =
-    all.find((a) => String(a.id) === String(id)) ??
-    null;
-
-  return found;
+  const found = all.find((a) => String(a.id) === String(id)) ?? null;
+  return { data: found };
 }
 
 /**
  * Lagre/oppdater én aktivitet.
  * - Hvis id finnes: oppdaterer eksisterende i localStorage.
  * - Hvis id mangler: lager ny id og pusher inn.
+ *
+ * Returnerer selve aktiviteten, siden eksisterende kode historisk
+ * har brukt dette mønsteret (ikke `.data` her).
  */
 export async function saveActivity(a: ActivityLike): Promise<Activity> {
-  const id = a.id ?? (ensureWindow() && "crypto" in window ? crypto.randomUUID() : `${Date.now()}`);
+  const id =
+    a.id ??
+    (hasWindow() && "crypto" in window
+      ? crypto.randomUUID()
+      : `${Date.now()}`);
 
   const current = loadAllFromLocalStorage();
 
