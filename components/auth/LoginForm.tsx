@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginForm() {
   const router = useRouter();
-  const sp = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -15,11 +14,17 @@ export default function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const resolveRedirect = () => {
+    if (typeof window === "undefined") return "/dashboard";
+    const params = new URLSearchParams(window.location.search);
+    return params.get("redirectTo") || "/dashboard";
+  };
+
   // Hvis allerede innlogget → gå til dashboard
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
-      if (data.session) router.replace("/dashboard");
+      if (data.session) router.replace(resolveRedirect());
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -28,7 +33,7 @@ export default function LoginForm() {
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((ev) => {
       if (ev === "SIGNED_IN") {
-        const redirectTo = sp.get("redirectTo") || "/dashboard";
+        const redirectTo = resolveRedirect();
         router.replace(redirectTo);
         router.refresh();
       }
@@ -59,7 +64,7 @@ export default function LoginForm() {
     }
 
     // Fallback om event ikke rekker å fyre
-    const redirectTo = sp.get("redirectTo") || "/dashboard";
+    const redirectTo = resolveRedirect();
     router.replace(redirectTo);
     router.refresh();
   };
