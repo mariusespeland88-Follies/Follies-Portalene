@@ -21,6 +21,9 @@ export type Activity = {
   [k: string]: any;
 };
 
+// Enkel, generisk type for aktiviteter (kan snevres inn senere)
+export type ActivityType = string;
+
 const LS_KEY = "follies.activities.v1";
 const LS_FALLBACK_KEY = "follies.activities";
 
