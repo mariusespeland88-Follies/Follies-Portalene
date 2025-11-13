@@ -65,15 +65,14 @@ export async function fetchActivities(): Promise<{ data: Activity[] }> {
 }
 
 /**
- * Hent én aktivitet etter id.
- * Matcher bruk: `const { data } = await fetchActivity(id);`
+ * Hent ÉN aktivitet etter id.
+ * Matcher eksisterende bruk: `const a = await fetchActivity(id);`
+ * (altså direkte Activity | null, ikke `{ data: ... }` her).
  */
-export async function fetchActivity(
-  id: string
-): Promise<{ data: Activity | null }> {
+export async function fetchActivity(id: string): Promise<Activity | null> {
   const all = loadAllFromLocalStorage();
   const found = all.find((a) => String(a.id) === String(id)) ?? null;
-  return { data: found };
+  return found;
 }
 
 /**
@@ -81,8 +80,7 @@ export async function fetchActivity(
  * - Hvis id finnes: oppdaterer eksisterende i localStorage.
  * - Hvis id mangler: lager ny id og pusher inn.
  *
- * Returnerer selve aktiviteten, siden eksisterende kode historisk
- * har brukt dette mønsteret (ikke `.data` her).
+ * Returnerer selve aktiviteten, ikke `{ data: ... }`.
  */
 export async function saveActivity(a: ActivityLike): Promise<Activity> {
   const id =
