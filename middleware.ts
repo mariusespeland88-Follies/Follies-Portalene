@@ -18,10 +18,10 @@ export async function middleware(req: NextRequest) {
 
   // Hvilke ruter er offentlige
   const isPublicPath =
-    lowerPath === "/login" ||
-    lowerPath === "/forgot-password" ||
-    lowerPath.startsWith("/auth/") ||
-    lowerPath === "/favicon.ico" ||
+    pathname === "/login" ||
+    pathname === "/forgot-password" ||
+    pathname.startsWith("/auth/") ||
+    pathname === "/favicon.ico" ||
     lowerPath.startsWith("/images") ||
     lowerPath.startsWith("/public") ||
     lowerPath.startsWith("/_next");
