@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
@@ -10,7 +10,7 @@ type ActivityFile = {
   path: string;
 };
 
-async function readManifest(supabase: ReturnType<typeof createClient>, activityId: string) {
+async function readManifest(supabase: SupabaseClient, activityId: string) {
   const { data, error } = await supabase.storage.from(BUCKET).download(`${activityId}/manifest.json`);
   if (error) return [] as ActivityFile[];
   const text = await data.text();

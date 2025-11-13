@@ -131,7 +131,7 @@ export function usePermissions() {
       if (!rolesFound) {
         const perms = readPermsLS();
         const id = memberIdLS ?? ""; // kan være tom
-        rolesFound = rolesFromPerms(perms, id, memberByEmail);
+        rolesFound = rolesFromPerms(perms, id, memberByEmail ?? undefined);
       }
 
       setRoles(uniqLower(rolesFound));

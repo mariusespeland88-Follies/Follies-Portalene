@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 
-const URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 async function sb(path: string) {
-  return fetch(`${URL}/rest/v1/${path}`, {
+  return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
   });
 }
