@@ -122,7 +122,7 @@ export default function AppHeader() {
         <div className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/images/follies-logo.jpg"
+            src="/Images/follies-logo.jpg"
             alt="Follies"
             className="h-8 w-8 rounded object-cover ring-1 ring-white/10"
           />

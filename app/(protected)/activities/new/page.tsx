@@ -82,7 +82,7 @@ export default function ActivityNewPage() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const [coverPreview, setCoverPreview] = useState<string>("/images/follies-logo.jpg");
+  const [coverPreview, setCoverPreview] = useState<string>("/Images/follies-logo.jpg");
   const [coverData, setCoverData] = useState<{ dataUrl: string; mime: string } | null>(null);
   const coverRef = useRef<HTMLInputElement | null>(null);
 

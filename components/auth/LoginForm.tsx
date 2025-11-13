@@ -74,7 +74,7 @@ export default function LoginForm() {
       <div className="w-full max-w-md rounded-2xl bg-black/60 p-8 shadow-xl border border-white/10">
         <div className="mb-6 text-center">
           <img
-            src="/images/follies-logo.jpg"
+            src="/Images/follies-logo.jpg"
             alt="Follies"
             className="mx-auto h-14 w-auto object-contain"
           />
@@ -135,10 +135,16 @@ export default function LoginForm() {
           </button>
         </form>
 
-        <div className="mt-6 text-center">
+        <div className="mt-6 flex flex-col items-center gap-2 text-center text-sm text-neutral-300">
+          <Link
+            href="/forgot-password"
+            className="hover:text-white underline underline-offset-4"
+          >
+            Glemt passord?
+          </Link>
           <Link
             href="/"
-            className="text-sm text-neutral-300 hover:text-white underline underline-offset-4"
+            className="hover:text-white underline underline-offset-4"
           >
             Tilbake til forsiden
           </Link>

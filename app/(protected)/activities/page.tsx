@@ -72,7 +72,7 @@ function coverOf(a: Activity): string {
     firstUrlLike(r.images),
     firstUrlLike(r.media),
   ];
-  return candidates.find(Boolean) || "/images/follies-logo.jpg";
+  return candidates.find(Boolean) || "/Images/follies-logo.jpg";
 }
 
 /** Normaliser aktiviteter fra begge nøkler */

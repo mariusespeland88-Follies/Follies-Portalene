@@ -4,7 +4,7 @@ export default function Brand() {
   return (
     <a href="/dashboard" className="flex items-center gap-2 pr-4">
       <img
-        src="/images/follies-logo.jpg"
+        src="/Images/follies-logo.jpg"
         alt="Follies"
         width={24}
         height={24}
