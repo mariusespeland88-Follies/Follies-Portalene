@@ -60,7 +60,6 @@ function lsSaveSessions(activityId: string, list: AnyObj[]) {
 
 /**
  * Enkelt “legg i kalender”-oppsett.
- * Vi holder dette veldig generelt, så det ikke krasjer med eksisterende kode:
  *  - Lagrer en liste med events per aktivitetId i follies.calendar.v1
  */
 function addSessionToCalendar(activityId: string, activityName: string, session: AnyObj) {
