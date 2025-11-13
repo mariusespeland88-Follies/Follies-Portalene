@@ -131,7 +131,36 @@ export default function MemberProfilePage() {
           .from("enrollments")
           .select("id, activity_id, role, activity:activities(id,name,type,archived)")
           .eq("member_id", memberId);
-        if (enr) setEnrollments((enr ?? []) as Enrollment[]);
+
+        if (enr) {
+          type RawEnrollment = {
+            id: string;
+            activity_id: string;
+            role: "participant" | "leader";
+            activity:
+              | {
+                  id: string;
+                  name: string;
+                  type: string;
+                  archived: boolean;
+                }[]
+              | null;
+          };
+
+          const rows = enr as unknown as RawEnrollment[];
+
+          const normalized: Enrollment[] = rows.map((row) => ({
+            id: row.id,
+            activity_id: row.activity_id,
+            role: row.role,
+            activity:
+              row.activity && row.activity.length > 0 ? row.activity[0] : null,
+          }));
+
+          if (alive) {
+            setEnrollments(normalized);
+          }
+        }
       } finally {
         if (alive) setLoading(false);
       }
