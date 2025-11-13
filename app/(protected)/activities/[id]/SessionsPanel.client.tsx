@@ -1,17 +1,14 @@
-// SNAPSHOT: 2025-08-31 – Follies Ansattportal
-// Endring: kalender-innskriving for økter fikk `session_id: sess.id` (logikkfix; ingen designendring)
-
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type AnyObj = Record<string, any>;
 
 interface Props {
   activityId: string;
   activityName: string;
-  sessions: any[];
-  setSessions: (s: any[]) => void;
+  sessions: AnyObj[];
+  setSessions: (s: AnyObj[]) => void;
   participants: AnyObj[];
   leaders: AnyObj[];
   enrolledIds: string[]; // union av ledere + deltakere (DB + LS)
@@ -28,273 +25,348 @@ const safeJSON = <T,>(s: string | null): T | null => {
   }
 };
 
-function lsSaveSessions(activityId: string, list: any[]) {
-  const all = safeJSON<Record<string, any[]>>(localStorage.getItem(SESS_LS)) ?? {};
-  all[activityId] = list;
-  localStorage.setItem(SESS_LS, JSON.stringify(all));
-}
-function lsLoadCalendar(): any[] {
-  return safeJSON<any[]>(localStorage.getItem(CAL_LS)) ?? [];
-}
-function lsSaveCalendar(list: any[]) {
-  localStorage.setItem(CAL_LS, JSON.stringify(list));
+type SessionDraft = {
+  id?: string;
+  title: string;
+  date: string; // YYYY-MM-DD
+  startTime: string; // HH:MM
+  endTime: string; // HH:MM
+  location: string;
+  note: string;
+};
+
+const emptyDraft: SessionDraft = {
+  title: "",
+  date: "",
+  startTime: "",
+  endTime: "",
+  location: "",
+  note: "",
+};
+
+function lsLoadSessions(activityId: string): AnyObj[] {
+  if (typeof window === "undefined") return [];
+  const raw = safeJSON<Record<string, AnyObj[]>>(localStorage.getItem(SESS_LS));
+  if (!raw) return [];
+  return raw[activityId] ?? [];
 }
 
-// Robust ID-hjelper: støtter id, uuid, memberId, _id
-function getPid(p: AnyObj): string {
-  return String(p?.id ?? p?.uuid ?? p?.memberId ?? p?._id ?? "");
+function lsSaveSessions(activityId: string, list: AnyObj[]) {
+  if (typeof window === "undefined") return;
+  const raw = safeJSON<Record<string, AnyObj[]>>(localStorage.getItem(SESS_LS)) ?? {};
+  raw[activityId] = list;
+  localStorage.setItem(SESS_LS, JSON.stringify(raw));
 }
 
-export default function SessionsPanel({
-  activityId,
-  activityName,
-  sessions,
-  setSessions,
-  participants,
-  leaders,
-  enrolledIds,
-}: Props) {
-  // Stabil hook-rekkefølge
-  const [title, setTitle] = useState("");
-  const [date, setDate] = useState<string>("");
-  const [time, setTime] = useState<string>("");
-  const [duration, setDuration] = useState<number>(90);
-  const [aud, setAud] = useState<"all" | "custom">("all");
-  const [selection, setSelection] = useState<Record<string, boolean>>({});
+/**
+ * Enkelt “legg i kalender”-oppsett.
+ * Vi holder dette veldig generelt, så det ikke krasjer med eksisterende kode:
+ *  - Lagrer en liste med events per aktivitetId i follies.calendar.v1
+ */
+function addSessionToCalendar(activityId: string, activityName: string, session: AnyObj) {
+  if (typeof window === "undefined") return;
+  const raw = safeJSON<Record<string, AnyObj[]>>(localStorage.getItem(CAL_LS)) ?? {};
+  const current = raw[activityId] ?? [];
 
-  const allPeople: AnyObj[] = [
-    ...leaders.map((p) => ({ ...p, _role: "leder" })),
-    ...participants.map((p) => ({ ...p, _role: "deltaker" })),
+  const merged = [
+    ...current,
+    {
+      id: session.id ?? crypto.randomUUID(),
+      activityId,
+      activityName,
+      sessionId: session.id,
+      title: session.title ?? "Økt",
+      date: session.date,
+      startTime: session.startTime,
+      endTime: session.endTime,
+      location: session.location,
+      note: session.note,
+      createdAt: new Date().toISOString(),
+    },
   ];
 
-  const toggle = (id: string) =>
-    setSelection((s) => ({
-      ...s,
-      [id]: !s[id],
-    }));
+  raw[activityId] = merged;
+  localStorage.setItem(CAL_LS, JSON.stringify(raw));
+}
 
-  const onAdd = () => {
-    if (!title || !date || !time) return;
+export default function SessionsPanel(props: Props) {
+  const { activityId, activityName, sessions, setSessions } = props;
 
-    const start = new Date(`${date}T${time}:00`);
-    const end = new Date(start.getTime() + duration * 60000);
+  const [draft, setDraft] = useState<SessionDraft>(emptyDraft);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [isLoadedFromLS, setIsLoadedFromLS] = useState(false);
 
-    let targets: string[];
-    if (aud === "all") {
-      targets = [...new Set(enrolledIds.map(String))];
-      if (targets.length === 0) {
-        alert(
-          "Ingen deltakere/ledere er påmeldt denne aktiviteten ennå. Legg til noen først."
-        );
-        return;
-      }
-    } else {
-      const selected = allPeople.filter((p) => {
-        const pid = getPid(p);
-        return pid && selection[pid];
-      });
+  // Ved første mount: hvis sessions-prop er tom,
+  // prøv å hente eksisterende økter fra localStorage.
+  useEffect(() => {
+    if (sessions && sessions.length > 0) {
+      setIsLoadedFromLS(true);
+      return;
+    }
+    const fromLs = lsLoadSessions(activityId);
+    if (fromLs.length > 0) {
+      setSessions(fromLs);
+    }
+    setIsLoadedFromLS(true);
+  }, [activityId, sessions, setSessions]);
 
-      if (selected.length === 0) {
-        alert("Velg minst én mottaker.");
-        return;
-      }
+  const resetDraft = () => {
+    setDraft(emptyDraft);
+    setEditingId(null);
+  };
 
-      targets = selected.map((p) => getPid(p));
+  const handleSave = () => {
+    if (!draft.date || !draft.startTime) {
+      alert("Dato og starttid må fylles ut.");
+      return;
     }
 
-    const sess = {
-      id: crypto.randomUUID(),
-      activity_id: activityId,
-      title,
-      start: start.toISOString(),
-      end: end.toISOString(),
-      targets,
+    const base: AnyObj = {
+      ...draft,
     };
 
-    const next = [sess, ...sessions];
-    setSessions(next);
-    lsSaveSessions(activityId, next);
+    let updatedSessions: AnyObj[];
 
-    const cal = lsLoadCalendar();
-    for (const memberId of targets) {
-      cal.unshift({
-        id: crypto.randomUUID(),
-        member_id: memberId,
-        title: `${activityName}: ${title}`,
-        start: start.toISOString(),
-        end: end.toISOString(),
-        source: "session",
-        activity_id: activityId,
-        // ⬇⬇ NYTT: gjør kalender-element klikkbart til /sessions/[id]
-        session_id: sess.id,
-      });
+    if (editingId) {
+      updatedSessions = sessions.map((s) =>
+        String(s.id) === editingId ? { ...s, ...base } : s
+      );
+    } else {
+      const id = crypto.randomUUID();
+      updatedSessions = [
+        ...sessions,
+        {
+          id,
+          ...base,
+        },
+      ];
     }
-    lsSaveCalendar(cal);
 
-    setTitle("");
-    setDate("");
-    setTime("");
-    setDuration(90);
-    setAud("all");
-    setSelection({});
+    setSessions(updatedSessions);
+    lsSaveSessions(activityId, updatedSessions);
+    resetDraft();
+  };
+
+  const handleEdit = (session: AnyObj) => {
+    setDraft({
+      id: session.id,
+      title: session.title ?? "",
+      date: session.date ?? "",
+      startTime: session.startTime ?? "",
+      endTime: session.endTime ?? "",
+      location: session.location ?? "",
+      note: session.note ?? "",
+    });
+    setEditingId(String(session.id));
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm("Er du sikker på at du vil slette denne økten?")) return;
+    const updated = sessions.filter((s) => String(s.id) !== id);
+    setSessions(updated);
+    lsSaveSessions(activityId, updated);
+    if (editingId === id) {
+      resetDraft();
+    }
+  };
+
+  const handleAddToCalendar = (session: AnyObj) => {
+    addSessionToCalendar(activityId, activityName, session);
+    alert("Økten er lagt til i kalender-utkastet.");
   };
 
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-      <h2 className="text-lg font-semibold text-neutral-900">Økter / øvinger</h2>
-
-      {/* Skjema */}
-      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm text-neutral-700 mb-1">Tittel</label>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="w-full rounded-lg bg-white text-neutral-900 px-3 py-2 border border-neutral-300 focus:outline-none focus:border-red-600"
-            placeholder="Øving – Scene 3"
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-neutral-700 mb-1">
-            Varighet (minutter)
-          </label>
-          <input
-            type="number"
-            min={15}
-            max={480}
-            value={duration}
-            onChange={(e) => setDuration(Number(e.target.value))}
-            className="w-full rounded-lg bg-white text-neutral-900 px-3 py-2 border border-neutral-300 focus:outline-none focus:border-red-600"
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-neutral-700 mb-1">Dato</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full rounded-lg bg-white text-neutral-900 px-3 py-2 border border-neutral-300 focus:outline-none focus:border-red-600"
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-neutral-700 mb-1">Tid</label>
-          <input
-            type="time"
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
-            className="w-full rounded-lg bg-white text-neutral-900 px-3 py-2 border border-neutral-300 focus:outline-none focus:border-red-600"
-          />
-        </div>
+    <div className="space-y-6">
+      {/* Info / status */}
+      <div className="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4 text-sm text-neutral-200">
+        <p className="font-semibold mb-1">Økter for denne aktiviteten</p>
+        <p className="text-neutral-400">
+          Her kan du legge inn prøveplan, forestillinger eller andre økter
+          knyttet til aktiviteten. Alt lagres lokalt i nettleseren (og speiles
+          til databasen via andre skjemaer etter hvert).
+        </p>
+        {!isLoadedFromLS && (
+          <p className="mt-2 text-xs text-yellow-400">
+            Laster tidligere økter fra nettleseren …
+          </p>
+        )}
       </div>
 
-      {/* Mottakere */}
-      <div className="mt-4">
-        <label className="block text-sm text-neutral-700 mb-2">
-          Hvem skal få denne økten?
-        </label>
-        <div className="flex gap-6 text-neutral-800">
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              name="aud"
-              checked={aud === "all"}
-              onChange={() => setAud("all")}
-            />
-            <span>Alle (ledere + deltakere)</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              name="aud"
-              checked={aud === "custom"}
-              onChange={() => setAud("custom")}
-            />
-            <span>Velg manuelt</span>
-          </label>
-        </div>
+      {/* Liste over økter */}
+      <div className="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4">
+        <h2 className="mb-3 text-base font-semibold text-neutral-100">
+          Planlagte økter
+        </h2>
 
-        {aud === "custom" && (
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <div className="font-medium mb-2">Ledere</div>
-              <ul className="space-y-1">
-                {leaders.map((p) => {
-                  const pid = getPid(p);
-                  return (
-                    <li key={pid} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={!!selection[pid]}
-                        onChange={() => toggle(pid)}
-                      />
-                      <span>
-                        {(p.first_name || p.fornavn || "") +
-                          " " +
-                          (p.last_name || p.etternavn || "")}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-            <div>
-              <div className="font-medium mb-2">Deltakere</div>
-              <ul className="space-y-1 max-h-60 overflow-auto pr-1">
-                {participants.map((p) => {
-                  const pid = getPid(p);
-                  return (
-                    <li key={pid} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={!!selection[pid]}
-                        onChange={() => toggle(pid)}
-                      />
-                      <span>
-                        {(p.first_name || p.fornavn || "") +
-                          " " +
-                          (p.last_name || p.etternavn || "")}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+        {sessions.length === 0 ? (
+          <p className="text-sm text-neutral-400">
+            Ingen økter registrert ennå. Legg til den første økten i skjemaet
+            under.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {sessions.map((s) => (
+              <div
+                key={String(s.id ?? `${s.date}-${s.startTime}-${s.title}`)}
+                className="flex flex-col gap-2 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 md:flex-row md:items-center md:justify-between"
+              >
+                <div className="space-y-1">
+                  <div className="text-sm font-semibold text-neutral-100">
+                    {s.title || "Økt"}
+                  </div>
+                  <div className="text-xs text-neutral-300">
+                    {s.date || "Ukjent dato"}{" "}
+                    {s.startTime && (
+                      <>
+                        kl. {s.startTime}
+                        {s.endTime ? `–${s.endTime}` : null}
+                      </>
+                    )}
+                  </div>
+                  {(s.location || s.note) && (
+                    <div className="text-xs text-neutral-400">
+                      {s.location && <span>Sted: {s.location}. </span>}
+                      {s.note && <span>Notat: {s.note}</span>}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => handleEdit(s)}
+                    className="rounded-full border border-neutral-600 px-3 py-1 hover:border-red-500 hover:text-red-300"
+                  >
+                    Rediger
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(String(s.id))}
+                    className="rounded-full border border-neutral-700 px-3 py-1 text-red-300 hover:border-red-600 hover:bg-red-900/30"
+                  >
+                    Slett
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddToCalendar(s)}
+                    className="rounded-full border border-neutral-600 px-3 py-1 hover:border-red-500 hover:text-red-300"
+                  >
+                    Legg i kalender-utkast
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      <div className="mt-4">
-        <button
-          onClick={onAdd}
-          className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-white font-semibold"
-        >
-          Legg til økt
-        </button>
-      </div>
+      {/* Skjema for ny / redigert økt */}
+      <div className="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4">
+        <h2 className="mb-3 text-base font-semibold text-neutral-100">
+          {editingId ? "Rediger økt" : "Ny økt"}
+        </h2>
 
-      {/* Liste over økter */}
-      <div className="mt-6">
-        <h3 className="font-semibold text-neutral-900 mb-3">
-          Planlagte økter
-        </h3>
-        {sessions.length === 0 ? (
-          <div className="text-neutral-700">Ingen økter enda.</div>
-        ) : (
-          <ul className="space-y-2">
-            {sessions.map((s) => (
-              <li key={s.id} className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium text-neutral-900">{s.title}</div>
-                  <div className="text-sm text-neutral-600">
-                    {new Date(s.start).toLocaleString()} –{" "}
-                    {new Date(s.end).toLocaleTimeString()} · mottakere:{" "}
-                    {s.targets.length}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-neutral-300">Tittel</label>
+            <input
+              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
+              value={draft.title}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, title: e.target.value }))
+              }
+              placeholder="F.eks. Prøve, gjennomgang, forestilling ..."
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-neutral-300">Dato</label>
+            <input
+              type="date"
+              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
+              value={draft.date}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, date: e.target.value }))
+              }
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-neutral-300">
+              Starttid
+            </label>
+            <input
+              type="time"
+              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
+              value={draft.startTime}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, startTime: e.target.value }))
+              }
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-neutral-300">
+              Sluttid (valgfritt)
+            </label>
+            <input
+              type="time"
+              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
+              value={draft.endTime}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, endTime: e.target.value }))
+              }
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-neutral-300">
+              Sted (valgfritt)
+            </label>
+            <input
+              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
+              value={draft.location}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, location: e.target.value }))
+              }
+              placeholder="F.eks. Follies, sal 1"
+            />
+          </div>
+
+          <div className="space-y-1 md:col-span-2">
+            <label className="text-xs font-medium text-neutral-300">
+              Notat (valgfritt)
+            </label>
+            <textarea
+              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
+              rows={3}
+              value={draft.note}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, note: e.target.value }))
+              }
+              placeholder="Ekstra info til deg selv/lederne."
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleSave}
+            className="rounded-full bg-red-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-500"
+          >
+            {editingId ? "Lagre endringer" : "Legg til økt"}
+          </button>
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetDraft}
+              className="rounded-full border border-neutral-600 px-4 py-1.5 text-sm text-neutral-200 hover:border-red-500 hover:text-red-300"
+            >
+              Avbryt redigering
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
