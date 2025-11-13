@@ -63,7 +63,7 @@ export default function TopBar() {
     <header className="w-full bg-black text-white">
       <div className="mx-auto max-w-6xl px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <img src="/images/follies-logo.jpg" alt="Follies" className="h-8 w-auto object-contain" />
+          <img src="/Images/follies-logo.jpg" alt="Follies" className="h-8 w-auto object-contain" />
           <span className="font-semibold tracking-wide">Follies Portal</span>
           <nav className="hidden md:flex items-center gap-6 ml-6">
             <Link href="/dashboard" className="hover:text-red-400">Dashboard</Link>

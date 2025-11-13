@@ -4,7 +4,35 @@ import { useEffect, useState } from "react";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
 type Member = { id: string; first_name?: string | null; last_name?: string | null; email?: string | null };
+type RawMember = { id?: any; first_name?: any; last_name?: any; email?: any };
 type PersonWithMember = { id: string; member_id: string; activity_id: string; role: "participant" | "leader"; member: Member | null };
+type RawPersonWithMember = Omit<PersonWithMember, "member"> & { member: RawMember | RawMember[] | null };
+
+const sanitizeMember = (raw: RawMember | null | undefined): Member | null => {
+  if (!raw) return null;
+  const id = raw.id != null ? String(raw.id) : "";
+  if (!id) return null;
+  return {
+    id,
+    first_name: raw.first_name != null ? String(raw.first_name) : null,
+    last_name: raw.last_name != null ? String(raw.last_name) : null,
+    email: raw.email != null ? String(raw.email) : null,
+  };
+};
+
+const sanitizeRows = (rows: RawPersonWithMember[] | null | undefined): PersonWithMember[] => {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => {
+    const memberRaw = Array.isArray(row.member) ? row.member[0] : row.member;
+    return {
+      ...row,
+      id: String(row.id),
+      member_id: String(row.member_id),
+      activity_id: String(row.activity_id),
+      member: sanitizeMember(memberRaw),
+    };
+  });
+};
 
 async function setRole(activityId: string, memberId: string, role: "participant" | "leader") {
   const res = await fetch("/api/admin/enrollments/update-role", {
@@ -46,8 +74,8 @@ export default function LeadersTab({ activityId }: { activityId: string }) {
       setLeaders([]);
       setAllParticipants([]);
     } else {
-      setLeaders((lRes.data ?? []) as PersonWithMember[]);
-      setAllParticipants((pRes.data ?? []) as PersonWithMember[]);
+      setLeaders(sanitizeRows(lRes.data as RawPersonWithMember[] | null));
+      setAllParticipants(sanitizeRows(pRes.data as RawPersonWithMember[] | null));
     }
     setLoading(false);
   };

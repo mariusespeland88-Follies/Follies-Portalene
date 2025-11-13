@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
@@ -16,7 +16,7 @@ type ActivityFile = {
   uploadedAt: string;
 };
 
-async function ensureBucket(supabase: ReturnType<typeof createClient>) {
+async function ensureBucket(supabase: SupabaseClient) {
   const { data } = await supabase.storage.listBuckets();
   const exists = (data || []).some((b) => b.name === BUCKET);
   if (!exists) {
@@ -24,7 +24,7 @@ async function ensureBucket(supabase: ReturnType<typeof createClient>) {
   }
 }
 
-async function readManifest(supabase: ReturnType<typeof createClient>, activityId: string): Promise<ActivityFile[]> {
+async function readManifest(supabase: SupabaseClient, activityId: string): Promise<ActivityFile[]> {
   const path = `${activityId}/manifest.json`;
   const { data, error } = await supabase.storage.from(BUCKET).download(path);
   if (error) return [];
