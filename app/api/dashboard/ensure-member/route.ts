@@ -84,15 +84,23 @@ export async function POST(req: NextRequest) {
 
     // 3) Fall-back: forsøk via enrollments i kandidat-aktiviteter (gjenbruk første treff)
     if (candidateActivityIds.length) {
+      type RawMember = { id?: string | null; email?: string | null };
+      type RawEnrollment = {
+        member_id?: string | null;
+        members?: RawMember | RawMember[] | null;
+      };
+
       const { data: viaEnr } = await db
         .from("enrollments")
         .select("member_id, members!inner(id, email)")
         .in("activity_id", candidateActivityIds)
         .limit(1);
 
-      const mId = Array.isArray(viaEnr) && viaEnr.length
-        ? String(viaEnr[0].member_id || viaEnr[0].members?.id)
-        : null;
+      const firstRow: RawEnrollment | undefined = Array.isArray(viaEnr) ? viaEnr[0] : undefined;
+      const joinedMember = firstRow?.members;
+      const joinedMemberId = Array.isArray(joinedMember) ? joinedMember[0]?.id : joinedMember?.id;
+
+      const mId = firstRow?.member_id ? String(firstRow.member_id) : joinedMemberId ? String(joinedMemberId) : null;
 
       if (mId) {
         // Sett e-post hvis mangler/ulik

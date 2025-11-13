@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
@@ -16,7 +16,7 @@ type ActivityFile = {
   uploadedAt: string;
 };
 
-async function ensureBucket(supabase: ReturnType<typeof createClient>) {
+async function ensureBucket(supabase: SupabaseClient) {
   const { data } = await supabase.storage.listBuckets();
   const exists = (data || []).some((b) => b.name === BUCKET);
   if (!exists) {
@@ -24,14 +24,14 @@ async function ensureBucket(supabase: ReturnType<typeof createClient>) {
   }
 }
 
-async function readManifest(supabase: ReturnType<typeof createClient>, activityId: string): Promise<ActivityFile[]> {
+async function readManifest(supabase: SupabaseClient, activityId: string): Promise<ActivityFile[]> {
   const { data, error } = await supabase.storage.from(BUCKET).download(`${activityId}/manifest.json`);
   if (error) return [];
   const text = await data.text();
   try { return JSON.parse(text) as ActivityFile[]; } catch { return []; }
 }
 
-async function writeManifest(supabase: ReturnType<typeof createClient>, activityId: string, items: ActivityFile[]) {
+async function writeManifest(supabase: SupabaseClient, activityId: string, items: ActivityFile[]) {
   const blob = new Blob([JSON.stringify(items, null, 2)], { type: "application/json" });
   await supabase.storage.from(BUCKET).upload(`${activityId}/manifest.json`, blob, { upsert: true, contentType: "application/json" });
 }
