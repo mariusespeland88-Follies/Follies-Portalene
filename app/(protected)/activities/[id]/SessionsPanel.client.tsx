@@ -21,7 +21,11 @@ const CAL_LS = "follies.calendar.v1";
 const SESS_LS = "follies.activitySessions.v1";
 
 const safeJSON = <T,>(s: string | null): T | null => {
-  try { return s ? (JSON.parse(s) as T) : null; } catch { return null; }
+  try {
+    return s ? (JSON.parse(s) as T) : null;
+  } catch {
+    return null;
+  }
 };
 
 function lsSaveSessions(activityId: string, list: any[]) {
@@ -34,6 +38,11 @@ function lsLoadCalendar(): any[] {
 }
 function lsSaveCalendar(list: any[]) {
   localStorage.setItem(CAL_LS, JSON.stringify(list));
+}
+
+// Robust ID-hjelper: støtter id, uuid, memberId, _id
+function getPid(p: AnyObj): string {
+  return String(p?.id ?? p?.uuid ?? p?.memberId ?? p?._id ?? "");
 }
 
 export default function SessionsPanel({
@@ -53,12 +62,16 @@ export default function SessionsPanel({
   const [aud, setAud] = useState<"all" | "custom">("all");
   const [selection, setSelection] = useState<Record<string, boolean>>({});
 
-  const allPeople = [
+  const allPeople: AnyObj[] = [
     ...leaders.map((p) => ({ ...p, _role: "leder" })),
     ...participants.map((p) => ({ ...p, _role: "deltaker" })),
   ];
 
-  const toggle = (id: string) => setSelection((s) => ({ ...s, [id]: !s[id] }));
+  const toggle = (id: string) =>
+    setSelection((s) => ({
+      ...s,
+      [id]: !s[id],
+    }));
 
   const onAdd = () => {
     if (!title || !date || !time) return;
@@ -70,17 +83,23 @@ export default function SessionsPanel({
     if (aud === "all") {
       targets = [...new Set(enrolledIds.map(String))];
       if (targets.length === 0) {
-        alert("Ingen deltakere/ledere er påmeldt denne aktiviteten ennå. Legg til noen først.");
+        alert(
+          "Ingen deltakere/ledere er påmeldt denne aktiviteten ennå. Legg til noen først."
+        );
         return;
       }
     } else {
-      targets = allPeople
-        .filter((p) => selection[String(p.id ?? p.uuid ?? p.memberId ?? p._id)])
-        .map((p) => String(p.id ?? p.uuid ?? p.memberId ?? p._id));
-      if (targets.length === 0) {
+      const selected = allPeople.filter((p) => {
+        const pid = getPid(p);
+        return pid && selection[pid];
+      });
+
+      if (selected.length === 0) {
         alert("Velg minst én mottaker.");
         return;
       }
+
+      targets = selected.map((p) => getPid(p));
     }
 
     const sess = {
@@ -136,7 +155,9 @@ export default function SessionsPanel({
           />
         </div>
         <div>
-          <label className="block text-sm text-neutral-700 mb-1">Varighet (minutter)</label>
+          <label className="block text-sm text-neutral-700 mb-1">
+            Varighet (minutter)
+          </label>
           <input
             type="number"
             min={15}
@@ -168,14 +189,26 @@ export default function SessionsPanel({
 
       {/* Mottakere */}
       <div className="mt-4">
-        <label className="block text-sm text-neutral-700 mb-2">Hvem skal få denne økten?</label>
+        <label className="block text-sm text-neutral-700 mb-2">
+          Hvem skal få denne økten?
+        </label>
         <div className="flex gap-6 text-neutral-800">
           <label className="flex items-center gap-2">
-            <input type="radio" name="aud" checked={aud === "all"} onChange={() => setAud("all")} />
+            <input
+              type="radio"
+              name="aud"
+              checked={aud === "all"}
+              onChange={() => setAud("all")}
+            />
             <span>Alle (ledere + deltakere)</span>
           </label>
           <label className="flex items-center gap-2">
-            <input type="radio" name="aud" checked={aud === "custom"} onChange={() => setAud("custom")} />
+            <input
+              type="radio"
+              name="aud"
+              checked={aud === "custom"}
+              onChange={() => setAud("custom")}
+            />
             <span>Velg manuelt</span>
           </label>
         </div>
@@ -186,11 +219,19 @@ export default function SessionsPanel({
               <div className="font-medium mb-2">Ledere</div>
               <ul className="space-y-1">
                 {leaders.map((p) => {
-                  const pid = String(p?.id ?? p?.uuid ?? p?.memberId ?? p?._id);
+                  const pid = getPid(p);
                   return (
                     <li key={pid} className="flex items-center gap-2">
-                      <input type="checkbox" checked={!!selection[pid]} onChange={() => toggle(pid)} />
-                      <span>{(p.first_name || p.fornavn || "") + " " + (p.last_name || p.etternavn || "")}</span>
+                      <input
+                        type="checkbox"
+                        checked={!!selection[pid]}
+                        onChange={() => toggle(pid)}
+                      />
+                      <span>
+                        {(p.first_name || p.fornavn || "") +
+                          " " +
+                          (p.last_name || p.etternavn || "")}
+                      </span>
                     </li>
                   );
                 })}
@@ -200,11 +241,19 @@ export default function SessionsPanel({
               <div className="font-medium mb-2">Deltakere</div>
               <ul className="space-y-1 max-h-60 overflow-auto pr-1">
                 {participants.map((p) => {
-                  const pid = String(p?.id ?? p?.uuid ?? p?.memberId ?? p?._id);
+                  const pid = getPid(p);
                   return (
                     <li key={pid} className="flex items-center gap-2">
-                      <input type="checkbox" checked={!!selection[pid]} onChange={() => toggle(pid)} />
-                      <span>{(p.first_name || p.fornavn || "") + " " + (p.last_name || p.etternavn || "")}</span>
+                      <input
+                        type="checkbox"
+                        checked={!!selection[pid]}
+                        onChange={() => toggle(pid)}
+                      />
+                      <span>
+                        {(p.first_name || p.fornavn || "") +
+                          " " +
+                          (p.last_name || p.etternavn || "")}
+                      </span>
                     </li>
                   );
                 })}
@@ -215,14 +264,19 @@ export default function SessionsPanel({
       </div>
 
       <div className="mt-4">
-        <button onClick={onAdd} className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-white font-semibold">
+        <button
+          onClick={onAdd}
+          className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-white font-semibold"
+        >
           Legg til økt
         </button>
       </div>
 
       {/* Liste over økter */}
       <div className="mt-6">
-        <h3 className="font-semibold text-neutral-900 mb-3">Planlagte økter</h3>
+        <h3 className="font-semibold text-neutral-900 mb-3">
+          Planlagte økter
+        </h3>
         {sessions.length === 0 ? (
           <div className="text-neutral-700">Ingen økter enda.</div>
         ) : (
@@ -232,7 +286,9 @@ export default function SessionsPanel({
                 <div>
                   <div className="font-medium text-neutral-900">{s.title}</div>
                   <div className="text-sm text-neutral-600">
-                    {new Date(s.start).toLocaleString()} – {new Date(s.end).toLocaleTimeString()} · mottakere: {s.targets.length}
+                    {new Date(s.start).toLocaleString()} –{" "}
+                    {new Date(s.end).toLocaleTimeString()} · mottakere:{" "}
+                    {s.targets.length}
                   </div>
                 </div>
               </li>
