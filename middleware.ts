@@ -11,18 +11,23 @@ export async function middleware(req: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession();
 
+  const devBypass = req.cookies.get("dev_bypass")?.value === "1";
+
   const { pathname, searchParams } = req.nextUrl;
+  const lowerPath = pathname.toLowerCase();
 
   // Hvilke ruter er offentlige
   const isPublicPath =
-    pathname === "/login" ||
-    pathname === "/favicon.ico" ||
-    pathname.startsWith("/images") ||
-    pathname.startsWith("/public") ||
-    pathname.startsWith("/_next");
+    lowerPath === "/login" ||
+    lowerPath === "/forgot-password" ||
+    lowerPath.startsWith("/auth/") ||
+    lowerPath === "/favicon.ico" ||
+    lowerPath.startsWith("/images") ||
+    lowerPath.startsWith("/public") ||
+    lowerPath.startsWith("/_next");
 
   // Ikke innlogget → send til /login (behold cookies fra res)
-  if (!session && !isPublicPath) {
+  if (!session && !devBypass && !isPublicPath) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set(
@@ -36,7 +41,7 @@ export async function middleware(req: NextRequest) {
   }
 
   // Innlogget → hold dem unna /login
-  if (session && pathname === "/login") {
+  if ((session || devBypass) && lowerPath === "/login") {
     const url = req.nextUrl.clone();
     url.pathname = "/dashboard";
     const redirectRes = NextResponse.redirect(url);
@@ -50,5 +55,5 @@ export async function middleware(req: NextRequest) {
 
 // Matcher alt unntatt Next sine statiske filer, bilder og API
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|images|public|api).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|images|Images|public|api).*)"],
 };

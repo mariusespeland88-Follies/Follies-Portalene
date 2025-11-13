@@ -1,18 +1,21 @@
 import * as React from "react";
 import SupabaseBridge from "@/components/SupabaseBridge";
+import Navbar from "@/app/components/Navbar";
 
 /**
  * (protected) layout
- * - Beholder eksisterende toppbar og stil (den ligger i rot-layouten).
- * - Legger kun inn en usynlig SupabaseBridge som synker Auth ↔ localStorage.
- * - Ingen visuelle endringer.
+ * - Viser toppbaren som alltid har vært en del av portalen.
+ * - Holder SupabaseBridge i DOM for å synkronisere auth ↔ localStorage.
  */
 
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <SupabaseBridge />
-      {children}
+      <Navbar />
+      <main className="min-h-screen bg-gray-900 text-gray-100">
+        {children}
+      </main>
     </>
   );
 }

@@ -27,7 +27,14 @@ type CalendarItem = {
   session_id: UUID;
 };
 
-type EnrollmentRow = { member?: Member | null };
+type RawMember = {
+  id?: any;
+  first_name?: any;
+  last_name?: any;
+  email?: any;
+};
+
+type EnrollmentRow = { member?: RawMember | RawMember[] | null };
 
 /** ---------- LS-nøkler ---------- */
 const LS_CAL_V1 = "follies.calendar.v1";
@@ -43,6 +50,29 @@ const safeJSON = <T,>(s: string | null, fb: T): T => {
 const readLS = <T,>(key: string, fb: T) => (typeof window === "undefined" ? fb : safeJSON<T>(localStorage.getItem(key), fb));
 const writeLS = (key: string, value: any) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} };
 const S = (v: any) => String(v ?? "");
+
+const normalizeMember = (value: RawMember | null | undefined): Member | null => {
+  if (!value) return null;
+  const id = S(value.id);
+  if (!id) return null;
+  return {
+    id,
+    first_name: S(value.first_name),
+    last_name: S(value.last_name),
+    email: value.email != null ? String(value.email) : null,
+  };
+};
+
+const rowsToMembers = (rows: EnrollmentRow[] | null | undefined): Member[] => {
+  if (!Array.isArray(rows)) return [];
+  const out: Member[] = [];
+  for (const row of rows) {
+    const raw = Array.isArray(row?.member) ? row?.member?.[0] : row?.member;
+    const member = normalizeMember(raw ?? null);
+    if (member) out.push(member);
+  }
+  return out;
+};
 
 /** ---------- Side ---------- */
 export default function SessionProfilePage() {
@@ -114,8 +144,8 @@ export default function SessionProfilePage() {
         .eq("activity_id", actId)
         .eq("role", "participant");
 
-      if (!leadErr && leadRows) {
-        const ls = (leadRows as EnrollmentRow[]).map(r => r.member!).filter(Boolean) as Member[];
+      if (!leadErr && Array.isArray(leadRows)) {
+        const ls = rowsToMembers(leadRows);
         setLeaders(ls);
       } else {
         // LS fallback for ledere
@@ -126,8 +156,8 @@ export default function SessionProfilePage() {
         setLeaders(Array.from(ids).map(id => memIdx[id]).filter(Boolean));
       }
 
-      if (!partErr && partRows) {
-        const ps = (partRows as EnrollmentRow[]).map(r => r.member!).filter(Boolean) as Member[];
+      if (!partErr && Array.isArray(partRows)) {
+        const ps = rowsToMembers(partRows);
         setParticipants(ps);
       } else {
         // LS fallback for deltakere (ekskl. ledere)

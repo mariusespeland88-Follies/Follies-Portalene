@@ -121,7 +121,7 @@ export default function AppHeader() {
         <div className="flex items-center gap-3 h-full mr-8"> {/* ← lagt til mr-8 for å trekke meny nærmere venstre */}
           <div className="h-full flex items-center">
             <img
-              src="/images/follies-logo.jpg"
+              src="/Images/follies-logo.jpg"
               alt="Follies"
               className="h-full w-auto object-contain"
             />

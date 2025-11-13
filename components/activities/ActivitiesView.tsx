@@ -49,7 +49,7 @@ export default function ActivitiesView() {
       leaders: ['Lise', 'Per'],
       capacity: 20,
       membersCount: 14,
-      imageUrl: '/images/follies-logo.jpg',
+      imageUrl: '/Images/follies-logo.jpg',
       plan: [
         { label: 'Uke 34', text: 'Introduksjon og øvelser', leader: 'Lise' },
         { label: 'Uke 35', text: 'Scene 1 og 2', leader: 'Per' },
