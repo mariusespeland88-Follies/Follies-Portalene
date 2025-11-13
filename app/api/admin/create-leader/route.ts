@@ -127,11 +127,14 @@ export async function POST(req: Request) {
     // 3) (Valgfritt) Sørg for at Auth-bruker finnes – best effort, ikke kritisk
     //    Vi prøver å finne brukeren i Auth. Hvis ikke finnes, lar vi det være – du kan logge inn via /login (magic link).
     try {
-      const { data: authUser } = await admin.auth.admin.getUserByEmail(email);
-      if (!authUser?.user) {
-        // Du kan alternativt invitere opprettes her:
-        // await admin.auth.admin.inviteUserByEmail(email);
-        // Men vi lar dette være opt-in/manuel for nå.
+      const adminAuth = admin.auth.admin as { getUserByEmail?: (email: string) => Promise<{ data?: { user?: any } }> };
+      if (adminAuth.getUserByEmail) {
+        const { data: authUser } = await adminAuth.getUserByEmail(email);
+        if (!authUser?.user) {
+          // Du kan alternativt invitere opprettes her:
+          // await admin.auth.admin.inviteUserByEmail(email);
+          // Men vi lar dette være opt-in/manuel for nå.
+        }
       }
     } catch {
       // ignorer

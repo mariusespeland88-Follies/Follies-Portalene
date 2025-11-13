@@ -96,12 +96,11 @@ export async function saveActivity(a: ActivityLike): Promise<Activity> {
 
   const idx = current.findIndex((x) => String(x.id) === String(id));
   const next: Activity = {
-    id,
+    ...a,
+    id, // sørg for at id settes eksplisitt
     name: (a.name ?? "").toString(),
     type: (a.type ?? "").toString(),
     archived: a.archived ?? false,
-    ...a,
-    id, // sørg for at id ikke overskrives av a
   };
 
   if (idx >= 0) {
