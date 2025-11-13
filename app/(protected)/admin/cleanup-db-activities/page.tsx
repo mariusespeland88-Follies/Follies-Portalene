@@ -14,6 +14,7 @@ const safeJSON = <T,>(s: string | null): T | null => { try { return s ? (JSON.pa
 const S = (v: any) => String(v ?? "");
 
 function readLocalActivityIds(): Set<string> {
+  if (typeof window === "undefined") return new Set<string>();
   const v1 = safeJSON<any[]>(localStorage.getItem(LS_ACT_V1)) ?? [];
   const old = safeJSON<any[]>(localStorage.getItem(LS_ACT_OLD)) ?? [];
   const set = new Set<string>();
