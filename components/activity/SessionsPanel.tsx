@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getLeaders, getParticipants } from "@/lib/enrollmentsClient";
 
-type Person = { id: string; first_name: string; last_name: string; email?: string };
+type Person = { id: string; first_name?: string | null; last_name?: string | null; email?: string | null };
 type Audience = "all" | "custom";
 
 const CAL_LS = "follies.calendar.v1";

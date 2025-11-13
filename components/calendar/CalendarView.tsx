@@ -12,6 +12,15 @@ type Activity = {
   category?: string | null;
 };
 
+type RawActivity = {
+  id?: any;
+  title?: any;
+  start_at?: any;
+  end_at?: any;
+  location?: any;
+  category?: any;
+};
+
 type CalendarEvent = {
   dateKey: string;
   title: string;
@@ -44,6 +53,22 @@ function hashIdx(s: string) {
   return Math.abs(h) % CAT_STYLES.length;
 }
 function styFor(cat?: string | null) { return CAT_STYLES[cat ? hashIdx(cat) : 0]; }
+
+const normalizeActivity = (raw: RawActivity | null | undefined): Activity | null => {
+  if (!raw) return null;
+  const id = raw.id != null ? String(raw.id) : "";
+  const title = raw.title != null ? String(raw.title) : "";
+  const start_at = raw.start_at != null ? String(raw.start_at) : "";
+  if (!id || !title || !start_at) return null;
+  return {
+    id,
+    title,
+    start_at,
+    end_at: raw.end_at != null ? String(raw.end_at) : null,
+    location: raw.location != null ? String(raw.location) : null,
+    category: raw.category != null ? String(raw.category) : null,
+  };
+};
 
 export default function CalendarView() {
   const [cursor, setCursor] = useState<Date>(() => new Date());
@@ -115,15 +140,19 @@ export default function CalendarView() {
         if (error) {
           setEvents([]);
         } else {
-          const evs: CalendarEvent[] = (data ?? []).map((a: Activity) => {
-            const dt = new Date(a.start_at);
-            return {
-              dateKey: dateKey(dt),
-              title: a.title,
-              category: a.category ?? null,
-              time: new Intl.DateTimeFormat('no-NO', { hour: '2-digit', minute: '2-digit' }).format(dt),
-            };
-          });
+          const rows: RawActivity[] = Array.isArray(data) ? (data as RawActivity[]) : [];
+          const evs: CalendarEvent[] = rows
+            .map((raw) => normalizeActivity(raw))
+            .filter((a): a is Activity => a !== null)
+            .map((a) => {
+              const dt = new Date(a.start_at);
+              return {
+                dateKey: dateKey(dt),
+                title: a.title,
+                category: a.category ?? null,
+                time: new Intl.DateTimeFormat('no-NO', { hour: '2-digit', minute: '2-digit' }).format(dt),
+              };
+            });
           setEvents(evs);
         }
         setLoading(false);
