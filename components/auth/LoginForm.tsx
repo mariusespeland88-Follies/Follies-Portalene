@@ -12,7 +12,6 @@ export default function LoginForm() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [bypassLoading, setBypassLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const resolveRedirect = () => {
@@ -68,28 +67,6 @@ export default function LoginForm() {
     const redirectTo = resolveRedirect();
     router.replace(redirectTo);
     router.refresh();
-  };
-
-  const bypassLogin = async () => {
-    setErr(null);
-    setBypassLoading(true);
-    try {
-      const res = await fetch("/api/dev-login", { method: "POST" });
-      if (!res.ok) {
-        throw new Error("Kunne ikke hoppe over innloggingen.");
-      }
-      const redirectTo = resolveRedirect();
-      router.replace(redirectTo);
-      router.refresh();
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Kunne ikke hoppe over innloggingen.";
-      setErr(message);
-    } finally {
-      setBypassLoading(false);
-    }
   };
 
   return (
@@ -149,23 +126,13 @@ export default function LoginForm() {
             </div>
           )}
 
-          <div className="space-y-3">
-            <button
-              type="submit"
-              disabled={loading || bypassLoading}
-              className="w-full rounded-xl bg-red-600 hover:bg-red-700 transition px-4 py-3 font-semibold text-white disabled:opacity-60 disabled:hover:bg-red-600"
-            >
-              {loading ? "Logger inn …" : "Logg inn"}
-            </button>
-            <button
-              type="button"
-              onClick={bypassLogin}
-              disabled={loading || bypassLoading}
-              className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 font-semibold text-white transition hover:bg-white/10 disabled:opacity-60"
-            >
-              {bypassLoading ? "Åpner uten passord …" : "Hopp over innlogging (midlertidig)"}
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-xl bg-red-600 hover:bg-red-700 transition px-4 py-3 font-semibold text-white disabled:opacity-60 disabled:hover:bg-red-600"
+          >
+            {loading ? "Logger inn …" : "Logg inn"}
+          </button>
         </form>
 
         <div className="mt-6 flex flex-col items-center gap-2 text-center text-sm text-neutral-300">

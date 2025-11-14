@@ -61,10 +61,10 @@ export default function UploadProfilePicture({ memberId, value, onSaved }: Props
     <div className="relative h-full w-full">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={preview || "/images/avatar-placeholder.png"}
+        src={preview || "/Images/follies-logo.jpg"}
         alt="Profilbilde"
         className="h-full w-full object-cover"
-        onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/images/avatar-placeholder.png"; }}
+        onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/Images/follies-logo.jpg"; }}
       />
 
       <button
