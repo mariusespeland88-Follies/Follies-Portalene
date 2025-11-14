@@ -12,6 +12,7 @@ export default function LoginForm() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [bypassing, setBypassing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const resolveRedirect = () => {
@@ -67,6 +68,26 @@ export default function LoginForm() {
     const redirectTo = resolveRedirect();
     router.replace(redirectTo);
     router.refresh();
+  };
+
+  const onBypass = async () => {
+    setErr(null);
+    setBypassing(true);
+    try {
+      const res = await fetch("/api/dev-login", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || "Kunne ikke hoppe over innlogging.");
+      }
+      const redirectTo = resolveRedirect();
+      router.replace(redirectTo);
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+      setErr((error as Error).message || "Kunne ikke hoppe over innlogging.");
+    } finally {
+      setBypassing(false);
+    }
   };
 
   return (
@@ -128,11 +149,22 @@ export default function LoginForm() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || bypassing}
             className="w-full rounded-xl bg-red-600 hover:bg-red-700 transition px-4 py-3 font-semibold text-white disabled:opacity-60 disabled:hover:bg-red-600"
           >
             {loading ? "Logger inn …" : "Logg inn"}
           </button>
+          <button
+            type="button"
+            onClick={onBypass}
+            disabled={loading || bypassing}
+            className="w-full rounded-xl border border-white/20 bg-white/5 hover:bg-white/10 transition px-4 py-3 font-semibold text-white disabled:opacity-60"
+          >
+            {bypassing ? "Åpner portalen …" : "Hopp over innlogging (midlertidig)"}
+          </button>
+          <p className="text-xs text-neutral-400 text-center">
+            Midlertidig snarvei – logg ut når portalen er testet.
+          </p>
         </form>
 
         <div className="mt-6 flex flex-col items-center gap-2 text-center text-sm text-neutral-300">

@@ -13,6 +13,7 @@ export async function middleware(req: NextRequest) {
 
   const { pathname, searchParams } = req.nextUrl;
   const lowerPath = pathname.toLowerCase();
+  const hasBypass = req.cookies.get("dev_bypass")?.value === "1";
 
   // Hvilke ruter er offentlige
   const isPublicPath =
@@ -25,7 +26,7 @@ export async function middleware(req: NextRequest) {
     lowerPath.startsWith("/_next");
 
   // Ikke innlogget → send til /login (behold cookies fra res)
-  if (!session && !isPublicPath) {
+  if (!session && !hasBypass && !isPublicPath) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set(
@@ -39,7 +40,7 @@ export async function middleware(req: NextRequest) {
   }
 
   // Innlogget → hold dem unna /login
-  if (session && lowerPath === "/login") {
+  if ((session || hasBypass) && lowerPath === "/login") {
     const url = req.nextUrl.clone();
     url.pathname = "/dashboard";
     const redirectRes = NextResponse.redirect(url);

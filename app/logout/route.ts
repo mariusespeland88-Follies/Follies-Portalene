@@ -5,5 +5,15 @@ import { createClient } from '@/lib/supabase/route';
 export async function POST() {
   const supabase = createClient();
   await supabase.auth.signOut();
-  return NextResponse.json({ ok: true });
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set({
+    name: "dev_bypass",
+    value: "",
+    path: "/",
+    sameSite: "lax",
+    maxAge: 0,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+  });
+  return res;
 }

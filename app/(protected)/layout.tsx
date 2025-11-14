@@ -1,5 +1,6 @@
 import * as React from "react";
 import SupabaseBridge from "@/components/SupabaseBridge";
+import Navbar from "@/app/components/Navbar";
 
 /**
  * (protected) layout
@@ -11,6 +12,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   return (
     <>
       <SupabaseBridge />
+      <Navbar />
       {children}
     </>
   );
