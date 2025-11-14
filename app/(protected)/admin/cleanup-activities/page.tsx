@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClientComponentClient } from "@/lib/supabase/browser";
 
 type AnyObj = Record<string, any>;
 type DbActivity = { id: string; name?: string | null; type?: string | null; archived?: boolean | null };

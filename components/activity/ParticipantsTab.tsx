@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClientComponentClient } from "@/lib/supabase/browser";
 
 type Member = { id: string; first_name?: string | null; last_name?: string | null; email?: string | null };
 type RawMember = { id?: any; first_name?: any; last_name?: any; email?: any };

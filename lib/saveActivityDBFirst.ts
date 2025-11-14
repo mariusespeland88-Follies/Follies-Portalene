@@ -1,6 +1,6 @@
 // lib/activity/saveActivityDBFirst.ts
 "use client";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClientComponentClient } from "@/lib/supabase/browser";
 
 const LS_ACT_V1 = "follies.activities.v1";
 const LS_ACT_OLD = "follies.activities";

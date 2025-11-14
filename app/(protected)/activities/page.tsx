@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClientComponentClient } from "@/lib/supabase/browser";
 
 type AnyObj = Record<string, any>;
 type ActivityType = "offer" | "event" | "show";

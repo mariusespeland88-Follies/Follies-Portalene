@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+import { createRouteHandlerClient } from "@/lib/supabase/handlers";
 
 // Håndter lagring fra Rediger-siden
 export async function PUT(req: Request, { params }: { params: { id: string } }) {

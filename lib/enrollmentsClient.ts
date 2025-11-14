@@ -1,7 +1,7 @@
 // lib/enrollmentsClient.ts
 "use client";
 
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClientComponentClient } from "@/lib/supabase/browser";
 
 /** Typer som aktivitetssiden forventer */
 export type Member = {

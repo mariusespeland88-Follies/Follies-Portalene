@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
+import { createMiddlewareClient } from "@/lib/supabase/handlers";
 
 export async function middleware(req: NextRequest) {
   // Viktig: bruk denne responsen slik at Supabase kan lese/skrive cookies

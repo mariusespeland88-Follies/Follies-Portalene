@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClientComponentClient } from "@/lib/supabase/browser";
 
 type AnyObj = Record<string, any>;
 type ActivityType = "offer" | "event" | "show";

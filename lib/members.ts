@@ -14,7 +14,7 @@
 //
 // Avhengighet: lib/supabase/client.ts (må allerede finnes i prosjektet)
 
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createClientComponentClient } from '@/lib/supabase/browser'
 
 /** ======== Typer ======== */
 
