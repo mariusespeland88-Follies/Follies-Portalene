@@ -1,5 +1,6 @@
 import * as React from "react";
 import SupabaseBridge from "@/components/SupabaseBridge";
+import AppHeader from "@/components/Layout/AppHeader";
 
 /**
  * (protected) layout
@@ -10,9 +11,10 @@ import SupabaseBridge from "@/components/SupabaseBridge";
 
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   return (
-    <>
+    <div className="min-h-screen bg-gray-900 text-gray-100">
       <SupabaseBridge />
-      {children}
-    </>
+      <AppHeader />
+      <main className="pb-16">{children}</main>
+    </div>
   );
 }
