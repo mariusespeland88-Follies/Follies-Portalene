@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import getSupabaseBrowserClient from "@/lib/supabase/client";
 
 type AnyObj = Record<string, any>;
 type ActivityType = "offer" | "event" | "show";
@@ -21,11 +22,90 @@ const LS_COVERS = "follies.activityCovers.v1"; // { [activityId]: { dataUrl, mim
 
 const safeJSON = <T,>(s: string | null): T | null => { try { return s ? (JSON.parse(s) as T) : null; } catch { return null; } };
 
-const slugify = (s: string) =>
-  s.toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+function slugify(s: string) {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
     .replace(/--+/g, "-");
+}
+
+const hasWindow = () => typeof window !== "undefined";
+
+const activityIdKey = (obj: AnyObj | null | undefined, fallback: string): string => {
+  if (!obj) return fallback;
+  const candidate =
+    obj.id ??
+    obj.uuid ??
+    obj._id ??
+    obj.activityId ??
+    obj.activity_id ??
+    obj.slug ??
+    obj.slugified ??
+    null;
+  if (candidate === undefined || candidate === null) return fallback;
+  const key = String(candidate).trim();
+  return key || fallback;
+};
+
+function readActivityStore(): AnyObj[] {
+  if (!hasWindow()) return [];
+  const v1 = safeJSON<AnyObj[]>(localStorage.getItem(LS_ACT_V1)) ?? [];
+  const old = safeJSON<AnyObj[]>(localStorage.getItem(LS_ACT_OLD)) ?? [];
+  const map = new Map<string, AnyObj>();
+  [...old, ...v1].forEach((item, idx) => {
+    const key = activityIdKey(item, `ls-${idx}`);
+    map.set(key, item);
+  });
+  return Array.from(map.values());
+}
+
+function writeActivityStore(list: AnyObj[]): void {
+  if (!hasWindow()) return;
+  const arr = Array.isArray(list) ? list : [];
+  const json = JSON.stringify(arr);
+  localStorage.setItem(LS_ACT_V1, json);
+  localStorage.setItem(LS_ACT_OLD, json);
+}
+
+function mergeActivityRecords(primary: AnyObj[], fallback: AnyObj[]): AnyObj[] {
+  const map = new Map<string, AnyObj>();
+  fallback.forEach((item, idx) => {
+    const key = activityIdKey(item, `fb-${idx}`);
+    map.set(key, item);
+  });
+  primary.forEach((item, idx) => {
+    const key = activityIdKey(item, `db-${idx}`);
+    const prev = map.get(key) || {};
+    map.set(key, { ...prev, ...item });
+  });
+  return Array.from(map.values());
+}
+
+function normalizeActivitiesFromRaw(list: AnyObj[]): Activity[] {
+  const normalized = list.map((a, idx) => {
+    const id = activityIdKey(a, `a-${idx}`);
+    const name = a?.name ?? a?.title ?? a?.navn ?? a?.programName ?? `Aktivitet ${id}`;
+    const rawType = String(a?.type ?? a?.category ?? a?.kategori ?? "").toLowerCase();
+
+    let type: ActivityType = "offer";
+    if (rawType.includes("forest")) type = "show";
+    else if (rawType.includes("event") || rawType.includes("konsert") || rawType.includes("åpen") || rawType.includes("open")) type = "event";
+    else type = "offer";
+
+    const archived = !!(a?.archived || a?.is_archived || String(a?.status || "").toLowerCase() === "archived");
+    const slugSource = a?.slug ?? a?.seo_slug ?? null;
+    const slug = slugSource ? String(slugSource) : slugify(name);
+
+    return { id, name, type, archived, slug, raw: a };
+  });
+
+  const map = new Map<string, Activity>();
+  for (const entry of normalized) map.set(entry.id, entry);
+  return Array.from(map.values());
+}
 
 const pickFirst = (obj: AnyObj | null | undefined, keys: string[]): any => {
   if (!obj) return null;
@@ -54,7 +134,12 @@ function firstUrlLike(v: any): string | null {
 }
 
 function readCoverStore(): Record<string, { dataUrl: string; mime: string; updated_at: string }> {
-  return safeJSON<Record<string, { dataUrl: string; mime: string; updated_at: string }>>(localStorage.getItem(LS_COVERS)) ?? {};
+  if (!hasWindow()) return {};
+  return (
+    safeJSON<Record<string, { dataUrl: string; mime: string; updated_at: string }>>(
+      localStorage.getItem(LS_COVERS)
+    ) ?? {}
+  );
 }
 
 /** Hent cover: prioriter opplastet cover; ellers fallbacks fra aktivitetens egne felt; ellers logo */
@@ -75,47 +160,58 @@ function coverOf(a: Activity): string {
   return candidates.find(Boolean) || "/Images/follies-logo.jpg";
 }
 
-/** Normaliser aktiviteter fra begge nøkler */
-function normalizeActivities(): Activity[] {
-  const v1 = safeJSON<any[]>(localStorage.getItem(LS_ACT_V1)) ?? [];
-  const old = safeJSON<any[]>(localStorage.getItem(LS_ACT_OLD)) ?? [];
-  const merged = [...old, ...v1];
-
-  const norm = merged.map((a, i) => {
-    const id = String(a?.id ?? a?.uuid ?? a?._id ?? `a-${i}`);
-    const name = a?.name ?? a?.title ?? a?.navn ?? a?.programName ?? `Aktivitet ${id}`;
-    const rawType = String(a?.type ?? a?.category ?? a?.kategori ?? "").toLowerCase();
-
-    let type: ActivityType = "offer";
-    if (rawType.includes("forest")) type = "show";               // forestilling
-    else if (rawType.includes("event") || rawType.includes("konsert") || rawType.includes("åpen") || rawType.includes("open")) type = "event";
-    else type = "offer";
-
-    const archived = !!(a?.archived || a?.is_archived || String(a?.status || "").toLowerCase() === "archived");
-    const slug = String(a?.slug ?? a?.seo_slug ?? slugify(name));
-    return { id, name, type, archived, slug, raw: a };
-  });
-
-  const map = new Map<string, Activity>();
-  for (const a of norm) map.set(a.id, a);
-  return Array.from(map.values());
-}
-
 export default function ActivitiesPage() {
   const [all, setAll] = useState<Activity[]>([]);
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<ActivityType>("offer");
 
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
+
+  const refreshFromStorage = useCallback(() => {
+    setAll(normalizeActivitiesFromRaw(readActivityStore()));
+  }, []);
+
   useEffect(() => {
-    setAll(normalizeActivities());
+    refreshFromStorage();
     const onStorage = (e: StorageEvent) => {
       if ([LS_ACT_V1, LS_ACT_OLD, LS_FILES, LS_COVERS].includes(e.key || "")) {
-        setAll(normalizeActivities());
+        refreshFromStorage();
       }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  }, [refreshFromStorage]);
+
+  const loadFromSupabase = useCallback(async () => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData?.session) return;
+
+      const { data, error } = await supabase.from("activities").select("*");
+      if (error) throw error;
+
+      const rows = Array.isArray(data) ? data : [];
+      const normalizedRows = rows.map((row, idx) => ({
+        ...row,
+        id: activityIdKey(row as AnyObj, `db-${idx}`),
+      }));
+
+      const merged = mergeActivityRecords(normalizedRows, readActivityStore());
+      writeActivityStore(merged);
+      setAll(normalizeActivitiesFromRaw(merged));
+    } catch {
+      // behold lokal data hvis Supabase ikke svarer
+    }
+  }, [supabase]);
+
+  useEffect(() => {
+    loadFromSupabase();
+    const handler = () => loadFromSupabase();
+    try { window.addEventListener("follies:auth-sync", handler); } catch {}
+    return () => {
+      try { window.removeEventListener("follies:auth-sync", handler); } catch {}
+    };
+  }, [loadFromSupabase]);
 
   const filtered = useMemo(() => {
     const list = all.filter((a) => a.type === tab && !a.archived);
