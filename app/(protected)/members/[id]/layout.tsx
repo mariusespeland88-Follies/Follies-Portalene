@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { useEffect } from "react";
-import getSupabaseBrowserClient from "@/lib/supabase/client";
 
 /**
  * Per-rute layout for /members/[id]
@@ -25,7 +24,6 @@ function writeMembersLS(list: AnyObj[]) { writeLS(MEM_V1, Array.isArray(list) ? 
 function readPermsLS(): Perms { return parseJSON<Perms>(readLS(PERMS), {}); }
 function writePermsLS(p: Perms) { writeLS(PERMS, p || {}); }
 function memberId(m: AnyObj): string { return String(m?.id ?? m?.uuid ?? m?._id ?? m?.memberId ?? ""); }
-function isUUID(s: string): boolean { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s); }
 
 function MemberDBSyncInline({ idParam }: { idParam: string }) {
   useEffect(() => {
@@ -33,40 +31,42 @@ function MemberDBSyncInline({ idParam }: { idParam: string }) {
 
     async function run() {
       try {
-        const supabase = getSupabaseBrowserClient();
-
-        // Kun forsøk hvis vi faktisk har session (ellers stopper RLS oss)
-        const { data: sess } = await supabase.auth.getSession();
-        if (!sess.session) return;
-
-        let query = supabase
-          .from("members")
-          .select("id, first_name, last_name, email, phone, avatar_url, created_at, member_roles ( role )");
-
         const raw = String(idParam || "");
-        if (isUUID(raw)) query = query.eq("id", raw).limit(1);
-        else if (raw.includes("@")) query = query.ilike("email", raw).limit(1);
-        else query = query.eq("id", raw).limit(1);
+        if (!raw) return;
 
-        const { data, error } = await query;
-        if (error || !data || data.length === 0 || cancelled) return;
+        const qs = new URLSearchParams();
+        qs.set(raw.includes("@") ? "email" : "id", raw);
+        qs.set("limit", "1");
 
-        const m = data[0] as any;
+        const res = await fetch(`/api/members/list?${qs.toString()}`, {
+          cache: "no-store",
+        });
+        if (!res.ok || cancelled) return;
+
+        const payload = await res.json().catch(() => ({}));
+        const rows = Array.isArray(payload?.members) ? (payload.members as AnyObj[]) : [];
+        const m = rows[0];
+        if (!m) return;
+
         const norm: AnyObj = {
           id: m.id,
           first_name: m.first_name ?? "",
-          last_name:  m.last_name  ?? "",
-          email:      m.email      ?? "",
-          phone:      m.phone      ?? "",
+          last_name: m.last_name ?? "",
+          email: m.email ?? "",
+          phone: m.phone ?? "",
           avatar_url: m.avatar_url ?? "",
           created_at: m.created_at ?? null,
         };
-        const roles: string[] = Array.isArray(m.member_roles) ? m.member_roles.map((r: any) => String(r.role)) : [];
+        const id = memberId(norm);
+        const rolesEntry = id ? payload?.roles?.[id] : null;
+        const roles: string[] = Array.isArray(rolesEntry?.roles)
+          ? rolesEntry.roles.map((r: any) => String(r))
+          : [];
 
         // Merge til LS (DB vinner på felter den har)
         const all = readMembersLS();
         const map = new Map(all.map((x) => [memberId(x), x]));
-        const id = memberId(norm);
+        if (!id) return;
         const prev = map.get(id) || {};
         map.set(id, { ...prev, ...norm });
         writeMembersLS(Array.from(map.values()));

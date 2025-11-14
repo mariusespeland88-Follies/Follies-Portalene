@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import getSupabaseBrowserClient from "@/lib/supabase/client";
 
 /**
  * Medlemmer – Indigo/Sky “Bold Glow”
@@ -260,47 +259,26 @@ export default function MembersPage() {
   // Hent fra Supabase + speil DB → LS (uendret)
   async function loadFromSupabase() {
     try {
-      const supabase = getSupabaseBrowserClient();
-      const sess = await supabase.auth.getSession();
-      if (!sess.data.session) {
-        setListDB([]); setPermsDB({});
+      const res = await fetch("/api/members/list", { cache: "no-store" });
+      if (!res.ok) {
+        setListDB([]);
+        setPermsDB({});
         return;
       }
 
-      const { data, error } = await supabase
-        .from("members")
-        .select("id, first_name, last_name, email, phone, avatar_url, created_at, member_roles ( role )");
+      const payload = await res.json().catch(() => ({}));
+      const list = Array.isArray(payload?.members) ? (payload.members as AnyObj[]) : [];
+      const rolesMap: Perms = payload?.roles && typeof payload.roles === "object" ? payload.roles : {};
 
-      if (error) {
-        setListDB([]); setPermsDB({});
-        return;
-      }
-
-      const list = (data ?? []) as any[];
-      const normalized: AnyObj[] = list.map((m) => ({
-        id: m.id,
-        first_name: m.first_name ?? "",
-        last_name:  m.last_name  ?? "",
-        email:      m.email      ?? "",
-        phone:      m.phone      ?? "",
-        avatar_url: m.avatar_url ?? "",
-        created_at: m.created_at ?? null,
-      }));
-      const rolesMap: Perms = {};
-      for (const m of list) {
-        const id = String(m.id);
-        const roles = Array.isArray(m.member_roles) ? m.member_roles.map((r: any) => String(r.role)) : [];
-        rolesMap[id] = { roles };
-      }
-
-      setListDB(normalized);
+      setListDB(list);
       setPermsDB(rolesMap);
 
       // SPEIL til LS (merge per id – DB vinner)
       const currentLS = readMembersLS();
       const lsMap = new Map(currentLS.map((m) => [memberId(m), m]));
-      for (const m of normalized) {
+      for (const m of list) {
         const id = memberId(m);
+        if (!id) continue;
         const prev = lsMap.get(id) || {};
         lsMap.set(id, { ...prev, ...m });
       }
@@ -310,11 +288,19 @@ export default function MembersPage() {
 
       // og roller
       const curPerms = readPermsLS();
-      const nextPerms: Perms = { ...curPerms, ...rolesMap };
+      const nextPerms: Perms = { ...curPerms };
+      for (const [id, value] of Object.entries(rolesMap)) {
+        nextPerms[id] = { roles: Array.isArray(value?.roles) ? value.roles : [] };
+      }
       writePermsLS(nextPerms);
       setPermsLS(nextPerms);
+
+      try {
+        window.dispatchEvent(new CustomEvent("follies:member-sync"));
+      } catch {}
     } catch {
-      setListDB([]); setPermsDB({});
+      setListDB([]);
+      setPermsDB({});
     }
   }
 

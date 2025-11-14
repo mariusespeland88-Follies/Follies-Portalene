@@ -97,31 +97,65 @@ export default function AppHeader() {
 
     if (sessionEmail) {
       try {
-        const { data: rows, error } = await supabase
-          .from("members")
-          .select(
-            "first_name, last_name, full_name, name, email, member_roles ( role )"
-          )
-          .ilike("email", sessionEmail)
-          .limit(1);
+        const qs = new URLSearchParams();
+        qs.set("email", sessionEmail);
+        qs.set("limit", "1");
 
-        if (!error && rows && rows.length > 0) {
-          const record = rows[0] as any;
-          nameFromDB =
-            combineName(
-              record.first_name,
-              record.last_name,
-              record.full_name ?? record.name ?? null
-            ) || null;
+        const res = await fetch(`/api/members/list?${qs.toString()}`, {
+          cache: "no-store",
+        });
 
-          const roles = Array.isArray(record.member_roles)
-            ? record.member_roles.map((role: any) =>
-                String(role.role ?? role).toLowerCase()
-              )
+        if (res.ok) {
+          const payload = await res.json().catch(() => ({}));
+          const rows = Array.isArray(payload?.members)
+            ? (payload.members as any[])
             : [];
+          const record = rows[0];
+          if (record) {
+            nameFromDB =
+              combineName(record.first_name, record.last_name, null) || null;
 
-          if (roles.includes("admin")) {
-            setIsAdminDirectDB(true);
+            const id = String(record.id ?? "");
+            const rolesEntry = payload?.roles?.[id];
+            const roles = Array.isArray(rolesEntry?.roles)
+              ? rolesEntry.roles.map((role: any) =>
+                  String(role ?? "").toLowerCase()
+                )
+              : [];
+            if (roles.includes("admin")) {
+              setIsAdminDirectDB(true);
+            }
+
+            // Hold localStorage i synk slik at resten av appen har et fallback.
+            try {
+              const raw = window.localStorage.getItem("follies.members.v1");
+              const list = raw ? JSON.parse(raw) : [];
+              const map = new Map(
+                Array.isArray(list)
+                  ? list.map((item: any) => [String(item?.id ?? item?.uuid ?? item?._id ?? ""), item])
+                  : []
+              );
+              if (id) {
+                const prev = map.get(id) || {};
+                map.set(id, { ...prev, ...record });
+                window.localStorage.setItem(
+                  "follies.members.v1",
+                  JSON.stringify(Array.from(map.values()))
+                );
+
+                const permsRaw = window.localStorage.getItem(
+                  "follies.perms.v1"
+                );
+                const perms = permsRaw ? JSON.parse(permsRaw) : {};
+                perms[id] = { roles };
+                window.localStorage.setItem(
+                  "follies.perms.v1",
+                  JSON.stringify(perms)
+                );
+              }
+            } catch {
+              /* noop */
+            }
           }
         }
       } catch {
