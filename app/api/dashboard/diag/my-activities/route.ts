@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const db = createClient(supabaseUrl, serviceRoleKey);
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url, "http://localhost"); // FIX: robust parsing
@@ -30,6 +26,13 @@ export async function GET(req: NextRequest) {
   };
 
   try {
+    const db = getSupabaseServiceRoleClient();
+    if (!db) {
+      detail.ok = false;
+      detail.notes.push("Supabase mangler konfigurasjon");
+      return NextResponse.json(detail, { status: 500 });
+    }
+
     // via e-post
     if (email) {
       const { data, error } = await db

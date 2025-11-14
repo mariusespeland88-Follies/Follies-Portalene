@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const db = createClient(supabaseUrl, serviceRoleKey);
-
 export async function POST(req: NextRequest) {
   try {
+    const db = getSupabaseServiceRoleClient();
+    if (!db) {
+      return NextResponse.json({ ok: false, error: "Server mangler Supabase-konfig." }, { status: 500 });
+    }
+
     const body = await req.json();
     const email = String(body?.email || "").trim();
     const displayName = String(body?.displayName || "").trim(); // NYTT: navn fra dashboard
@@ -62,10 +63,12 @@ export async function POST(req: NextRequest) {
         if (candidateActivityIds.length) {
           const ids = candidateActivityIds;
           for (const cand of byName) {
+            const candId = cand?.id ? String(cand.id) : "";
+            if (!candId) continue;
             const { data: used } = await db
               .from("enrollments")
               .select("id")
-              .eq("member_id", cand.id)
+              .eq("member_id", candId)
               .in("activity_id", ids)
               .limit(1);
             if (Array.isArray(used) && used.length) {
@@ -75,10 +78,14 @@ export async function POST(req: NextRequest) {
           }
         }
         // Sett e-post hvis den mangler eller er tom/annen casing
-        if (!chosen.email || chosen.email.toLowerCase() !== email.toLowerCase()) {
-          await db.from("members").update({ email }).eq("id", chosen.id);
+        const chosenId = chosen?.id ? String(chosen.id) : "";
+        const chosenEmail = typeof chosen?.email === "string" ? chosen.email : "";
+        if (!chosenEmail || chosenEmail.toLowerCase() !== email.toLowerCase()) {
+          if (chosenId) {
+            await db.from("members").update({ email }).eq("id", chosenId);
+          }
         }
-        return NextResponse.json({ ok: true, memberId: chosen.id, matched: "name" });
+        return NextResponse.json({ ok: true, memberId: chosenId || chosen.id, matched: "name" });
       }
     }
 
@@ -96,7 +103,8 @@ export async function POST(req: NextRequest) {
         .in("activity_id", candidateActivityIds)
         .limit(1);
 
-      const firstRow: RawEnrollment | undefined = Array.isArray(viaEnr) ? viaEnr[0] : undefined;
+      const rows = Array.isArray(viaEnr) ? (viaEnr as RawEnrollment[]) : [];
+      const firstRow: RawEnrollment | undefined = rows[0];
       const joinedMember = firstRow?.members;
       const joinedMemberId = Array.isArray(joinedMember) ? joinedMember[0]?.id : joinedMember?.id;
 
@@ -105,7 +113,8 @@ export async function POST(req: NextRequest) {
       if (mId) {
         // Sett e-post hvis mangler/ulik
         const { data: mRow } = await db.from("members").select("email").eq("id", mId).maybeSingle();
-        if (!mRow?.email || mRow.email.toLowerCase() !== email.toLowerCase()) {
+        const existingEmail = typeof mRow?.email === "string" ? mRow.email : "";
+        if (!existingEmail || existingEmail.toLowerCase() !== email.toLowerCase()) {
           await db.from("members").update({ email }).eq("id", mId);
         }
         return NextResponse.json({ ok: true, memberId: mId, matched: "enrollment" });

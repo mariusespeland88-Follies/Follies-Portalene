@@ -10,6 +10,8 @@ export type ActivityLike = {
   name?: string;
   type?: string;
   archived?: boolean;
+  has_guests?: boolean | null;
+  has_attendance?: boolean | null;
   [k: string]: any;
 };
 
@@ -18,6 +20,8 @@ export type Activity = {
   name: string;
   type: string;
   archived?: boolean;
+  has_guests?: boolean | null;
+  has_attendance?: boolean | null;
   [k: string]: any;
 };
 
@@ -94,6 +98,19 @@ export async function saveActivity(a: ActivityLike): Promise<Activity> {
 
   const current = loadAllFromLocalStorage();
 
+  const hasGuestsValue =
+    typeof a.has_guests === "boolean"
+      ? a.has_guests
+      : typeof (a as any).hasGuests === "boolean"
+      ? (a as any).hasGuests
+      : false;
+  const hasAttendanceValue =
+    typeof a.has_attendance === "boolean"
+      ? a.has_attendance
+      : typeof (a as any).hasAttendance === "boolean"
+      ? (a as any).hasAttendance
+      : false;
+
   const idx = current.findIndex((x) => String(x.id) === String(id));
   const next: Activity = {
     ...a,
@@ -101,6 +118,8 @@ export async function saveActivity(a: ActivityLike): Promise<Activity> {
     name: (a.name ?? "").toString(),
     type: (a.type ?? "").toString(),
     archived: a.archived ?? false,
+    has_guests: hasGuestsValue,
+    has_attendance: hasAttendanceValue,
   };
 
   if (idx >= 0) {

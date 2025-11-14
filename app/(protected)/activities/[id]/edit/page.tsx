@@ -19,6 +19,8 @@ export default function ActivityEditPage() {
   const [type, setType] = useState<ActivityType>("tilbud"); // behold norsk type i UI
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+  const [hasGuests, setHasGuests] = useState(false);
+  const [hasAttendance, setHasAttendance] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -31,6 +33,8 @@ export default function ActivityEditPage() {
           setType((act.type as ActivityType) ?? "tilbud");
           setStartDate(act.start_date ?? "");
           setEndDate(act.end_date ?? "");
+          setHasGuests(Boolean((act as any)?.has_guests));
+          setHasAttendance(Boolean((act as any)?.has_attendance));
         }
       } finally {
         setLoading(false);
@@ -38,24 +42,47 @@ export default function ActivityEditPage() {
     })();
   }, [id]);
 
+  useEffect(() => {
+    if (!String(type ?? "").toLowerCase().includes("event")) {
+      setHasGuests(false);
+      setHasAttendance(false);
+    }
+  }, [type]);
+
   const onSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(null);
     setSaving(true);
     try {
-      const res = await saveActivity({
-        id: String(id),
+      const isEvent = String(type ?? "").toLowerCase().includes("event");
+      const payload = {
         name,
         description,
-        type, // ← samme som før; activitiesClient håndterer mapping
+        type,
         start_date: startDate || null,
         end_date: endDate || null,
-      });
-      if (!res?.data) {
-        setErr("Klarte ikke å lagre.");
-        return;
+        has_guests: isEvent ? hasGuests : false,
+        has_attendance: isEvent ? hasAttendance : false,
+      };
+
+      if (id) {
+        const response = await fetch(`/api/activities/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(json?.error || "Klarte ikke å lagre i databasen.");
+        }
       }
-      router.push(`/activities/${res.data.id}`);
+
+      await saveActivity({
+        id: String(id),
+        ...payload,
+      });
+
+      router.push(`/activities/${id}`);
     } catch (e: any) {
       setErr(e?.message || "Klarte ikke å lagre.");
     } finally {
@@ -146,6 +173,32 @@ export default function ActivityEditPage() {
                 Velg <b>Forestilling</b> for produksjoner, <b>Tilbud</b> for løpende grupper, og <b>Event</b> for enkeltarrangementer.
               </p>
             </div>
+
+            {String(type ?? "").toLowerCase().includes("event") && (
+              <div className="md:col-span-2 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+                <h3 className="text-sm font-semibold text-neutral-900">Event-valg</h3>
+                <div className="mt-3 space-y-3 text-sm text-neutral-800">
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={hasGuests}
+                      onChange={(e) => setHasGuests(e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                    />
+                    <span>Har gjester (f.eks. familier på Julaften)</span>
+                  </label>
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={hasAttendance}
+                      onChange={(e) => setHasAttendance(e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                    />
+                    <span>Har innsjekk / oppmøte</span>
+                  </label>
+                </div>
+              </div>
+            )}
 
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-neutral-800">Beskrivelse</label>

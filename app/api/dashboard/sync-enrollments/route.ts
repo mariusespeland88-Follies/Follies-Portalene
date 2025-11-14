@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const db = createClient(supabaseUrl, serviceRoleKey);
-
 export async function POST(req: NextRequest) {
   try {
+    const db = getSupabaseServiceRoleClient();
+    if (!db) {
+      return NextResponse.json({ ok: false, error: "Server mangler Supabase-konfig." }, { status: 500 });
+    }
+
     const body = await req.json();
     const email = String(body?.email || "").trim();
     const role = body?.role === "leader" ? "leader" : "participant";

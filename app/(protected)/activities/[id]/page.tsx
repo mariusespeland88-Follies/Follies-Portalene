@@ -17,9 +17,19 @@ import {
   fetchActivities,
   Activity as DbActivity,
 } from "../../../../lib/activitiesClient";
+import GuestsTab from "./GuestsTab";
+import AttendanceTab from "./AttendanceTab";
 
 type AnyObj = Record<string, any>;
-type Tab = "oversikt" | "deltakere" | "ledere" | "okter" | "filer" | "meldinger";
+type Tab =
+  | "oversikt"
+  | "deltakere"
+  | "ledere"
+  | "okter"
+  | "filer"
+  | "meldinger"
+  | "gjester"
+  | "innsjekk";
 
 type Visuals = { coverUrl: string | null; accent: string | null };
 
@@ -208,6 +218,23 @@ export default function ActivityDetailPage() {
 
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  const showGuestsTab = useMemo(() => {
+    if (!act) return false;
+    const t = String((act as any)?.type ?? "").toLowerCase();
+    return t.includes("event") && Boolean((act as any)?.has_guests);
+  }, [act]);
+
+  const showAttendanceTab = useMemo(() => {
+    if (!act) return false;
+    const t = String((act as any)?.type ?? "").toLowerCase();
+    return t.includes("event") && Boolean((act as any)?.has_attendance);
+  }, [act]);
+
+  useEffect(() => {
+    if (tab === "gjester" && !showGuestsTab) setTab("oversikt");
+    if (tab === "innsjekk" && !showAttendanceTab) setTab("oversikt");
+  }, [showGuestsTab, showAttendanceTab, tab]);
+
   const reloadRoster = async (activityId: string) => {
     const [pRes, lRes] = await Promise.all([
       fetchPeopleForRole(supabase, activityId, "participant"),
@@ -318,6 +345,15 @@ export default function ActivityDetailPage() {
   const gradient = gradientFor(vis.accent, (act as any)?.type);
   const avatar = vis.coverUrl || null;
   const initialsText = initials(act.name);
+  const tabItems: [Tab, string][] = [
+    ["oversikt", "Oversikt"],
+    ["deltakere", `Deltakere (${participants.length})`],
+    ["ledere", `Ledere (${leaders.length})`],
+    ["okter", "Økter"],
+  ];
+  if (showGuestsTab) tabItems.push(["gjester", "Gjester"]);
+  if (showAttendanceTab) tabItems.push(["innsjekk", "Innsjekk"]);
+  tabItems.push(["filer", "Filer"], ["meldinger", "Meldinger"]);
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
@@ -385,16 +421,7 @@ export default function ActivityDetailPage() {
 
       {/* Faner */}
       <div className="mt-6 border-b border-neutral-200 flex gap-6">
-        {(
-          [
-            ["oversikt", "Oversikt"],
-            ["deltakere", `Deltakere (${participants.length})`],
-            ["ledere", `Ledere (${leaders.length})`],
-            ["okter", "Økter"],
-            ["filer", "Filer"],
-            ["meldinger", "Meldinger"],
-          ] as [Tab, string][]
-        ).map(([key, label]) => (
+        {tabItems.map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -492,6 +519,14 @@ export default function ActivityDetailPage() {
                 </ul>
               )}
             </div>
+          )}
+
+          {tab === "gjester" && showGuestsTab && (
+            <GuestsTab activityId={String(act.id)} />
+          )}
+
+          {tab === "innsjekk" && showAttendanceTab && (
+            <AttendanceTab activityId={String(act.id)} activityName={act.name} />
           )}
 
           {tab === "filer" && (

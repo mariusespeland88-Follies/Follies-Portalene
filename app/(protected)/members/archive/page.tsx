@@ -1,17 +1,20 @@
 import Link from 'next/link';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { getSupabaseServiceRoleClient } from '@/lib/supabase/server';
 
 export default async function MembersArchivePage() {
-  const { data, error } = await supabase
-    .from('member')
-    .select('id,first_name,last_name,email,city,created_at')
-    .eq('archived', true)
-    .order('created_at', { ascending: false });
+  const supabase = getSupabaseServiceRoleClient();
+  let data: any[] | null = null;
+  let error: { message: string } | null = null;
+
+  if (supabase) {
+    const response = await supabase
+      .from('member')
+      .select('id,first_name,last_name,email,city,created_at')
+      .eq('archived', true)
+      .order('created_at', { ascending: false });
+    data = response.data as any[] | null;
+    error = response.error;
+  }
 
   const list = data ?? [];
 

@@ -1,14 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs"; // kjør på Node (bra for service-role)
-
-// Les nøkler fra miljøvariabler (server only)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-// Admin-klient (service role omgår RLS)
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,7 +11,8 @@ export async function POST(req: NextRequest) {
     const role: "participant" | "leader" =
       body.role === "leader" ? "leader" : "participant";
 
-    if (!supabaseUrl || !serviceRoleKey) {
+    const supabaseAdmin = getSupabaseServiceRoleClient();
+    if (!supabaseAdmin) {
       return NextResponse.json(
         { error: "Server mangler Supabase-konfig (SERVICE_ROLE/URL)." },
         { status: 500 }
@@ -40,7 +34,9 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     if (findErr) throw findErr;
 
-    if (!existing) {
+    const existingRow = (existing as { id: string } | null) ?? null;
+
+    if (!existingRow) {
       // Opprett ny påmelding med riktig rolle
       const { data, error } = await supabaseAdmin
         .from("enrollments")
@@ -55,7 +51,7 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabaseAdmin
       .from("enrollments")
       .update({ role })
-      .eq("id", existing.id)
+      .eq("id", existingRow.id)
       .select("id, role")
       .single();
     if (error) throw error;
