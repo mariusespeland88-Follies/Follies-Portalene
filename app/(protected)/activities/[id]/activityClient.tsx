@@ -265,6 +265,23 @@ export default function ActivityClient() {
 
   const typeLabel = useMemo(() => labelForType((act as any)?.type), [act]);
 
+  const enrolledIds: string[] = useMemo(() => {
+    const idsFromPeople = [
+      ...leaders.map((m) =>
+        String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id ?? "")
+      ),
+      ...participants.map((m) =>
+        String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id ?? "")
+      ),
+    ].filter(Boolean);
+    const all = new Set<string>([
+      ...idsFromPeople,
+      ...enrLS.leaders.map(String),
+      ...enrLS.participants.map(String),
+    ]);
+    return Array.from(all);
+  }, [leaders, participants, enrLS]);
+
   if (!mounted) return null;                // ⬅️ sørger for ren CSR-path i dev
   if (loading) return <main className="px-4 py-6 text-neutral-900">Laster…</main>;
   if (err) {
@@ -294,19 +311,6 @@ export default function ActivityClient() {
       setLeaders((prev) => [...prev, meObj]);
     }
   };
-
-  const enrolledIds: string[] = useMemo(() => {
-    const idsFromPeople = [
-      ...leaders.map((m) => String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id ?? "")),
-      ...participants.map((m) => String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id ?? "")),
-    ].filter(Boolean);
-    const all = new Set<string>([
-      ...idsFromPeople,
-      ...enrLS.leaders.map(String),
-      ...enrLS.participants.map(String),
-    ]);
-    return Array.from(all);
-  }, [leaders, participants, enrLS]);
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">

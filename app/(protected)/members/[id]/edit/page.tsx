@@ -392,7 +392,7 @@ export default function MemberEditPage() {
             </h2>
             <p className="mt-1 text-xs text-neutral-600">
               Velg om medlemmet skal være deltaker eller leder på de ulike
-              aktivitetene. Velg "Ingen" for å fjerne medlemmet fra en aktivitet.
+              aktivitetene. Velg &quot;Ingen&quot; for å fjerne medlemmet fra en aktivitet.
             </p>
 
             {activities.length === 0 ? (
