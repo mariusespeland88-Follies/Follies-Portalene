@@ -243,10 +243,10 @@ export default function AppHeader() {
         key={href}
         href={href}
         className={cx(
-          "whitespace-nowrap text-sm font-medium transition-colors",
+          "whitespace-nowrap text-base font-semibold transition-colors",
           isActive
-            ? "text-slate-900"
-            : "text-slate-600 hover:text-slate-900"
+            ? "text-white"
+            : "text-white/70 hover:text-white"
         )}
         aria-current={isActive ? "page" : undefined}
       >
@@ -256,31 +256,31 @@ export default function AppHeader() {
   };
 
   return (
-    <header className="relative z-20 border-b border-slate-200 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/80">
-      <div className="relative mx-auto flex h-20 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-        <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-3">
+    <header className="relative z-20 border-b border-slate-800 bg-slate-900 text-white">
+      <div className="relative mx-auto flex h-20 max-w-6xl items-center justify-between gap-6 px-4 sm:px-6">
+        <div className="flex h-full items-center gap-4">
+          <Link href="/" className="flex h-full items-center gap-3">
             <span className="sr-only">Til forsiden</span>
             <img
               src="/Images/follies-logo.jpg"
               alt="Follies"
-              className="h-12 w-auto"
+              className="h-full w-auto max-h-20 object-contain"
             />
           </Link>
           <div className="hidden sm:flex flex-col leading-tight">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.35em] text-slate-400">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.35em] text-white/60">
               Ansattportal
             </span>
-            <span className="text-lg font-semibold text-slate-900">Follies Portal</span>
+            <span className="text-xl font-semibold text-white">Follies Portal</span>
           </div>
         </div>
 
-        <nav className="hidden md:flex items-center gap-6">
+        <nav className="hidden md:flex items-center gap-8">
           {NAV_ITEMS.map((item) => renderNavLink(item.href, item.label))}
           {showAdmin ? (
             <Link
               href="/admin"
-              className="text-slate-600 transition-colors hover:text-slate-900"
+              className="text-white/70 transition-colors hover:text-white"
               title="Admin"
               aria-label="Admin"
             >
@@ -292,7 +292,7 @@ export default function AppHeader() {
                 aria-hidden="true"
                 className={cx(
                   "transition-transform",
-                  pathname?.startsWith("/admin") && "text-slate-900"
+                  pathname?.startsWith("/admin") && "text-white"
                 )}
               >
                 <path d="M12 2l7 3v6c0 5-3.5 9.74-7 11-3.5-1.26-7-6-7-11V5l7-3z" />
@@ -304,18 +304,18 @@ export default function AppHeader() {
         <div className="flex items-center gap-3 text-sm">
           {email ? (
             <>
-              <div className="hidden min-w-[140px] flex-col text-xs leading-tight text-slate-500 sm:flex">
-                <span className="flex items-center gap-2 text-slate-900">
-                  <span className="inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
+              <div className="hidden min-w-[140px] flex-col text-xs leading-tight text-white/60 sm:flex">
+                <span className="flex items-center gap-2 text-white">
+                  <span className="inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
                   Innlogget
                 </span>
-                <span className="max-w-[220px] truncate text-sm text-slate-600">
+                <span className="max-w-[220px] truncate text-sm text-white/80">
                   {displayName || email}
                 </span>
               </div>
               <button
                 onClick={onSignOut}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                className="rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 font-semibold text-white shadow-sm transition hover:bg-white/20"
               >
                 Logg ut
               </button>
@@ -323,7 +323,7 @@ export default function AppHeader() {
           ) : (
             <Link
               href="/login"
-              className="rounded-lg bg-red-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-red-500"
+              className="rounded-lg bg-white px-3 py-1.5 font-semibold text-slate-900 shadow-sm hover:bg-slate-100"
             >
               Logg inn
             </Link>
@@ -331,8 +331,8 @@ export default function AppHeader() {
         </div>
       </div>
 
-      <div className="relative border-t border-slate-200 bg-white md:hidden">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 overflow-x-auto px-4 py-2 text-sm">
+      <div className="relative border-t border-slate-800 bg-slate-900 md:hidden">
+        <div className="mx-auto flex max-w-6xl items-center gap-4 overflow-x-auto px-4 py-3 text-sm">
           {NAV_ITEMS.map((item) => (
             <div key={item.href}>{renderNavLink(item.href, item.label)}</div>
           ))}
@@ -340,8 +340,8 @@ export default function AppHeader() {
             <Link
               href="/admin"
               className={cx(
-                "flex items-center gap-1 whitespace-nowrap text-slate-600 transition-colors hover:text-slate-900",
-                pathname?.startsWith("/admin") && "text-slate-900"
+                "flex items-center gap-1 whitespace-nowrap text-white/70 transition-colors hover:text-white",
+                pathname?.startsWith("/admin") && "text-white"
               )}
               title="Admin"
               aria-label="Admin"
