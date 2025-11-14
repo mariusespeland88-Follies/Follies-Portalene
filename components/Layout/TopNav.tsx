@@ -23,10 +23,10 @@ export default function TopNav({
     pathname === href || pathname.startsWith(href + '/');
 
   return (
-    <div className="mx-auto max-w-6xl flex items-center justify-between p-3">
+    <div className="mx-auto max-w-6xl flex items-center justify-between p-3 text-slate-700">
       {/* Venstre: logo + hovedmeny */}
       <div className="flex items-center gap-3">
-        <a href="/dashboard" className="font-semibold">Follies Ansattportal</a>
+        <a href="/dashboard" className="font-semibold text-slate-900">Follies Ansattportal</a>
         <nav className="hidden sm:flex items-center gap-1">
           {links.map(link => (
             <a
@@ -34,8 +34,8 @@ export default function TopNav({
               href={link.href}
               className={[
                 'px-3 py-1.5 rounded-lg',
-                'text-white/85 hover:text-white hover:bg-white/10',
-                isActive(link.href) ? 'text-white bg-white/15' : '',
+                'text-slate-600 hover:text-slate-900 hover:bg-slate-100',
+                isActive(link.href) ? 'text-slate-900 bg-slate-200' : '',
               ].join(' ')}
             >
               {link.label}
@@ -46,11 +46,11 @@ export default function TopNav({
             <a
               href="/admin"
               title="Admin"
-              className="ml-1 px-2 py-1.5 rounded-lg hover:bg-white/10 inline-flex"
+              className="ml-1 px-2 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 inline-flex"
               aria-label="Admin"
             >
               {/* Skjold-ikon */}
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-white/90">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-current">
                 <path d="M12 2l7 3v6c0 5-3.5 9.5-7 11-3.5-1.5-7-6-7-11V5l7-3zM7 8v3c0 3.7 2.4 7.5 5 8.9 2.6-1.4 5-5.2 5-8.9V8l-5-2.1L7 8z"/>
               </svg>
             </a>
@@ -60,13 +60,13 @@ export default function TopNav({
 
       {/* Høyre: innlogget-indikator + navn + logout */}
       <div className="flex items-center gap-3">
-        <span className="hidden sm:inline-flex items-center gap-1 text-xs text-white/80">
+        <span className="hidden sm:inline-flex items-center gap-1 text-xs text-slate-500">
           <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
           Innlogget
         </span>
-        <span className="text-sm">{displayName}</span>
+        <span className="text-sm text-slate-700">{displayName}</span>
         <form action="/logout" method="post">
-          <button className="text-sm border border-white/20 rounded-lg px-3 py-1.5 hover:bg-white/10">
+          <button className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 hover:bg-slate-100">
             Logg ut
           </button>
         </form>

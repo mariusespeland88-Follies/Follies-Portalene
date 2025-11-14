@@ -11,7 +11,7 @@ import AppHeader from "@/components/Layout/AppHeader";
 
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       <SupabaseBridge />
       <AppHeader />
       <main className="pb-16">{children}</main>

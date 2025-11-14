@@ -93,50 +93,50 @@ export default function LoginForm() {
   };
 
   return (
-    <main className="min-h-[70vh] flex items-center justify-center bg-neutral-900 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-black/60 p-8 shadow-xl border border-white/10">
+    <main className="min-h-[70vh] flex items-center justify-center bg-slate-100 px-4 py-12">
+      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-slate-200">
         <div className="mb-6 text-center">
           <img
             src="/Images/follies-logo.jpg"
             alt="Follies"
-            className="mx-auto h-14 w-auto object-contain"
+            className="mx-auto h-16 w-auto object-contain"
           />
-          <h1 className="mt-4 text-2xl font-bold tracking-tight text-white">Logg inn</h1>
-          <p className="text-sm text-neutral-300">
-            Bruk <span className="text-white font-medium">e-post</span> og passord.
+          <h1 className="mt-4 text-2xl font-bold tracking-tight text-slate-900">Logg inn</h1>
+          <p className="text-sm text-slate-600">
+            Bruk <span className="text-slate-900 font-medium">e-post</span> og passord.
           </p>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm text-neutral-200 mb-1">E-post</label>
+            <label className="block text-sm text-slate-700 mb-1">E-post</label>
             <input
               type="email"
               autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-xl bg-neutral-800 text-white px-4 py-3 outline-none border border-white/10 focus:border-red-500"
+              className="input px-4 py-3"
               placeholder="din@epost.no"
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm text-neutral-200 mb-1">Passord</label>
+            <label className="block text-sm text-slate-700 mb-1">Passord</label>
             <div className="relative">
               <input
                 type={showPw ? "text" : "password"}
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl bg-neutral-800 text-white px-4 py-3 outline-none border border-white/10 focus:border-red-500 pr-12"
+                className="input px-4 py-3 pr-12"
                 placeholder="••••••••"
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowPw((s) => !s)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-neutral-300 hover:text-white"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-slate-500 hover:text-slate-700"
               >
                 {showPw ? "Skjul" : "Vis"}
               </button>
@@ -144,7 +144,7 @@ export default function LoginForm() {
           </div>
 
           {err && (
-            <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-red-200 text-sm">
+            <div className="rounded-lg border border-red-500/40 bg-red-50 px-4 py-3 text-red-700 text-sm">
               {err}
             </div>
           )}
@@ -161,23 +161,23 @@ export default function LoginForm() {
               type="button"
               onClick={bypassLogin}
               disabled={loading || bypassLoading}
-              className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 font-semibold text-white transition hover:bg-white/10 disabled:opacity-60"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
             >
               {bypassLoading ? "Åpner uten passord …" : "Hopp over innlogging (midlertidig)"}
             </button>
           </div>
         </form>
 
-        <div className="mt-6 flex flex-col items-center gap-2 text-center text-sm text-neutral-300">
+        <div className="mt-6 flex flex-col items-center gap-2 text-center text-sm text-slate-600">
           <Link
             href="/forgot-password"
-            className="hover:text-white underline underline-offset-4"
+            className="hover:text-slate-900 underline underline-offset-4"
           >
             Glemt passord?
           </Link>
           <Link
             href="/"
-            className="hover:text-white underline underline-offset-4"
+            className="hover:text-slate-900 underline underline-offset-4"
           >
             Tilbake til forsiden
           </Link>
