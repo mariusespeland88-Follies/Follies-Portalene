@@ -12,7 +12,6 @@ export default function LoginForm() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [bypassLoading, setBypassLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const resolveRedirect = () => {
@@ -70,40 +69,18 @@ export default function LoginForm() {
     router.refresh();
   };
 
-  const bypassLogin = async () => {
-    setErr(null);
-    setBypassLoading(true);
-    try {
-      const res = await fetch("/api/dev-login", { method: "POST" });
-      if (!res.ok) {
-        throw new Error("Kunne ikke hoppe over innloggingen.");
-      }
-      const redirectTo = resolveRedirect();
-      router.replace(redirectTo);
-      router.refresh();
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Kunne ikke hoppe over innloggingen.";
-      setErr(message);
-    } finally {
-      setBypassLoading(false);
-    }
-  };
-
   return (
-    <main className="min-h-[70vh] flex items-center justify-center bg-slate-100 px-4 py-12">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-slate-200">
+    <main className="min-h-[70vh] flex items-center justify-center bg-gradient-to-br from-rose-100 via-white to-red-100 px-4 py-12">
+      <div className="w-full max-w-md rounded-3xl bg-white/90 p-8 shadow-2xl ring-1 ring-red-100 backdrop-blur">
         <div className="mb-6 text-center">
           <img
             src="/Images/follies-logo.jpg"
             alt="Follies"
             className="mx-auto h-16 w-auto object-contain"
           />
-          <h1 className="mt-4 text-2xl font-bold tracking-tight text-slate-900">Logg inn</h1>
+          <h1 className="mt-4 text-2xl font-bold tracking-tight text-slate-900">Velkommen tilbake</h1>
           <p className="text-sm text-slate-600">
-            Bruk <span className="text-slate-900 font-medium">e-post</span> og passord.
+            Logg inn med <span className="text-slate-900 font-medium">e-post</span> og passord.
           </p>
         </div>
 
@@ -152,18 +129,10 @@ export default function LoginForm() {
           <div className="space-y-3">
             <button
               type="submit"
-              disabled={loading || bypassLoading}
-              className="w-full rounded-xl bg-red-600 hover:bg-red-700 transition px-4 py-3 font-semibold text-white disabled:opacity-60 disabled:hover:bg-red-600"
+              disabled={loading}
+              className="btn w-full justify-center py-3 text-base disabled:opacity-60"
             >
               {loading ? "Logger inn …" : "Logg inn"}
-            </button>
-            <button
-              type="button"
-              onClick={bypassLogin}
-              disabled={loading || bypassLoading}
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-            >
-              {bypassLoading ? "Åpner uten passord …" : "Hopp over innlogging (midlertidig)"}
             </button>
           </div>
         </form>
