@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClientComponentClient } from "@/lib/supabase/browser";
 import UploadProfilePicture from "../../../components/UploadProfilePicture";
 
 /* ------------------------------- Typer ------------------------------- */

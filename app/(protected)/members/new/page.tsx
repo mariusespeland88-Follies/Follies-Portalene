@@ -6,7 +6,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClientComponentClient } from "@/lib/supabase/browser";
 
 type AnyObj = Record<string, any>;
 type Activity = { id: string; name: string; type: "offer" | "event"; archived?: boolean };

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClientComponentClient } from "@/lib/supabase/browser";
 import Link from "next/link";
 
 type AnyObj = Record<string, any>;

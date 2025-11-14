@@ -1,7 +1,7 @@
 // app/auth/callback/route.ts
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { createRouteHandlerClient } from '@/lib/supabase/handlers'
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url)

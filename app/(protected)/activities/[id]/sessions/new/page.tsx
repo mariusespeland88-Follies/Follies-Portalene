@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClientComponentClient } from "@/lib/supabase/browser";
 import { getLeaders, getParticipants } from "@/lib/enrollmentsClient"; // ← samme som aktivitets-sidene
 
 type AnyObj = Record<string, any>;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClientComponentClient } from "@/lib/supabase/browser";
 import { hardDeleteActivity } from "@/lib/client/hardDeleteActivity";
 
 type AnyObj = Record<string, any>;
