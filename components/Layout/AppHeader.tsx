@@ -97,31 +97,65 @@ export default function AppHeader() {
 
     if (sessionEmail) {
       try {
-        const { data: rows, error } = await supabase
-          .from("members")
-          .select(
-            "first_name, last_name, full_name, name, email, member_roles ( role )"
-          )
-          .ilike("email", sessionEmail)
-          .limit(1);
+        const qs = new URLSearchParams();
+        qs.set("email", sessionEmail);
+        qs.set("limit", "1");
 
-        if (!error && rows && rows.length > 0) {
-          const record = rows[0] as any;
-          nameFromDB =
-            combineName(
-              record.first_name,
-              record.last_name,
-              record.full_name ?? record.name ?? null
-            ) || null;
+        const res = await fetch(`/api/members/list?${qs.toString()}`, {
+          cache: "no-store",
+        });
 
-          const roles = Array.isArray(record.member_roles)
-            ? record.member_roles.map((role: any) =>
-                String(role.role ?? role).toLowerCase()
-              )
+        if (res.ok) {
+          const payload = await res.json().catch(() => ({}));
+          const rows = Array.isArray(payload?.members)
+            ? (payload.members as any[])
             : [];
+          const record = rows[0];
+          if (record) {
+            nameFromDB =
+              combineName(record.first_name, record.last_name, null) || null;
 
-          if (roles.includes("admin")) {
-            setIsAdminDirectDB(true);
+            const id = String(record.id ?? "");
+            const rolesEntry = payload?.roles?.[id];
+            const roles = Array.isArray(rolesEntry?.roles)
+              ? rolesEntry.roles.map((role: any) =>
+                  String(role ?? "").toLowerCase()
+                )
+              : [];
+            if (roles.includes("admin")) {
+              setIsAdminDirectDB(true);
+            }
+
+            // Hold localStorage i synk slik at resten av appen har et fallback.
+            try {
+              const raw = window.localStorage.getItem("follies.members.v1");
+              const list = raw ? JSON.parse(raw) : [];
+              const map = new Map(
+                Array.isArray(list)
+                  ? list.map((item: any) => [String(item?.id ?? item?.uuid ?? item?._id ?? ""), item])
+                  : []
+              );
+              if (id) {
+                const prev = map.get(id) || {};
+                map.set(id, { ...prev, ...record });
+                window.localStorage.setItem(
+                  "follies.members.v1",
+                  JSON.stringify(Array.from(map.values()))
+                );
+
+                const permsRaw = window.localStorage.getItem(
+                  "follies.perms.v1"
+                );
+                const perms = permsRaw ? JSON.parse(permsRaw) : {};
+                perms[id] = { roles };
+                window.localStorage.setItem(
+                  "follies.perms.v1",
+                  JSON.stringify(perms)
+                );
+              }
+            } catch {
+              /* noop */
+            }
           }
         }
       } catch {
@@ -209,10 +243,8 @@ export default function AppHeader() {
         key={href}
         href={href}
         className={cx(
-          "whitespace-nowrap text-sm font-medium transition-colors",
-          isActive
-            ? "text-slate-900"
-            : "text-slate-600 hover:text-slate-900"
+          "whitespace-nowrap transition-colors",
+          isActive ? "text-white" : "text-white/70 hover:text-white"
         )}
         aria-current={isActive ? "page" : undefined}
       >
@@ -222,31 +254,40 @@ export default function AppHeader() {
   };
 
   return (
-    <header className="relative z-20 border-b border-slate-200 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/80">
-      <div className="relative mx-auto flex h-20 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+    <header className="relative isolate z-20 shadow-lg shadow-black/10">
+      <div
+        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-black via-neutral-900 to-black"
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-red-600/40 via-white/20 to-red-600/40"
+        aria-hidden="true"
+      />
+
+      <div className="relative mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
         <div className="flex items-center gap-3">
           <Link href="/" className="flex items-center gap-3">
             <span className="sr-only">Til forsiden</span>
             <img
               src="/Images/follies-logo.jpg"
               alt="Follies"
-              className="h-12 w-auto"
+              className="h-10 w-auto rounded-md bg-white/5 p-1 shadow-sm ring-1 ring-white/10"
             />
           </Link>
           <div className="hidden sm:flex flex-col leading-tight">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.35em] text-slate-400">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.35em] text-white/40">
               Ansattportal
             </span>
-            <span className="text-lg font-semibold text-slate-900">Follies Portal</span>
+            <span className="text-lg font-semibold text-white">Follies Portal</span>
           </div>
         </div>
 
-        <nav className="hidden md:flex items-center gap-6">
+        <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
           {NAV_ITEMS.map((item) => renderNavLink(item.href, item.label))}
           {showAdmin ? (
             <Link
               href="/admin"
-              className="text-slate-600 transition-colors hover:text-slate-900"
+              className="text-white/70 transition-colors hover:text-white"
               title="Admin"
               aria-label="Admin"
             >
@@ -258,7 +299,7 @@ export default function AppHeader() {
                 aria-hidden="true"
                 className={cx(
                   "transition-transform",
-                  pathname?.startsWith("/admin") && "text-slate-900"
+                  pathname?.startsWith("/admin") && "text-white"
                 )}
               >
                 <path d="M12 2l7 3v6c0 5-3.5 9.74-7 11-3.5-1.26-7-6-7-11V5l7-3z" />
@@ -270,18 +311,18 @@ export default function AppHeader() {
         <div className="flex items-center gap-3 text-sm">
           {email ? (
             <>
-              <div className="hidden min-w-[140px] flex-col text-xs leading-tight text-slate-500 sm:flex">
-                <span className="flex items-center gap-2 text-slate-900">
-                  <span className="inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
+              <div className="hidden min-w-[140px] flex-col text-xs leading-tight text-white/70 sm:flex">
+                <span className="flex items-center gap-2 text-white">
+                  <span className="inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
                   Innlogget
                 </span>
-                <span className="max-w-[220px] truncate text-sm text-slate-600">
+                <span className="max-w-[220px] truncate text-white/80 text-sm">
                   {displayName || email}
                 </span>
               </div>
               <button
                 onClick={onSignOut}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 font-semibold text-white transition hover:bg-white/20"
               >
                 Logg ut
               </button>
@@ -289,7 +330,7 @@ export default function AppHeader() {
           ) : (
             <Link
               href="/login"
-              className="rounded-lg bg-red-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-red-500"
+              className="rounded-lg bg-red-600 px-3 py-1.5 font-semibold text-white shadow hover:bg-red-500"
             >
               Logg inn
             </Link>
@@ -297,7 +338,7 @@ export default function AppHeader() {
         </div>
       </div>
 
-      <div className="relative border-t border-slate-200 bg-white md:hidden">
+      <div className="relative border-t border-white/10 bg-black/70 backdrop-blur md:hidden">
         <div className="mx-auto flex max-w-6xl items-center gap-4 overflow-x-auto px-4 py-2 text-sm">
           {NAV_ITEMS.map((item) => (
             <div key={item.href}>{renderNavLink(item.href, item.label)}</div>
@@ -306,8 +347,8 @@ export default function AppHeader() {
             <Link
               href="/admin"
               className={cx(
-                "flex items-center gap-1 whitespace-nowrap text-slate-600 transition-colors hover:text-slate-900",
-                pathname?.startsWith("/admin") && "text-slate-900"
+                "flex items-center gap-1 whitespace-nowrap text-white/70 transition-colors hover:text-white",
+                pathname?.startsWith("/admin") && "text-white"
               )}
               title="Admin"
               aria-label="Admin"
