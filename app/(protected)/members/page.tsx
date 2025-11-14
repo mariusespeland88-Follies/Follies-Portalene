@@ -102,33 +102,37 @@ function LightHeader({
   me?: { id?: string; member?: AnyObj | null };
 }) {
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-sky-500/70 bg-gradient-to-br from-indigo-200 via-sky-100 to-sky-300">
-      <div className="pointer-events-none absolute -top-16 -left-24 h-56 w-56 rounded-full bg-indigo-500/70 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-20 -right-20 h-64 w-64 rounded-full bg-sky-500/70 blur-3xl" />
-      <div className="relative z-10 p-8">
+    <div className="relative overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-[0_32px_120px_-60px_rgba(0,0,0,0.65)]">
+      <div className="pointer-events-none absolute -top-28 left-10 h-48 w-48 rounded-full bg-red-500/25 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-24 right-10 h-56 w-56 rounded-full bg-neutral-900/20 blur-3xl" />
+      <div className="relative z-10 p-8 sm:p-10">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h1 className="text-4xl font-extrabold tracking-tight text-neutral-900">Medlemmer</h1>
-            <p className="mt-1 text-neutral-800">Administrer alle medlemmer og ledere i Follies.</p>
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:max-w-sm">
+          <div className="space-y-5">
+            <div>
+              <h1 className="text-4xl font-bold tracking-tight text-neutral-900 sm:text-5xl">Medlemmer</h1>
+              <p className="mt-2 max-w-xl text-base text-neutral-600">
+                Administrer alle medlemmer og ledere i Follies.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:max-w-sm">
               <StatPill label="Medlemmer" value={members} />
               <StatPill label="Ledere" value={leaders} />
             </div>
           </div>
           <div className="flex w-full max-w-lg flex-col items-stretch gap-3">
             <Search value={search} onChange={setSearch} />
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {me?.member ? (
                 <a
                   href={`/members/${encodeURIComponent(memberId(me.member!))}/edit`}
-                  className="inline-flex items-center justify-center rounded-xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800"
+                  className="inline-flex items-center justify-center rounded-xl bg-black px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-neutral-800"
                 >
                   Rediger meg
                 </a>
               ) : null}
               <a
                 href="/members/new"
-                className="inline-flex items-center justify-center rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
+                className="inline-flex items-center justify-center rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-500"
               >
                 + Nytt medlem
               </a>
@@ -142,17 +146,17 @@ function LightHeader({
 
 function StatPill({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-2xl border border-indigo-400/80 bg-white/85 px-5 py-4 backdrop-blur">
-      <p className="text-[11px] uppercase tracking-wider text-neutral-700">{label}</p>
-      <p className="text-xl font-bold text-neutral-900">{value}</p>
+    <div className="rounded-2xl border border-neutral-200 bg-neutral-50/90 px-5 py-4 shadow-sm backdrop-blur">
+      <p className="text-[11px] uppercase tracking-[0.32em] text-neutral-500">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-neutral-900">{value}</p>
     </div>
   );
 }
 
 function Tabs({ tab, setTab }: { tab: TabKey; setTab: (t: TabKey) => void }) {
-  const btn = "px-5 py-2 rounded-2xl text-sm font-semibold transition";
+  const btn = "px-6 py-2.5 rounded-2xl text-sm font-semibold transition";
   return (
-    <div className="inline-flex items-center gap-1 rounded-2xl bg-sky-50 p-1 ring-1 ring-sky-300">
+    <div className="inline-flex items-center gap-1 rounded-2xl bg-neutral-200/60 p-1 ring-1 ring-neutral-300">
       {[
         { key: "members", label: "Medlemmer" },
         { key: "leaders", label: "Ledere" },
@@ -164,8 +168,8 @@ function Tabs({ tab, setTab }: { tab: TabKey; setTab: (t: TabKey) => void }) {
             onClick={() => setTab(t.key as TabKey)}
             className={
               active
-                ? `${btn} bg-white shadow-sm text-neutral-900 ring-1 ring-sky-300`
-                : `${btn} text-neutral-800 hover:text-neutral-900 hover:bg-white/70`
+                ? `${btn} bg-black text-white shadow-sm`
+                : `${btn} text-neutral-700 hover:bg-white hover:text-neutral-900`
             }
           >
             {t.label}
@@ -183,10 +187,10 @@ function Search({ value, onChange }: { value: string; onChange: (v: string) => v
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Søk navn, e-post eller rolle…"
-        className="w-full rounded-2xl border border-sky-500 bg-white/95 px-11 py-2.5 text-sm text-neutral-900 outline-none backdrop-blur focus:border-sky-600"
+        className="w-full rounded-2xl border border-neutral-300 bg-white px-11 py-2.5 text-sm text-neutral-900 outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
       />
-      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-        <svg width="16" height="16" viewBox="0 0 24 24" className="fill-sky-600">
+      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-neutral-500">
+        <svg width="16" height="16" viewBox="0 0 24 24" className="fill-current">
           <path d="M10 2a8 8 0 105.293 14.293l4.207 4.207 1.414-1.414-4.207-4.207A8 8 0 0010 2zm0 2a6 6 0 110 12A6 6 0 0110 4z" />
         </svg>
       </div>
@@ -203,8 +207,8 @@ function Avatar({ name }: { name: string }) {
     .join("");
   return (
     <div className="relative">
-      <div className="absolute -inset-1 rounded-3xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-sky-600 opacity-80 blur" />
-      <div className="relative flex h-20 w-20 items-center justify-center rounded-3xl bg-white text-lg font-semibold text-neutral-900 ring-1 ring-sky-500">
+      <div className="absolute -inset-[6px] rounded-[28px] bg-gradient-to-br from-black via-neutral-700 to-red-600 opacity-60 blur" />
+      <div className="relative flex h-20 w-20 items-center justify-center rounded-[22px] bg-neutral-950 text-lg font-semibold text-white shadow-sm ring-1 ring-neutral-800/40">
         {letters || "?"}
       </div>
     </div>
@@ -213,11 +217,11 @@ function Avatar({ name }: { name: string }) {
 
 function Badge({ leader, text }: { leader: boolean; text: string }) {
   return leader ? (
-    <span className="inline-flex items-center rounded-full bg-indigo-600 px-3 py-1 text-[12px] font-semibold text-white shadow-sm">
+    <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-[12px] font-semibold uppercase tracking-wide text-white">
       {text}
     </span>
   ) : (
-    <span className="inline-flex items-center rounded-full bg-sky-100 text-sky-900 px-3 py-1 text-[12px] font-semibold">
+    <span className="inline-flex items-center rounded-full bg-neutral-200 px-3 py-1 text-[12px] font-semibold uppercase tracking-wide text-neutral-800">
       {text}
     </span>
   );
@@ -352,10 +356,7 @@ export default function MembersPage() {
 
   /* ---------------- UI ---------------- */
   return (
-    <div
-      className="mx-auto max-w-7xl p-6 space-y-6
-                 bg-[url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22%3E%3Ccircle cx=%222%22 cy=%222%22 r=%221.2%22 fill=%22%2381a7ff%22/%3E%3C/svg%3E')]"
-    >
+    <div className="mx-auto max-w-7xl space-y-6 p-6">
       <LightHeader
         members={counts.members}
         leaders={counts.leaders}
@@ -370,14 +371,14 @@ export default function MembersPage() {
 
       {/* Grid – brede kort */}
       {filtered.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-sky-500 bg-sky-50 p-10 text-center">
+        <div className="rounded-3xl border border-dashed border-neutral-300 bg-white p-10 text-center shadow-sm">
           <h3 className="text-lg font-semibold text-neutral-900">Ingen treff</h3>
-          <p className="mt-1 text-neutral-800">
+          <p className="mt-1 text-neutral-600">
             {search ? `Fant ingen resultater for “${search}”.` : "Det ligger ingen personer i denne kategorien ennå."}
           </p>
           <a
             href="/members/new"
-            className="mt-4 inline-flex rounded-xl bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+            className="mt-4 inline-flex rounded-xl bg-black px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-neutral-800"
           >
             + Nytt medlem
           </a>
@@ -393,10 +394,10 @@ export default function MembersPage() {
             return (
               <li
                 key={id}
-                className="group relative flex flex-col justify-between overflow-hidden rounded-3xl border border-sky-500 bg-sky-50/85 p-8 shadow-sm ring-1 ring-sky-400 transition hover:-translate-y-0.5 hover:shadow-md min-h-[220px]"
+                className="group relative flex min-h-[220px] flex-col justify-between overflow-hidden rounded-3xl border border-neutral-200 bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:border-neutral-900/80 hover:shadow-xl"
               >
                 {/* toppstripe */}
-                <div className="pointer-events-none absolute left-0 top-0 h-[4px] w-full bg-gradient-to-r from-indigo-700 via-sky-500 to-indigo-700 opacity-95" />
+                <div className="pointer-events-none absolute left-0 top-0 h-[4px] w-full bg-gradient-to-r from-black via-red-600 to-black opacity-90" />
 
                 {/* øvre del: avatar + badge */}
                 <div className="flex items-start justify-between gap-5">
@@ -420,7 +421,7 @@ export default function MembersPage() {
                 <div className="mt-7 flex flex-wrap items-center gap-4">
                   <a
                     href={`/members/${encodeURIComponent(id)}`}
-                    className="inline-flex items-center gap-2 rounded-xl border border-sky-500 bg-sky-100 px-3 py-1.5 text-sm font-semibold text-sky-900 hover:bg-sky-200"
+                    className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 bg-neutral-100 px-3 py-1.5 text-sm font-semibold text-neutral-900 transition hover:border-neutral-400 hover:bg-white"
                   >
                     Åpne
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -429,7 +430,7 @@ export default function MembersPage() {
                   </a>
                   <a
                     href={`/members/${encodeURIComponent(id)}/edit`}
-                    className="inline-flex items-center rounded-xl bg-black px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800"
+                    className="inline-flex items-center rounded-xl bg-black px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-neutral-800"
                   >
                     Rediger
                   </a>

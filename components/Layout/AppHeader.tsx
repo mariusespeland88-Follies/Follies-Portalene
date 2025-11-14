@@ -213,7 +213,7 @@ export default function AppHeader() {
         key={href}
         href={href}
         className={cx(
-          "whitespace-nowrap text-sm font-medium transition-colors",
+          "whitespace-nowrap text-[15px] font-semibold tracking-wide transition-colors",
           isActive
             ? "text-white"
             : "text-white/70 hover:text-white",
@@ -228,25 +228,25 @@ export default function AppHeader() {
 
   return (
     <header className="relative z-20 border-b border-white/10 bg-black text-white">
-      <div className="relative mx-auto flex h-20 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+      <div className="relative mx-auto flex h-24 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
         <div className="flex items-center gap-3">
           <Link href="/" className="flex items-center gap-3">
             <span className="sr-only">Til forsiden</span>
             <img
               src="/Images/follies-logo.jpg"
               alt="Follies"
-              className="h-14 w-auto"
+              className="h-[82px] w-auto sm:h-[88px]"
             />
           </Link>
           <div className="hidden sm:flex flex-col leading-tight">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.35em] text-white/60">
+            <span className="text-[12px] font-semibold uppercase tracking-[0.4em] text-white/60">
               Ansattportal
             </span>
-            <span className="text-lg font-semibold text-white">Follies Portal</span>
+            <span className="text-2xl font-semibold text-white">Follies Portal</span>
           </div>
         </div>
 
-        <nav className="hidden md:flex items-center gap-6">
+        <nav className="hidden md:flex items-center gap-8">
           {NAV_ITEMS.map((item) => renderNavLink(item.href, item.label))}
           {showAdmin ? (
             <Link
@@ -303,9 +303,9 @@ export default function AppHeader() {
       </div>
 
       <div className="relative border-t border-white/10 bg-black md:hidden">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 overflow-x-auto px-4 py-2 text-sm">
+        <div className="mx-auto flex max-w-6xl items-center gap-4 overflow-x-auto px-4 py-3 text-base">
           {NAV_ITEMS.map((item) => (
-            <div key={item.href}>{renderNavLink(item.href, item.label, "text-base")}</div>
+            <div key={item.href}>{renderNavLink(item.href, item.label, "text-lg")}</div>
           ))}
           {showAdmin ? (
             <Link
