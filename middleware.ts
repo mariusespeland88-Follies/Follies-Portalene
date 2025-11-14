@@ -11,8 +11,6 @@ export async function middleware(req: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession();
 
-  const devBypass = req.cookies.get("dev_bypass")?.value === "1";
-
   const { pathname, searchParams } = req.nextUrl;
 
   // Hvilke ruter er offentlige
@@ -26,7 +24,7 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith("/_next");
 
   // Ikke innlogget → send til /login (behold cookies fra res)
-  if (!session && !devBypass && !isPublicPath) {
+  if (!session && !isPublicPath) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set(
@@ -40,7 +38,7 @@ export async function middleware(req: NextRequest) {
   }
 
   // Innlogget → hold dem unna /login
-  if ((session || devBypass) && pathname === "/login") {
+  if (session && pathname === "/login") {
     const url = req.nextUrl.clone();
     url.pathname = "/dashboard";
     const redirectRes = NextResponse.redirect(url);
