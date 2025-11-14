@@ -1,106 +1,190 @@
-// test
 "use client";
 
 import * as React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import getSupabaseBrowserClient from "@/lib/supabase/client";
 import { usePermissions } from "@/hooks/usePermissions";
+
+const NAV_ITEMS = [
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/members", label: "Medlemmer" },
+  { href: "/activities", label: "Aktiviteter" },
+  { href: "/calendar", label: "Kalender" },
+] as const;
+
+function cx(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
+function readLS(key: string): string | null {
+  try {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function parseJSON<T>(raw: string | null, fallback: T): T {
+  try {
+    if (!raw) return fallback;
+    return (JSON.parse(raw) as T) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word[0]?.toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function sanitizePart(part: string | null | undefined) {
+  if (!part) return "";
+  return titleCase(
+    String(part)
+      .replace(/\d+/g, "")
+      .replace(/[_\-.]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+function combineName(
+  firstName?: string | null,
+  lastName?: string | null,
+  fullName?: string | null
+) {
+  const fullSan = sanitizePart(fullName);
+  const fnSan = sanitizePart(firstName);
+  const lnSan = sanitizePart(lastName);
+  const combo = [fnSan, lnSan].filter(Boolean).join(" ").trim();
+  return titleCase(combo || fullSan);
+}
+
+function humanFromEmail(email: string): string {
+  const localPart = email.split("@")[0] || "";
+  const cleaned = localPart
+    .replace(/[._-]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.replace(/\d+/g, ""))
+    .filter(Boolean);
+  const pretty = cleaned.join(" ").trim();
+  return pretty ? titleCase(pretty) : email;
+}
 
 export default function AppHeader() {
   const supabase = React.useMemo(() => getSupabaseBrowserClient(), []);
   const { isAdmin: isAdminFromHook } = usePermissions();
+  const pathname = usePathname();
 
   const [email, setEmail] = React.useState<string | null>(null);
   const [displayName, setDisplayName] = React.useState<string | null>(null);
   const [isAdminDirectDB, setIsAdminDirectDB] = React.useState(false);
 
-  function readLS(key: string): string | null {
-    try { return localStorage.getItem(key); } catch { return null; }
-  }
-  function parseJSON<T>(raw: string | null, fb: T): T {
-    try { return raw ? (JSON.parse(raw) as T) : fb; } catch { return fb; }
-  }
-  function titleCase(s: string): string {
-    if (!s) return s;
-    return s
-      .split(/\s+/)
-      .map((w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w))
-      .join(" ");
-  }
-  function sanitizePart(part: string | null | undefined) {
-    return titleCase(String(part ?? "")
-      .replace(/\d+/g, "")
-      .replace(/[_\-.]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim());
-  }
-  function combineName(fn?: string | null, ln?: string | null, full?: string | null) {
-    const fullSan = sanitizePart(full);
-    const fnSan = sanitizePart(fn);
-    const lnSan = sanitizePart(ln);
-    const combo = [fnSan, lnSan].filter(Boolean).join(" ").trim();
-    return titleCase(combo || fullSan);
-  }
-  function humanFromEmail(em: string): string {
-    const local = em.split("@")[0] || "";
-    const words = local.replace(/[._-]+/g, " ").split(" ").filter(Boolean);
-    const noNums = words.map((w) => w.replace(/\d+/g, "")).filter(Boolean);
-    return titleCase(noNums.join(" ").trim()) || em;
-  }
-
   async function refreshIdentity() {
     const { data } = await supabase.auth.getSession();
-    const em = data.session?.user?.email ?? null;
-    setEmail(em);
+    const sessionEmail = data.session?.user?.email ?? null;
+    setEmail(sessionEmail);
 
     setIsAdminDirectDB(false);
     let nameFromDB: string | null = null;
-    if (em) {
+
+    if (sessionEmail) {
       try {
         const { data: rows, error } = await supabase
           .from("members")
-          .select("first_name, last_name, full_name, name, email, member_roles ( role )")
-          .ilike("email", em)
+          .select(
+            "first_name, last_name, full_name, name, email, member_roles ( role )"
+          )
+          .ilike("email", sessionEmail)
           .limit(1);
 
         if (!error && rows && rows.length > 0) {
-          const r: any = rows[0];
-          nameFromDB = combineName(r.first_name, r.last_name, r.full_name ?? r.name ?? null) || null;
-          const roles = Array.isArray(r.member_roles)
-            ? r.member_roles.map((x: any) => String(x.role).toLowerCase())
+          const record = rows[0] as any;
+          nameFromDB =
+            combineName(
+              record.first_name,
+              record.last_name,
+              record.full_name ?? record.name ?? null
+            ) || null;
+
+          const roles = Array.isArray(record.member_roles)
+            ? record.member_roles.map((role: any) =>
+                String(role.role ?? role).toLowerCase()
+              )
             : [];
-          if (roles.includes("admin")) setIsAdminDirectDB(true);
+
+          if (roles.includes("admin")) {
+            setIsAdminDirectDB(true);
+          }
         }
-      } catch {}
+      } catch {
+        // Ignorer – vi faller tilbake til localStorage.
+      }
     }
 
-    if (!nameFromDB && em) {
-      const ms = parseJSON<any[]>(readLS("follies.members.v1"), []);
-      const me = ms.find((m) =>
-        String(m?.email ?? m?.epost ?? m?.mail ?? "").toLowerCase() === em.toLowerCase()
-      );
-      const nm = me
-        ? combineName(
-            me.first_name ?? me.fornavn,
-            me.last_name ?? me.etternavn,
-            me.full_name ?? me.name ?? me.navn
-          )
-        : "";
-      setDisplayName(nm || humanFromEmail(em));
+    if (!nameFromDB && sessionEmail) {
+      const cachedMembers = parseJSON<any[]>(readLS("follies.members.v1"), []);
+      const fallback = cachedMembers.find((member) => {
+        const memberEmail = String(
+          member?.email ?? member?.epost ?? member?.mail ?? ""
+        ).toLowerCase();
+        return memberEmail === sessionEmail.toLowerCase();
+      });
+
+      if (fallback) {
+        const pretty = combineName(
+          fallback.first_name ?? fallback.fornavn,
+          fallback.last_name ?? fallback.etternavn,
+          fallback.full_name ?? fallback.name ?? fallback.navn ?? null
+        );
+        setDisplayName(pretty || humanFromEmail(sessionEmail));
+      } else {
+        setDisplayName(humanFromEmail(sessionEmail));
+      }
+    } else if (sessionEmail) {
+      setDisplayName(nameFromDB || humanFromEmail(sessionEmail));
     } else {
-      setDisplayName(nameFromDB || (em ? humanFromEmail(em) : null));
+      setDisplayName(null);
     }
   }
 
   React.useEffect(() => {
     refreshIdentity();
-    const onAuth = () => refreshIdentity();
-    const onMember = () => refreshIdentity();
-    try { window.addEventListener("follies:auth-sync", onAuth); } catch {}
-    try { window.addEventListener("follies:member-sync", onMember); } catch {}
+
+    const handleAuth = () => refreshIdentity();
+    const handleMemberSync = () => refreshIdentity();
+
+    try {
+      window.addEventListener("follies:auth-sync", handleAuth);
+    } catch {
+      /* noop */
+    }
+
+    try {
+      window.addEventListener("follies:member-sync", handleMemberSync);
+    } catch {
+      /* noop */
+    }
+
     return () => {
-      try { window.removeEventListener("follies:auth-sync", onAuth); } catch {}
-      try { window.removeEventListener("follies:member-sync", onMember); } catch {}
+      try {
+        window.removeEventListener("follies:auth-sync", handleAuth);
+      } catch {
+        /* noop */
+      }
+
+      try {
+        window.removeEventListener("follies:member-sync", handleMemberSync);
+      } catch {
+        /* noop */
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -108,97 +192,139 @@ export default function AppHeader() {
   async function onSignOut() {
     try {
       await supabase.auth.signOut();
-      if (typeof window !== "undefined") window.location.reload();
-    } catch {}
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+    } catch {
+      /* noop */
+    }
   }
 
   const showAdmin = isAdminFromHook || isAdminDirectDB;
 
+  const renderNavLink = (href: string, label: string) => {
+    const isActive = pathname === href || pathname?.startsWith(`${href}/`);
+    return (
+      <Link
+        key={href}
+        href={href}
+        className={cx(
+          "whitespace-nowrap transition-colors",
+          isActive
+            ? "text-white"
+            : "text-white/70 hover:text-white"
+        )}
+        aria-current={isActive ? "page" : undefined}
+      >
+        {label}
+      </Link>
+    );
+  };
+
   return (
-    <header className="w-full bg-black">
-      <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 gap-4">
-        {/* Venstre: logo + tittel */}
-        <div className="flex items-center gap-3 h-full mr-8"> {/* ← lagt til mr-8 for å trekke meny nærmere venstre */}
-          <div className="h-full flex items-center">
+    <header className="relative isolate z-20 shadow-lg shadow-black/10">
+      <div
+        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-black via-neutral-900 to-black"
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-red-600/40 via-white/20 to-red-600/40"
+        aria-hidden="true"
+      />
+
+      <div className="relative mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
+        <div className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3">
+            <span className="sr-only">Til forsiden</span>
             <img
               src="/Images/follies-logo.jpg"
               alt="Follies"
-              className="h-full w-auto object-contain"
+              className="h-10 w-auto rounded-md bg-white/5 p-1 shadow-sm ring-1 ring-white/10"
             />
-          </div>
-          <Link
-            href="/"
-            className="text-base md:text-lg font-semibold tracking-tight text-white hover:text-red-400"
-          >
-            Follies Portal
           </Link>
+          <div className="hidden sm:flex flex-col leading-tight">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.35em] text-white/40">
+              Ansattportal
+            </span>
+            <span className="text-lg font-semibold text-white">Follies Portal</span>
+          </div>
         </div>
 
-        {/* Midten/høyre: meny + auth */}
-        <nav className="flex items-center gap-5 md:gap-7 whitespace-nowrap"> {/* ← gap litt større */}
-          <Link
-            href="/dashboard"
-            className="rounded-md px-2 md:px-3 py-2 text-base font-semibold text-white hover:text-red-400" // ← text-base
-          >
-            Dashboard
-          </Link>
-          <Link
-            href="/members"
-            className="rounded-md px-2 md:px-3 py-2 text-base font-semibold text-white hover:text-red-400"
-          >
-            Medlemmer
-          </Link>
-          <Link
-            href="/activities"
-            className="rounded-md px-2 md:px-3 py-2 text-base font-semibold text-white hover:text-red-400"
-          >
-            Aktiviteter
-          </Link>
-          <Link
-            href="/calendar"
-            className="rounded-md px-2 md:px-3 py-2 text-base font-semibold text-white hover:text-red-400"
-          >
-            Kalender
-          </Link>
-
-          {showAdmin && (
+        <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
+          {NAV_ITEMS.map((item) => renderNavLink(item.href, item.label))}
+          {showAdmin ? (
             <Link
               href="/admin"
-              className="rounded-md p-2 text-white hover:text-red-400"
+              className="text-white/70 transition-colors hover:text-white"
               title="Admin"
               aria-label="Admin"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+                className={cx(
+                  "transition-transform",
+                  pathname?.startsWith("/admin") && "text-white"
+                )}
+              >
                 <path d="M12 2l7 3v6c0 5-3.5 9.74-7 11-3.5-1.26-7-6-7-11V5l7-3z" />
               </svg>
             </Link>
-          )}
+          ) : null}
+        </nav>
 
-          {!email ? (
-            <Link
-              href="/login"
-              className="rounded-md px-3 py-2 text-base font-semibold text-white hover:text-red-400"
-            >
-              Logg inn
-            </Link>
-          ) : (
-            <div className="ml-2 hidden items-center gap-3 md:flex">
-              <span className="inline-flex items-center gap-2 text-sm text-white/90">
-                <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-                Innlogget
-              </span>
-              <span className="max-w-[240px] truncate text-sm text-white/90">
-                {displayName || email}
-              </span>
+        <div className="flex items-center gap-3 text-sm">
+          {email ? (
+            <>
+              <div className="hidden min-w-[140px] flex-col text-xs leading-tight text-white/70 sm:flex">
+                <span className="flex items-center gap-2 text-white">
+                  <span className="inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
+                  Innlogget
+                </span>
+                <span className="max-w-[220px] truncate text-white/80 text-sm">
+                  {displayName || email}
+                </span>
+              </div>
               <button
                 onClick={onSignOut}
-                className="rounded-lg border border-white/25 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/10"
+                className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 font-semibold text-white transition hover:bg-white/20"
               >
                 Logg ut
               </button>
-            </div>
+            </>
+          ) : (
+            <Link
+              href="/login"
+              className="rounded-lg bg-red-600 px-3 py-1.5 font-semibold text-white shadow hover:bg-red-500"
+            >
+              Logg inn
+            </Link>
           )}
-        </nav>
+        </div>
+      </div>
+
+      <div className="relative border-t border-white/10 bg-black/70 backdrop-blur md:hidden">
+        <div className="mx-auto flex max-w-6xl items-center gap-4 overflow-x-auto px-4 py-2 text-sm">
+          {NAV_ITEMS.map((item) => (
+            <div key={item.href}>{renderNavLink(item.href, item.label)}</div>
+          ))}
+          {showAdmin ? (
+            <Link
+              href="/admin"
+              className={cx(
+                "flex items-center gap-1 whitespace-nowrap text-white/70 transition-colors hover:text-white",
+                pathname?.startsWith("/admin") && "text-white"
+              )}
+              title="Admin"
+              aria-label="Admin"
+            >
+              🛡️ Admin
+            </Link>
+          ) : null}
+        </div>
       </div>
     </header>
   );
