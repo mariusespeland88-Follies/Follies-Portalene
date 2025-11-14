@@ -202,17 +202,22 @@ export default function AppHeader() {
 
   const showAdmin = isAdminFromHook || isAdminDirectDB;
 
-  const renderNavLink = (href: string, label: string) => {
+  const renderNavLink = (
+    href: string,
+    label: string,
+    extraClasses?: string
+  ) => {
     const isActive = pathname === href || pathname?.startsWith(`${href}/`);
     return (
       <Link
         key={href}
         href={href}
         className={cx(
-          "whitespace-nowrap transition-colors",
+          "whitespace-nowrap text-sm font-medium transition-colors",
           isActive
             ? "text-white"
-            : "text-white/70 hover:text-white"
+            : "text-white/70 hover:text-white",
+          extraClasses
         )}
         aria-current={isActive ? "page" : undefined}
       >
@@ -222,35 +227,26 @@ export default function AppHeader() {
   };
 
   return (
-    <header className="relative isolate z-20 shadow-lg shadow-black/10">
-      <div
-        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-black via-neutral-900 to-black"
-        aria-hidden="true"
-      />
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-red-600/40 via-white/20 to-red-600/40"
-        aria-hidden="true"
-      />
-
-      <div className="relative mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
+    <header className="relative z-20 border-b border-white/10 bg-black text-white">
+      <div className="relative mx-auto flex h-20 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
         <div className="flex items-center gap-3">
           <Link href="/" className="flex items-center gap-3">
             <span className="sr-only">Til forsiden</span>
             <img
               src="/Images/follies-logo.jpg"
               alt="Follies"
-              className="h-10 w-auto rounded-md bg-white/5 p-1 shadow-sm ring-1 ring-white/10"
+              className="h-14 w-auto"
             />
           </Link>
           <div className="hidden sm:flex flex-col leading-tight">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.35em] text-white/40">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.35em] text-white/60">
               Ansattportal
             </span>
             <span className="text-lg font-semibold text-white">Follies Portal</span>
           </div>
         </div>
 
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
+        <nav className="hidden md:flex items-center gap-6">
           {NAV_ITEMS.map((item) => renderNavLink(item.href, item.label))}
           {showAdmin ? (
             <Link
@@ -279,18 +275,18 @@ export default function AppHeader() {
         <div className="flex items-center gap-3 text-sm">
           {email ? (
             <>
-              <div className="hidden min-w-[140px] flex-col text-xs leading-tight text-white/70 sm:flex">
+              <div className="hidden min-w-[140px] flex-col text-xs leading-tight text-white/60 sm:flex">
                 <span className="flex items-center gap-2 text-white">
                   <span className="inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
                   Innlogget
                 </span>
-                <span className="max-w-[220px] truncate text-white/80 text-sm">
+                <span className="max-w-[220px] truncate text-sm text-white/80">
                   {displayName || email}
                 </span>
               </div>
               <button
                 onClick={onSignOut}
-                className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 font-semibold text-white transition hover:bg-white/20"
+                className="rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 font-semibold text-white shadow-sm transition hover:bg-white/20"
               >
                 Logg ut
               </button>
@@ -298,7 +294,7 @@ export default function AppHeader() {
           ) : (
             <Link
               href="/login"
-              className="rounded-lg bg-red-600 px-3 py-1.5 font-semibold text-white shadow hover:bg-red-500"
+              className="rounded-lg bg-red-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-red-500"
             >
               Logg inn
             </Link>
@@ -306,10 +302,10 @@ export default function AppHeader() {
         </div>
       </div>
 
-      <div className="relative border-t border-white/10 bg-black/70 backdrop-blur md:hidden">
+      <div className="relative border-t border-white/10 bg-black md:hidden">
         <div className="mx-auto flex max-w-6xl items-center gap-4 overflow-x-auto px-4 py-2 text-sm">
           {NAV_ITEMS.map((item) => (
-            <div key={item.href}>{renderNavLink(item.href, item.label)}</div>
+            <div key={item.href}>{renderNavLink(item.href, item.label, "text-base")}</div>
           ))}
           {showAdmin ? (
             <Link

@@ -2,25 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Grunnstil – mørk bakgrunn, lys tekst */
-:root { color-scheme: dark; }
-body { @apply bg-gray-900 text-gray-100; }
+/* Grunnstil – lys bakgrunn, mørk tekst */
+:root { color-scheme: light; }
+body { @apply bg-white text-gray-900; }
 
 /* Layout-hjelper */
 .container { @apply max-w-7xl mx-auto px-4; }
 
 /* Kort */
-.card { @apply bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow; }
+.card { @apply bg-white border border-gray-200 rounded-2xl p-6 shadow-sm; }
 
 /* Knapp */
-.btn { @apply inline-flex items-center gap-2 bg-red-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:bg-red-700 transition; }
+.btn { @apply inline-flex items-center gap-2 bg-red-600 text-white font-semibold px-4 py-2 rounded-xl shadow-sm hover:bg-red-700 transition; }
 
 /* Input */
-.input { @apply w-full rounded-xl border border-gray-700 bg-gray-800 text-gray-100 px-3 py-2 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-600; }
+.input { @apply w-full rounded-xl border border-gray-300 bg-white text-gray-900 px-3 py-2 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600; }
 
 /* Tabell */
-.table { @apply w-full text-sm text-left text-gray-100; }
+.table { @apply w-full text-sm text-left text-gray-900; }
 .table thead { @apply bg-red-600 text-white; }
 .table th, .table td { @apply px-4 py-2; }
-.table tbody tr:nth-child(even) { @apply bg-gray-800; }
-.table tbody tr:nth-child(odd) { @apply bg-gray-900; }
+.table tbody tr:nth-child(even) { @apply bg-gray-50; }
+.table tbody tr:nth-child(odd) { @apply bg-white; }
