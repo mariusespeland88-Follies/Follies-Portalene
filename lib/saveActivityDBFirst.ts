@@ -5,7 +5,15 @@ import { createClientComponentClient } from "@/lib/supabase/browser";
 const LS_ACT_V1 = "follies.activities.v1";
 const LS_ACT_OLD = "follies.activities";
 
-export type NewActivity = { name: string; type: "offer" | "event"; archived?: boolean };
+export type NewActivity = {
+  name: string;
+  type: "offer" | "event";
+  archived?: boolean;
+  has_guests?: boolean;
+  has_attendance?: boolean;
+  has_volunteers?: boolean;
+  has_tasks?: boolean;
+};
 
 export async function saveActivityDBFirst(activity: NewActivity) {
   const supabase = createClientComponentClient();
@@ -16,12 +24,18 @@ export async function saveActivityDBFirst(activity: NewActivity) {
     name: activity.name,
     type: activity.type,
     archived: !!activity.archived,
+    has_guests: !!activity.has_guests,
+    has_attendance: !!activity.has_attendance,
+    has_volunteers: !!activity.has_volunteers,
+    has_tasks: !!activity.has_tasks,
   };
 
   const { data, error } = await supabase
     .from("activities")
     .insert(payload)
-    .select("id, name, type, archived, created_at")
+    .select(
+      "id, name, type, archived, created_at, has_guests, has_attendance, has_volunteers, has_tasks"
+    )
     .single();
 
   if (error) throw error;

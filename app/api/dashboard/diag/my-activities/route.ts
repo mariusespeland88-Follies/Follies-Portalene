@@ -97,7 +97,9 @@ export async function GET(req: NextRequest) {
       if (ids.length) {
         const { data: acts, error: actErr } = await db
           .from("activities")
-          .select("id, name, type, archived, start_date, end_date")
+          .select(
+            "id, name, type, archived, start_date, end_date, has_guests, has_attendance, has_volunteers, has_tasks"
+          )
           .in("id", ids);
         if (actErr) detail.notes.push(`activities(by ids) error: ${actErr.message}`);
         const seen = new Set<string>();
@@ -113,7 +115,9 @@ export async function GET(req: NextRequest) {
     if (!detail.activities.length && candidateIds.length) {
       const { data: acts, error } = await db
         .from("activities")
-        .select("id, name, type, archived, start_date, end_date")
+        .select(
+          "id, name, type, archived, start_date, end_date, has_guests, has_attendance, has_volunteers, has_tasks"
+        )
         .in("id", candidateIds);
       if (error) detail.notes.push(`activities(candidates) error: ${error.message}`);
       const seen = new Set<string>();

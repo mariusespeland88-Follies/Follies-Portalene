@@ -70,6 +70,19 @@ function upsertLocalActivity(activity: Activity): void {
 
 const LS_FALLBACK_KEY = "follies.activities";
 
+function dedupeAndNormalize(lists: any[][]): Activity[] {
+  const map = new Map<string, Activity>();
+  for (const list of lists) {
+    for (const entry of list) {
+      const normalized = normalizeActivityRecord(entry);
+      if (!normalized) continue;
+      const prev = map.get(normalized.id) ?? {};
+      map.set(normalized.id, { ...prev, ...normalized });
+    }
+  }
+  return Array.from(map.values());
+}
+
 function safeJSON<T>(s: string | null): T | null {
   try {
     return s ? (JSON.parse(s) as T) : null;
@@ -85,20 +98,18 @@ function hasWindow(): boolean {
 function loadAllFromLocalStorage(): Activity[] {
   if (!hasWindow()) return [];
 
-  // Ny nøkkel først
-  const fromNew = safeJSON<Activity[]>(localStorage.getItem(LS_KEY));
-  if (Array.isArray(fromNew)) return fromNew;
+  const fromNew = safeJSON<any[]>(localStorage.getItem(LS_KEY)) ?? [];
+  const fromOld = safeJSON<any[]>(localStorage.getItem(LS_FALLBACK_KEY)) ?? [];
 
-  // Gammel fallback-nøkkel
-  const fromOld = safeJSON<Activity[]>(localStorage.getItem(LS_FALLBACK_KEY));
-  if (Array.isArray(fromOld)) return fromOld;
-
-  return [];
+  return dedupeAndNormalize([fromOld, fromNew]);
 }
 
 function saveAllToLocalStorage(list: Activity[]): void {
   if (!hasWindow()) return;
-  localStorage.setItem(LS_KEY, JSON.stringify(list));
+  const normalized = dedupeAndNormalize([Array.isArray(list) ? list : []]);
+  const json = JSON.stringify(normalized);
+  localStorage.setItem(LS_KEY, json);
+  localStorage.setItem(LS_FALLBACK_KEY, json);
 }
 
 /**

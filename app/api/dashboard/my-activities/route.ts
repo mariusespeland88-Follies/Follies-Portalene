@@ -10,6 +10,10 @@ function mapActs(rows: any[] | null | undefined) {
     name: a.name ?? `Aktivitet ${a.id}`,
     type: a.type ?? "offer",
     archived: !!a.archived,
+    has_guests: !!a.has_guests,
+    has_attendance: !!a.has_attendance,
+    has_volunteers: !!a.has_volunteers,
+    has_tasks: !!a.has_tasks,
   }));
 }
 
@@ -86,7 +90,9 @@ export async function GET(req: NextRequest) {
       if (ids.length) {
         const { data: acts, error: actErr } = await db
           .from("activities")
-          .select("id, name, type, archived")
+          .select(
+            "id, name, type, archived, has_guests, has_attendance, has_volunteers, has_tasks"
+          )
           .in("id", ids);
         if (actErr) throw actErr;
 
@@ -106,7 +112,9 @@ export async function GET(req: NextRequest) {
     if (candidateIds.length) {
       const { data: acts, error } = await db
         .from("activities")
-        .select("id, name, type, archived")
+        .select(
+          "id, name, type, archived, has_guests, has_attendance, has_volunteers, has_tasks"
+        )
         .in("id", candidateIds);
       if (error) throw error;
       return NextResponse.json({ ok: true, activities: mapActs(acts) });
