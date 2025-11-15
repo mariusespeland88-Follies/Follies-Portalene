@@ -314,6 +314,18 @@ export default function ActivityDetailPage() {
     setLeaders(lRes.list);
   }, [routeIdValue, supabase]);
 
+  const derivedActivityDbId = useMemo(
+    () => pickActivityDbId(act, routeIdValue),
+    [act, routeIdValue]
+  );
+  const effectiveActivityDbId = activityDbId ?? derivedActivityDbId ?? null;
+
+  useEffect(() => {
+    if (derivedActivityDbId !== activityDbId) {
+      setActivityDbId(derivedActivityDbId ?? null);
+    }
+  }, [activityDbId, derivedActivityDbId]);
+
   useEffect(() => {
     setActivityDbId(null);
     let alive = true;
@@ -342,7 +354,6 @@ export default function ActivityDetailPage() {
         setVis(visualsFromLocalStorage(routeIdValue));
 
         const resolvedDbId = pickActivityDbId(a, routeIdValue);
-        setActivityDbId(resolvedDbId);
 
         await reloadRoster(resolvedDbId);
         setSessions(lsLoadSessions(routeIdValue));
@@ -363,7 +374,10 @@ export default function ActivityDetailPage() {
   const typeLabel = useMemo(() => labelForType((act as any)?.type), [act]);
 
   const setRole = async (memberId: string, role: "participant" | "leader") => {
-    const resolvedId = pickActivityDbId(act, activityDbId ?? routeIdValue);
+    const resolvedId = pickActivityDbId(
+      act,
+      effectiveActivityDbId ?? routeIdValue
+    );
     if (!resolvedId) return;
     try {
       setBusyId(memberId);
@@ -408,7 +422,8 @@ export default function ActivityDetailPage() {
   const gradient = gradientFor(vis.accent, (act as any)?.type);
   const avatar = vis.coverUrl || null;
   const initialsText = initials(act.name);
-  const preferredRouteId = routeIdValue || activityDbId || String(act.id);
+  const preferredRouteId =
+    routeIdValue || effectiveActivityDbId || String(act.id);
   const tabItems: [Tab, string][] = [
     ["oversikt", "Oversikt"],
     ["deltakere", `Deltakere (${participants.length})`],
@@ -542,8 +557,8 @@ export default function ActivityDetailPage() {
           )}
 
           {tab === "frivillige" && showVolunteersTab && (
-            activityDbId ? (
-              <VolunteersTab activityId={activityDbId} />
+            effectiveActivityDbId ? (
+              <VolunteersTab activityId={effectiveActivityDbId} />
             ) : (
               <MissingActivityDbIdNotice title="Frivillige" />
             )
@@ -598,17 +613,17 @@ export default function ActivityDetailPage() {
           )}
 
           {tab === "gjester" && showGuestsTab && (
-            activityDbId ? (
-              <GuestsTab activityId={activityDbId} />
+            effectiveActivityDbId ? (
+              <GuestsTab activityId={effectiveActivityDbId} />
             ) : (
               <MissingActivityDbIdNotice title="Gjester" />
             )
           )}
 
           {tab === "innsjekk" && showAttendanceTab && (
-            activityDbId ? (
+            effectiveActivityDbId ? (
               <AttendanceTab
-                activityId={activityDbId}
+                activityId={effectiveActivityDbId}
                 activityName={act.name}
               />
             ) : (
@@ -617,8 +632,8 @@ export default function ActivityDetailPage() {
           )}
 
           {tab === "oppgaver" && showTasksTab && (
-            activityDbId ? (
-              <TasksTab activityId={activityDbId} />
+            effectiveActivityDbId ? (
+              <TasksTab activityId={effectiveActivityDbId} />
             ) : (
               <MissingActivityDbIdNotice title="Oppgaver" />
             )
