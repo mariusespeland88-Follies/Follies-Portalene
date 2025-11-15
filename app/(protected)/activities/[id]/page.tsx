@@ -2,11 +2,9 @@
 
 /**
  * Aktivitetsdetaljer
- * - UENDRET look for hero/faner/deltakere/ledere.
- * - Fane "Økter": viser økter for aktiviteten + knapp "Lag ny økt" (går til /activities/[id]/sessions/new).
- * - Klikk på en økt åpner /sessions/[id].
- * - NYTT: Hvilke faner som vises styres av activity.tab_config (DB),
- *   med fallback basert på type + has_*-flagg.
+ * - Hero/faner/deltakere/ledere som før.
+ * - Faner styres nå av activity.tab_config (DB) + has_*-feltene.
+ * - Gjelder for ALLE typer (tilbud, event, forestilling).
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -41,7 +39,6 @@ type Visuals = { coverUrl: string | null; accent: string | null };
 
 const LS_ACT_V1 = "follies.activities.v1";
 const LS_ACT_OLD = "follies.activities";
-const CAL_LS = "follies.calendar.v1";
 const SESS_LS = "follies.activitySessions.v1";
 const LS_MEM_V1 = "follies.members.v1";
 const LS_MEM_OLD = "follies.members";
@@ -205,7 +202,6 @@ function lsLoadSessions(activityId: string): any[] {
 }
 
 /* ------------------------ DB-hent i to steg ------------------------ */
-// NB: supabase er ANY for å unngå generics-krangling i Vercel/TS
 async function fetchPeopleForRole(
   supabase: any,
   activityId: string,
@@ -250,7 +246,14 @@ const ALL_TAB_KEYS: Tab[] = [
 ];
 
 function computeEnabledTabs(act: DbActivity | null): Tab[] {
-  const fallbackBase = ["oversikt", "deltakere", "ledere", "okter", "filer", "meldinger"] as Tab[];
+  const fallbackBase = [
+    "oversikt",
+    "deltakere",
+    "ledere",
+    "okter",
+    "filer",
+    "meldinger",
+  ] as Tab[];
 
   if (!act) return fallbackBase;
 
@@ -271,18 +274,13 @@ function computeEnabledTabs(act: DbActivity | null): Tab[] {
     }
   }
 
-  // Fallback hvis tab_config ikke er satt: bestem ut fra type + has_*-flagg
-  const type = String((act as any).type ?? "").toLowerCase();
-  const isEvent = type.includes("event");
-
+  // Fallback hvis tab_config ikke er satt: bestem ut fra has_*-flagg
   const tabs = [...fallbackBase];
 
-  if (isEvent) {
-    if ((act as any).has_guests) tabs.push("gjester");
-    if ((act as any).has_attendance) tabs.push("innsjekk");
-    if ((act as any).has_volunteers) tabs.push("frivillige");
-    if ((act as any).has_tasks) tabs.push("oppgaver");
-  }
+  if ((act as any).has_guests) tabs.push("gjester");
+  if ((act as any).has_attendance) tabs.push("innsjekk");
+  if ((act as any).has_volunteers) tabs.push("frivillige");
+  if ((act as any).has_tasks) tabs.push("oppgaver");
 
   return tabs;
 }
@@ -315,27 +313,22 @@ export default function ActivityDetailPage() {
 
   const [enabledTabs, setEnabledTabs] = useState<Tab[]>([]);
 
-  const showGuestsTab = useMemo(() => {
-    if (!act) return false;
-    const t = String((act as any)?.type ?? "").toLowerCase();
-    return t.includes("event") && Boolean((act as any)?.has_guests);
-  }, [act]);
-
-  const showAttendanceTab = useMemo(() => {
-    if (!act) return false;
-    const t = String((act as any)?.type ?? "").toLowerCase();
-    return t.includes("event") && Boolean((act as any)?.has_attendance);
-  }, [act]);
-
-  const showVolunteersTab = useMemo(() => {
-    if (!act) return false;
-    return Boolean((act as any)?.has_volunteers);
-  }, [act]);
-
-  const showTasksTab = useMemo(() => {
-    if (!act) return false;
-    return Boolean((act as any)?.has_tasks);
-  }, [act]);
+  const showGuestsTab = useMemo(
+    () => Boolean((act as any)?.has_guests),
+    [act]
+  );
+  const showAttendanceTab = useMemo(
+    () => Boolean((act as any)?.has_attendance),
+    [act]
+  );
+  const showVolunteersTab = useMemo(
+    () => Boolean((act as any)?.has_volunteers),
+    [act]
+  );
+  const showTasksTab = useMemo(
+    () => Boolean((act as any)?.has_tasks),
+    [act]
+  );
 
   // Oppdater enablede faner når aktiviteten endrer seg
   useEffect(() => {
@@ -474,11 +467,11 @@ export default function ActivityDetailPage() {
   if (err) {
     return (
       <main className="px-4 py-6 text-neutral-900">
-        <div className="text-red-600 mb-3 font-semibold">Feil</div>
-        <div className="text-red-700 text-sm mb-4">{err}</div>
+        <div className="mb-3 font-semibold text-red-600">Feil</div>
+        <div className="mb-4 text-sm text-red-700">{err}</div>
         <button
           onClick={() => router.push("/activities")}
-          className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-white text-sm font-semibold"
+          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
         >
           Tilbake til aktiviteter
         </button>
@@ -498,7 +491,6 @@ export default function ActivityDetailPage() {
 
   type TabDef = { key: Tab; label: string };
 
-  // Definisjon av alle potensielle faner for denne aktiviteten (inkl. counts)
   const allTabDefs: TabDef[] = [
     { key: "oversikt", label: "Oversikt" },
     {
@@ -512,18 +504,12 @@ export default function ActivityDetailPage() {
     { key: "okter", label: "Økter" },
   ];
 
-  if (showGuestsTab) {
-    allTabDefs.push({ key: "gjester", label: "Gjester" });
-  }
-  if (showAttendanceTab) {
+  if (showGuestsTab) allTabDefs.push({ key: "gjester", label: "Gjester" });
+  if (showAttendanceTab)
     allTabDefs.push({ key: "innsjekk", label: "Innsjekk" });
-  }
-  if (showVolunteersTab) {
+  if (showVolunteersTab)
     allTabDefs.push({ key: "frivillige", label: "Frivillige" });
-  }
-  if (showTasksTab) {
-    allTabDefs.push({ key: "oppgaver", label: "Oppgaver" });
-  }
+  if (showTasksTab) allTabDefs.push({ key: "oppgaver", label: "Oppgaver" });
 
   allTabDefs.push({ key: "filer", label: "Filer" });
   allTabDefs.push({ key: "meldinger", label: "Meldinger" });
@@ -536,7 +522,6 @@ export default function ActivityDetailPage() {
     return true;
   };
 
-  // Faner som faktisk skal vises (må både være enablet i config + feature tilgjengelig)
   const visibleTabDefs = allTabDefs.filter(
     (def) => enabledTabs.includes(def.key) && isTabFeatureAvailable(def.key)
   );
@@ -545,7 +530,7 @@ export default function ActivityDetailPage() {
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
       {/* HERO */}
       <div
-        className="mb-6 overflow-hidden rounded-2xl border border-zinc-300 bg-gradient-to-r from-red-800 to-red-600 shadow-lg text-white"
+        className="mb-6 overflow-hidden rounded-2xl border border-zinc-300 bg-gradient-to-r from-red-800 to-red-600 text-white shadow-lg"
         style={{ background: gradient }}
       >
         <div className="border border-white/20 bg-white/10 p-5 backdrop-blur-sm md:p-6 lg:p-7">
@@ -630,7 +615,7 @@ export default function ActivityDetailPage() {
       {/* Innhold */}
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         {/* Venstre */}
-        <section className="lg:col-span-2 space-y-6">
+        <section className="space-y-6 lg:col-span-2">
           {tab === "oversikt" && (
             <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
               <h2 className="text-lg font-semibold">Oversikt</h2>
@@ -657,7 +642,7 @@ export default function ActivityDetailPage() {
             <PeoplePanel
               title="Ledere"
               people={leaders}
-              emphasize={true}
+              emphasize
               variant="leaders"
               busyId={busyId}
               onDemote={async (mid) => await setRole(mid, "participant")}
@@ -695,10 +680,10 @@ export default function ActivityDetailPage() {
                   {sessions.map((s) => (
                     <li
                       key={s.id}
-                      className="py-3 flex items-center justify-between gap-3"
+                      className="flex items-center justify-between gap-3 py-3"
                     >
                       <div className="min-w-0">
-                        <div className="font-medium text-neutral-900 truncate">
+                        <div className="truncate font-medium text-neutral-900">
                           {s.title}
                         </div>
                         <div className="text-sm text-neutral-600">
@@ -766,7 +751,7 @@ export default function ActivityDetailPage() {
         <aside className="space-y-6">
           <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-neutral-900">Info</h3>
-            <dl className="mt-3 text-sm text-neutral-700 space-y-2">
+            <dl className="mt-3 space-y-2 text-sm text-neutral-700">
               <div className="flex justify-between gap-4">
                 <dt>Type</dt>
                 <dd className="font-medium">
