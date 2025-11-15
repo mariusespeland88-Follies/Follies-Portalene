@@ -13,6 +13,11 @@ type Activity = {
   archived?: boolean;
   slug?: string | null;
   raw?: AnyObj;
+  has_participants?: boolean;
+  has_leaders?: boolean;
+  has_sessions?: boolean;
+  has_files?: boolean;
+  has_messages?: boolean;
   has_guests?: boolean;
   has_attendance?: boolean;
   has_volunteers?: boolean;
@@ -68,10 +73,44 @@ function readActivityStore(): AnyObj[] {
 
 function coerceActivityFlags(item: AnyObj | null | undefined): AnyObj {
   const base = { ...(item ?? {}) } as AnyObj;
-  base.has_guests = Boolean(item?.has_guests ?? item?.hasGuests ?? false);
-  base.has_attendance = Boolean(item?.has_attendance ?? item?.hasAttendance ?? false);
-  base.has_volunteers = Boolean(item?.has_volunteers ?? item?.hasVolunteers ?? false);
-  base.has_tasks = Boolean(item?.has_tasks ?? item?.hasTasks ?? false);
+  const pick = (value: any, fallback: any) =>
+    value !== undefined && value !== null ? value : fallback;
+  const boolWithDefault = (value: any, fallback: boolean) => {
+    if (typeof value === "boolean") return value;
+    if (value !== undefined && value !== null) return Boolean(value);
+    return fallback;
+  };
+
+  base.has_participants = boolWithDefault(
+    pick(item?.has_participants, item?.hasParticipants),
+    true
+  );
+  base.has_leaders = boolWithDefault(
+    pick(item?.has_leaders, item?.hasLeaders),
+    true
+  );
+  base.has_sessions = boolWithDefault(
+    pick(item?.has_sessions, item?.hasSessions),
+    true
+  );
+  base.has_files = boolWithDefault(pick(item?.has_files, item?.hasFiles), true);
+  base.has_messages = boolWithDefault(
+    pick(item?.has_messages, item?.hasMessages),
+    true
+  );
+  base.has_guests = boolWithDefault(
+    pick(item?.has_guests, item?.hasGuests),
+    false
+  );
+  base.has_attendance = boolWithDefault(
+    pick(item?.has_attendance, item?.hasAttendance),
+    false
+  );
+  base.has_volunteers = boolWithDefault(
+    pick(item?.has_volunteers, item?.hasVolunteers),
+    false
+  );
+  base.has_tasks = boolWithDefault(pick(item?.has_tasks, item?.hasTasks), false);
   return base;
 }
 
@@ -98,6 +137,18 @@ function mergeActivityRecords(primary: AnyObj[], fallback: AnyObj[]): AnyObj[] {
 }
 
 function normalizeActivitiesFromRaw(list: AnyObj[]): Activity[] {
+  const pick = (...values: any[]) => {
+    for (const value of values) {
+      if (value !== undefined && value !== null) return value;
+    }
+    return undefined;
+  };
+  const boolWithDefault = (value: any, fallback: boolean) => {
+    if (typeof value === "boolean") return value;
+    if (value !== undefined && value !== null) return Boolean(value);
+    return fallback;
+  };
+
   const normalized = list.map((a, idx) => {
     const id = activityIdKey(a, `a-${idx}`);
     const name = a?.name ?? a?.title ?? a?.navn ?? a?.programName ?? `Aktivitet ${id}`;
@@ -111,6 +162,23 @@ function normalizeActivitiesFromRaw(list: AnyObj[]): Activity[] {
     const archived = !!(a?.archived || a?.is_archived || String(a?.status || "").toLowerCase() === "archived");
     const slugSource = a?.slug ?? a?.seo_slug ?? null;
     const slug = slugSource ? String(slugSource) : slugify(name);
+    const hasParticipants = boolWithDefault(
+      pick(a?.has_participants, (a as any)?.hasParticipants),
+      true
+    );
+    const hasLeaders = boolWithDefault(
+      pick(a?.has_leaders, (a as any)?.hasLeaders),
+      true
+    );
+    const hasSessions = boolWithDefault(
+      pick(a?.has_sessions, (a as any)?.hasSessions),
+      true
+    );
+    const hasFiles = boolWithDefault(pick(a?.has_files, (a as any)?.hasFiles), true);
+    const hasMessages = boolWithDefault(
+      pick(a?.has_messages, (a as any)?.hasMessages),
+      true
+    );
     const hasGuests = Boolean(a?.has_guests ?? a?.hasGuests ?? false);
     const hasAttendance = Boolean(a?.has_attendance ?? a?.hasAttendance ?? false);
     const hasVolunteers = Boolean(a?.has_volunteers ?? a?.hasVolunteers ?? false);
@@ -123,6 +191,11 @@ function normalizeActivitiesFromRaw(list: AnyObj[]): Activity[] {
       archived,
       slug,
       raw: a,
+      has_participants: hasParticipants,
+      has_leaders: hasLeaders,
+      has_sessions: hasSessions,
+      has_files: hasFiles,
+      has_messages: hasMessages,
       has_guests: hasGuests,
       has_attendance: hasAttendance,
       has_volunteers: hasVolunteers,
@@ -213,7 +286,7 @@ export default function ActivitiesPage() {
       const { data, error } = await supabase
         .from("activities")
         .select(
-          "id, name, type, archived, has_guests, has_attendance, has_volunteers, has_tasks"
+          "id, name, type, archived, has_participants, has_leaders, has_sessions, has_files, has_messages, has_guests, has_attendance, has_volunteers, has_tasks"
         );
       if (error) throw error;
 

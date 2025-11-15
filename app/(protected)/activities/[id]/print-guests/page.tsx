@@ -35,6 +35,11 @@ type ActivityRow = {
   name: string | null;
   type?: string | null;
   archived?: boolean | null;
+  has_participants?: boolean | null;
+  has_leaders?: boolean | null;
+  has_sessions?: boolean | null;
+  has_files?: boolean | null;
+  has_messages?: boolean | null;
   has_guests?: boolean | null;
   has_attendance?: boolean | null;
   has_volunteers?: boolean | null;
@@ -68,7 +73,7 @@ export default async function PrintGuestsPage({
       supabase
         .from("activities")
         .select(
-          "id, name, type, archived, has_guests, has_attendance, has_volunteers, has_tasks"
+          "id, name, type, archived, has_participants, has_leaders, has_sessions, has_files, has_messages, has_guests, has_attendance, has_volunteers, has_tasks"
         )
         .eq("id", activityId)
         .single(),

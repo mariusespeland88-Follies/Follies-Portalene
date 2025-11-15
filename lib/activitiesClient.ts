@@ -10,6 +10,11 @@ export type ActivityLike = {
   name?: string;
   type?: string;
   archived?: boolean;
+  has_participants?: boolean | null;
+  has_leaders?: boolean | null;
+  has_sessions?: boolean | null;
+  has_files?: boolean | null;
+  has_messages?: boolean | null;
   has_guests?: boolean | null;
   has_attendance?: boolean | null;
   has_volunteers?: boolean | null;
@@ -22,6 +27,11 @@ export type Activity = {
   name: string;
   type: string;
   archived?: boolean;
+  has_participants?: boolean | null;
+  has_leaders?: boolean | null;
+  has_sessions?: boolean | null;
+  has_files?: boolean | null;
+  has_messages?: boolean | null;
   has_guests?: boolean | null;
   has_attendance?: boolean | null;
   has_volunteers?: boolean | null;
@@ -38,20 +48,40 @@ function normalizeActivityRecord(row: any): Activity | null {
   if (!row) return null;
   const rawId = row.id ?? row.uuid ?? row._id ?? row.slug ?? null;
   if (!rawId) return null;
+  const boolFromRow = (
+    snakeValue: any,
+    fallbackKeys: string[],
+    defaultValue: boolean
+  ): boolean => {
+    if (typeof snakeValue === "boolean") return snakeValue;
+    if (snakeValue !== undefined && snakeValue !== null) {
+      return Boolean(snakeValue);
+    }
+    for (const key of fallbackKeys) {
+      const candidate = (row as any)?.[key];
+      if (typeof candidate === "boolean") return candidate;
+      if (candidate !== undefined && candidate !== null) {
+        return Boolean(candidate);
+      }
+    }
+    return defaultValue;
+  };
+
   const normalized: Activity = {
     ...(row as Record<string, any>),
     id: String(rawId),
     name: String(row.name ?? ""),
     type: String(row.type ?? ""),
     archived: row.archived ?? false,
-    has_guests:
-      typeof row.has_guests === "boolean" ? row.has_guests : Boolean(row.has_guests),
-    has_attendance:
-      typeof row.has_attendance === "boolean" ? row.has_attendance : Boolean(row.has_attendance),
-    has_volunteers:
-      typeof row.has_volunteers === "boolean" ? row.has_volunteers : Boolean(row.has_volunteers),
-    has_tasks:
-      typeof row.has_tasks === "boolean" ? row.has_tasks : Boolean(row.has_tasks),
+    has_participants: boolFromRow(row.has_participants, ["hasParticipants"], true),
+    has_leaders: boolFromRow(row.has_leaders, ["hasLeaders"], true),
+    has_sessions: boolFromRow(row.has_sessions, ["hasSessions"], true),
+    has_files: boolFromRow(row.has_files, ["hasFiles"], true),
+    has_messages: boolFromRow(row.has_messages, ["hasMessages"], true),
+    has_guests: boolFromRow(row.has_guests, ["hasGuests"], false),
+    has_attendance: boolFromRow(row.has_attendance, ["hasAttendance"], false),
+    has_volunteers: boolFromRow(row.has_volunteers, ["hasVolunteers"], false),
+    has_tasks: boolFromRow(row.has_tasks, ["hasTasks"], false),
   };
   return normalized;
 }
@@ -165,30 +195,52 @@ export async function saveActivity(a: ActivityLike): Promise<Activity> {
 
   const current = loadAllFromLocalStorage();
 
-  const hasGuestsValue =
-    typeof a.has_guests === "boolean"
-      ? a.has_guests
-      : typeof (a as any).hasGuests === "boolean"
-      ? (a as any).hasGuests
-      : false;
-  const hasAttendanceValue =
-    typeof a.has_attendance === "boolean"
-      ? a.has_attendance
-      : typeof (a as any).hasAttendance === "boolean"
-      ? (a as any).hasAttendance
-      : false;
-  const hasVolunteersValue =
-    typeof a.has_volunteers === "boolean"
-      ? a.has_volunteers
-      : typeof (a as any).hasVolunteers === "boolean"
-      ? (a as any).hasVolunteers
-      : false;
-  const hasTasksValue =
-    typeof a.has_tasks === "boolean"
-      ? a.has_tasks
-      : typeof (a as any).hasTasks === "boolean"
-      ? (a as any).hasTasks
-      : false;
+  const normalizedBoolean = (
+    primary: any,
+    fallbackKeys: string[],
+    defaultValue: boolean
+  ): boolean => {
+    if (typeof primary === "boolean") return primary;
+    if (primary !== undefined && primary !== null) return Boolean(primary);
+    for (const key of fallbackKeys) {
+      const candidate = (a as any)?.[key];
+      if (typeof candidate === "boolean") return candidate;
+      if (candidate !== undefined && candidate !== null) {
+        return Boolean(candidate);
+      }
+    }
+    return defaultValue;
+  };
+
+  const hasParticipantsValue = normalizedBoolean(
+    a.has_participants,
+    ["hasParticipants"],
+    true
+  );
+  const hasLeadersValue = normalizedBoolean(a.has_leaders, ["hasLeaders"], true);
+  const hasSessionsValue = normalizedBoolean(
+    a.has_sessions,
+    ["hasSessions"],
+    true
+  );
+  const hasFilesValue = normalizedBoolean(a.has_files, ["hasFiles"], true);
+  const hasMessagesValue = normalizedBoolean(
+    a.has_messages,
+    ["hasMessages"],
+    true
+  );
+  const hasGuestsValue = normalizedBoolean(a.has_guests, ["hasGuests"], false);
+  const hasAttendanceValue = normalizedBoolean(
+    a.has_attendance,
+    ["hasAttendance"],
+    false
+  );
+  const hasVolunteersValue = normalizedBoolean(
+    a.has_volunteers,
+    ["hasVolunteers"],
+    false
+  );
+  const hasTasksValue = normalizedBoolean(a.has_tasks, ["hasTasks"], false);
 
   const idx = current.findIndex((x) => String(x.id) === String(id));
   const next: Activity = {
@@ -197,6 +249,11 @@ export async function saveActivity(a: ActivityLike): Promise<Activity> {
     name: (a.name ?? "").toString(),
     type: (a.type ?? "").toString(),
     archived: a.archived ?? false,
+    has_participants: hasParticipantsValue,
+    has_leaders: hasLeadersValue,
+    has_sessions: hasSessionsValue,
+    has_files: hasFilesValue,
+    has_messages: hasMessagesValue,
     has_guests: hasGuestsValue,
     has_attendance: hasAttendanceValue,
     has_volunteers: hasVolunteersValue,

@@ -258,34 +258,71 @@ export default function ActivityDetailPage() {
 
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const showGuestsTab = useMemo(() => {
-    if (!act) return false;
-    const t = String((act as any)?.type ?? "").toLowerCase();
-    return t.includes("event") && Boolean((act as any)?.has_guests);
+  const moduleFlags = useMemo(() => {
+    const anyAct = act as any;
+    const boolOrDefault = (value: any, fallback: boolean) => {
+      if (typeof value === "boolean") return value;
+      if (value !== undefined && value !== null) return Boolean(value);
+      return fallback;
+    };
+
+    return {
+      participants: boolOrDefault(
+        anyAct?.has_participants ?? anyAct?.hasParticipants,
+        true
+      ),
+      leaders: boolOrDefault(anyAct?.has_leaders ?? anyAct?.hasLeaders, true),
+      sessions: boolOrDefault(anyAct?.has_sessions ?? anyAct?.hasSessions, true),
+      files: boolOrDefault(anyAct?.has_files ?? anyAct?.hasFiles, true),
+      messages: boolOrDefault(
+        anyAct?.has_messages ?? anyAct?.hasMessages,
+        true
+      ),
+      guests: boolOrDefault(anyAct?.has_guests ?? anyAct?.hasGuests, false),
+      attendance: boolOrDefault(
+        anyAct?.has_attendance ?? anyAct?.hasAttendance,
+        false
+      ),
+      volunteers: boolOrDefault(
+        anyAct?.has_volunteers ?? anyAct?.hasVolunteers,
+        false
+      ),
+      tasks: boolOrDefault(anyAct?.has_tasks ?? anyAct?.hasTasks, false),
+    };
   }, [act]);
 
-  const showAttendanceTab = useMemo(() => {
-    if (!act) return false;
-    const t = String((act as any)?.type ?? "").toLowerCase();
-    return t.includes("event") && Boolean((act as any)?.has_attendance);
-  }, [act]);
-
-  const showVolunteersTab = useMemo(() => {
-    if (!act) return false;
-    return Boolean((act as any)?.has_volunteers);
-  }, [act]);
-
-  const showTasksTab = useMemo(() => {
-    if (!act) return false;
-    return Boolean((act as any)?.has_tasks);
-  }, [act]);
+  const showParticipantsTab = moduleFlags.participants;
+  const showLeadersTab = moduleFlags.leaders;
+  const showSessionsTab = moduleFlags.sessions;
+  const showFilesTab = moduleFlags.files;
+  const showMessagesTab = moduleFlags.messages;
+  const showGuestsTab = moduleFlags.guests;
+  const showAttendanceTab = moduleFlags.attendance;
+  const showVolunteersTab = moduleFlags.volunteers;
+  const showTasksTab = moduleFlags.tasks;
 
   useEffect(() => {
+    if (tab === "deltakere" && !showParticipantsTab) setTab("oversikt");
+    if (tab === "ledere" && !showLeadersTab) setTab("oversikt");
+    if (tab === "okter" && !showSessionsTab) setTab("oversikt");
+    if (tab === "filer" && !showFilesTab) setTab("oversikt");
+    if (tab === "meldinger" && !showMessagesTab) setTab("oversikt");
     if (tab === "gjester" && !showGuestsTab) setTab("oversikt");
     if (tab === "innsjekk" && !showAttendanceTab) setTab("oversikt");
     if (tab === "frivillige" && !showVolunteersTab) setTab("oversikt");
     if (tab === "oppgaver" && !showTasksTab) setTab("oversikt");
-  }, [showAttendanceTab, showGuestsTab, showTasksTab, showVolunteersTab, tab]);
+  }, [
+    showAttendanceTab,
+    showFilesTab,
+    showGuestsTab,
+    showLeadersTab,
+    showMessagesTab,
+    showParticipantsTab,
+    showSessionsTab,
+    showTasksTab,
+    showVolunteersTab,
+    tab,
+  ]);
 
   const reloadRoster = useCallback(async (activityId: string | null) => {
     if (!activityId) {
@@ -424,17 +461,30 @@ export default function ActivityDetailPage() {
   const initialsText = initials(act.name);
   const preferredRouteId =
     routeIdValue || effectiveActivityDbId || String(act.id);
-  const tabItems: [Tab, string][] = [
-    ["oversikt", "Oversikt"],
-    ["deltakere", `Deltakere (${participants.length})`],
-    ["ledere", `Ledere (${leaders.length})`],
-    ["okter", "Økter"],
+  const tabDefinitions: { key: Tab; label: string; visible: boolean }[] = [
+    { key: "oversikt", label: "Oversikt", visible: true },
+    {
+      key: "deltakere",
+      label: `Deltakere (${participants.length})`,
+      visible: showParticipantsTab,
+    },
+    {
+      key: "ledere",
+      label: `Ledere (${leaders.length})`,
+      visible: showLeadersTab,
+    },
+    { key: "okter", label: "Økter", visible: showSessionsTab },
+    { key: "gjester", label: "Gjester", visible: showGuestsTab },
+    { key: "innsjekk", label: "Innsjekk", visible: showAttendanceTab },
+    { key: "frivillige", label: "Frivillige", visible: showVolunteersTab },
+    { key: "oppgaver", label: "Oppgaver", visible: showTasksTab },
+    { key: "filer", label: "Filer", visible: showFilesTab },
+    { key: "meldinger", label: "Meldinger", visible: showMessagesTab },
   ];
-  if (showGuestsTab) tabItems.push(["gjester", "Gjester"]);
-  if (showAttendanceTab) tabItems.push(["innsjekk", "Innsjekk"]);
-  if (showVolunteersTab) tabItems.push(["frivillige", "Frivillige"]);
-  if (showTasksTab) tabItems.push(["oppgaver", "Oppgaver"]);
-  tabItems.push(["filer", "Filer"], ["meldinger", "Meldinger"]);
+
+  const tabItems: [Tab, string][] = tabDefinitions
+    .filter((item) => item.visible)
+    .map((item) => [item.key, item.label]);
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
@@ -534,7 +584,7 @@ export default function ActivityDetailPage() {
             </div>
           )}
 
-          {tab === "deltakere" && (
+          {tab === "deltakere" && showParticipantsTab && (
             <PeoplePanel
               title="Deltakere"
               people={participants}
@@ -545,7 +595,7 @@ export default function ActivityDetailPage() {
             />
           )}
 
-          {tab === "ledere" && (
+          {tab === "ledere" && showLeadersTab && (
             <PeoplePanel
               title="Ledere"
               people={leaders}
@@ -564,7 +614,7 @@ export default function ActivityDetailPage() {
             )
           )}
 
-          {tab === "okter" && (
+          {tab === "okter" && showSessionsTab && (
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-neutral-900">
@@ -639,14 +689,14 @@ export default function ActivityDetailPage() {
             )
           )}
 
-          {tab === "filer" && (
+          {tab === "filer" && showFilesTab && (
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 text-neutral-700">
               Her kan vi senere legge opplasting/visning av filer
               (Bilder/Tekst/Musikk/Annet).
             </div>
           )}
 
-          {tab === "meldinger" && (
+          {tab === "meldinger" && showMessagesTab && (
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 text-neutral-700">
               Her kan vi senere legge kunngjøringer/meldinger til
               deltakere/ledere.

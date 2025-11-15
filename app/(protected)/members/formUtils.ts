@@ -3,6 +3,11 @@ export type Activity = {
   name: string;
   type: "offer" | "event";
   archived?: boolean;
+  has_participants?: boolean;
+  has_leaders?: boolean;
+  has_sessions?: boolean;
+  has_files?: boolean;
+  has_messages?: boolean;
   has_guests?: boolean;
   has_attendance?: boolean;
   has_volunteers?: boolean;
@@ -122,7 +127,36 @@ export function mergeActivities(base: Activity[], extra: Activity[]): Activity[]
 }
 
 function activityFlags(entry: any) {
+  const pick = (...values: any[]) => {
+    for (const value of values) {
+      if (value !== undefined && value !== null) return value;
+    }
+    return undefined;
+  };
+  const boolWithDefault = (value: any, fallback: boolean) => {
+    if (typeof value === "boolean") return value;
+    if (value !== undefined && value !== null) return Boolean(value);
+    return fallback;
+  };
+
   return {
+    has_participants: boolWithDefault(
+      pick(entry?.has_participants, entry?.hasParticipants),
+      true
+    ),
+    has_leaders: boolWithDefault(
+      pick(entry?.has_leaders, entry?.hasLeaders),
+      true
+    ),
+    has_sessions: boolWithDefault(
+      pick(entry?.has_sessions, entry?.hasSessions),
+      true
+    ),
+    has_files: boolWithDefault(pick(entry?.has_files, entry?.hasFiles), true),
+    has_messages: boolWithDefault(
+      pick(entry?.has_messages, entry?.hasMessages),
+      true
+    ),
     has_guests: Boolean(entry?.has_guests ?? entry?.hasGuests ?? false),
     has_attendance: Boolean(entry?.has_attendance ?? entry?.hasAttendance ?? false),
     has_volunteers: Boolean(entry?.has_volunteers ?? entry?.hasVolunteers ?? false),

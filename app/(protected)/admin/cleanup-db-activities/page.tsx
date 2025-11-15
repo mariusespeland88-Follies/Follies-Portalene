@@ -37,12 +37,12 @@ export default function CleanupDbActivitiesPage() {
 
   const reload = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("activities")
-      .select(
-        "id, name, type, archived, created_at, has_guests, has_attendance, has_volunteers, has_tasks"
-      )
-      .order("created_at", { ascending: false });
+        const { data, error } = await supabase
+          .from("activities")
+          .select(
+            "id, name, type, archived, created_at, has_participants, has_leaders, has_sessions, has_files, has_messages, has_guests, has_attendance, has_volunteers, has_tasks"
+          )
+          .order("created_at", { ascending: false });
     if (!error) setDbActs((data ?? []) as DbActivity[]);
     setLoading(false);
   };

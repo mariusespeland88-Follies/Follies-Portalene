@@ -9,6 +9,11 @@ export type NewActivity = {
   name: string;
   type: "offer" | "event";
   archived?: boolean;
+  has_participants?: boolean;
+  has_leaders?: boolean;
+  has_sessions?: boolean;
+  has_files?: boolean;
+  has_messages?: boolean;
   has_guests?: boolean;
   has_attendance?: boolean;
   has_volunteers?: boolean;
@@ -24,6 +29,11 @@ export async function saveActivityDBFirst(activity: NewActivity) {
     name: activity.name,
     type: activity.type,
     archived: !!activity.archived,
+    has_participants: activity.has_participants ?? true,
+    has_leaders: activity.has_leaders ?? true,
+    has_sessions: activity.has_sessions ?? true,
+    has_files: activity.has_files ?? true,
+    has_messages: activity.has_messages ?? true,
     has_guests: !!activity.has_guests,
     has_attendance: !!activity.has_attendance,
     has_volunteers: !!activity.has_volunteers,
@@ -34,7 +44,7 @@ export async function saveActivityDBFirst(activity: NewActivity) {
     .from("activities")
     .insert(payload)
     .select(
-      "id, name, type, archived, created_at, has_guests, has_attendance, has_volunteers, has_tasks"
+      "id, name, type, archived, created_at, has_participants, has_leaders, has_sessions, has_files, has_messages, has_guests, has_attendance, has_volunteers, has_tasks"
     )
     .single();
 

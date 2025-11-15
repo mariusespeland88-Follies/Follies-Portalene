@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
         const { data: acts, error: actErr } = await db
           .from("activities")
           .select(
-            "id, name, type, archived, start_date, end_date, has_guests, has_attendance, has_volunteers, has_tasks"
+            "id, name, type, archived, start_date, end_date, has_participants, has_leaders, has_sessions, has_files, has_messages, has_guests, has_attendance, has_volunteers, has_tasks"
           )
           .in("id", ids);
         if (actErr) detail.notes.push(`activities(by ids) error: ${actErr.message}`);
@@ -116,7 +116,7 @@ export async function GET(req: NextRequest) {
       const { data: acts, error } = await db
         .from("activities")
         .select(
-          "id, name, type, archived, start_date, end_date, has_guests, has_attendance, has_volunteers, has_tasks"
+          "id, name, type, archived, start_date, end_date, has_participants, has_leaders, has_sessions, has_files, has_messages, has_guests, has_attendance, has_volunteers, has_tasks"
         )
         .in("id", candidateIds);
       if (error) detail.notes.push(`activities(candidates) error: ${error.message}`);

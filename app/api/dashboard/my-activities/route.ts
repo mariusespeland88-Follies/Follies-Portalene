@@ -5,11 +5,22 @@ export const runtime = "nodejs";
 
 // Mapper kun felter som finnes i din schema
 function mapActs(rows: any[] | null | undefined) {
+  const boolWithDefault = (value: any, fallback: boolean) => {
+    if (typeof value === "boolean") return value;
+    if (value !== undefined && value !== null) return Boolean(value);
+    return fallback;
+  };
+
   return (rows ?? []).map((a: any) => ({
     id: String(a.id),
     name: a.name ?? `Aktivitet ${a.id}`,
     type: a.type ?? "offer",
     archived: !!a.archived,
+    has_participants: boolWithDefault(a.has_participants, true),
+    has_leaders: boolWithDefault(a.has_leaders, true),
+    has_sessions: boolWithDefault(a.has_sessions, true),
+    has_files: boolWithDefault(a.has_files, true),
+    has_messages: boolWithDefault(a.has_messages, true),
     has_guests: !!a.has_guests,
     has_attendance: !!a.has_attendance,
     has_volunteers: !!a.has_volunteers,
@@ -91,7 +102,7 @@ export async function GET(req: NextRequest) {
         const { data: acts, error: actErr } = await db
           .from("activities")
           .select(
-            "id, name, type, archived, has_guests, has_attendance, has_volunteers, has_tasks"
+            "id, name, type, archived, has_participants, has_leaders, has_sessions, has_files, has_messages, has_guests, has_attendance, has_volunteers, has_tasks"
           )
           .in("id", ids);
         if (actErr) throw actErr;
@@ -113,7 +124,7 @@ export async function GET(req: NextRequest) {
       const { data: acts, error } = await db
         .from("activities")
         .select(
-          "id, name, type, archived, has_guests, has_attendance, has_volunteers, has_tasks"
+          "id, name, type, archived, has_participants, has_leaders, has_sessions, has_files, has_messages, has_guests, has_attendance, has_volunteers, has_tasks"
         )
         .in("id", candidateIds);
       if (error) throw error;

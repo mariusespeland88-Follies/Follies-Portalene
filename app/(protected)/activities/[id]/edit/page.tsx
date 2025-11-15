@@ -19,10 +19,17 @@ export default function ActivityEditPage() {
   const [type, setType] = useState<ActivityType>("tilbud"); // behold norsk type i UI
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+  const [hasParticipants, setHasParticipants] = useState(true);
+  const [hasLeaders, setHasLeaders] = useState(true);
+  const [hasSessions, setHasSessions] = useState(true);
+  const [hasFiles, setHasFiles] = useState(true);
+  const [hasMessages, setHasMessages] = useState(true);
   const [hasGuests, setHasGuests] = useState(false);
   const [hasAttendance, setHasAttendance] = useState(false);
   const [hasVolunteers, setHasVolunteers] = useState(false);
   const [hasTasks, setHasTasks] = useState(false);
+
+  const isEventType = String(type ?? "").toLowerCase().includes("event");
 
   useEffect(() => {
     (async () => {
@@ -35,6 +42,31 @@ export default function ActivityEditPage() {
           setType((act.type as ActivityType) ?? "tilbud");
           setStartDate(act.start_date ?? "");
           setEndDate(act.end_date ?? "");
+          setHasParticipants(
+            Boolean(
+              (act as any)?.has_participants ?? (act as any)?.hasParticipants ?? true
+            )
+          );
+          setHasLeaders(
+            Boolean(
+              (act as any)?.has_leaders ?? (act as any)?.hasLeaders ?? true
+            )
+          );
+          setHasSessions(
+            Boolean(
+              (act as any)?.has_sessions ?? (act as any)?.hasSessions ?? true
+            )
+          );
+          setHasFiles(
+            Boolean(
+              (act as any)?.has_files ?? (act as any)?.hasFiles ?? true
+            )
+          );
+          setHasMessages(
+            Boolean(
+              (act as any)?.has_messages ?? (act as any)?.hasMessages ?? true
+            )
+          );
           setHasGuests(Boolean((act as any)?.has_guests));
           setHasAttendance(Boolean((act as any)?.has_attendance));
           setHasVolunteers(Boolean((act as any)?.has_volunteers));
@@ -47,26 +79,31 @@ export default function ActivityEditPage() {
   }, [id]);
 
   useEffect(() => {
-    if (!String(type ?? "").toLowerCase().includes("event")) {
+    if (!isEventType) {
       setHasGuests(false);
       setHasAttendance(false);
       setHasVolunteers(false);
       setHasTasks(false);
     }
-  }, [type]);
+  }, [isEventType]);
 
   const onSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(null);
     setSaving(true);
     try {
-      const isEvent = String(type ?? "").toLowerCase().includes("event");
+      const isEvent = isEventType;
       const payload = {
         name,
         description,
         type,
         start_date: startDate || null,
         end_date: endDate || null,
+        has_participants: Boolean(hasParticipants),
+        has_leaders: Boolean(hasLeaders),
+        has_sessions: Boolean(hasSessions),
+        has_files: Boolean(hasFiles),
+        has_messages: Boolean(hasMessages),
         has_guests: isEvent ? hasGuests : false,
         has_attendance: isEvent ? hasAttendance : false,
         has_volunteers: isEvent ? hasVolunteers : false,
@@ -182,50 +219,6 @@ export default function ActivityEditPage() {
               </p>
             </div>
 
-            {String(type ?? "").toLowerCase().includes("event") && (
-              <div className="md:col-span-2 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-                <h3 className="text-sm font-semibold text-neutral-900">Event-valg</h3>
-                <div className="mt-3 space-y-3 text-sm text-neutral-800">
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={hasGuests}
-                      onChange={(e) => setHasGuests(e.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                    />
-                    <span>Har gjester (f.eks. familier på Julaften)</span>
-                  </label>
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={hasAttendance}
-                      onChange={(e) => setHasAttendance(e.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                    />
-                    <span>Har innsjekk / oppmøte</span>
-                  </label>
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={hasVolunteers}
-                      onChange={(e) => setHasVolunteers(e.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                    />
-                    <span>Har frivillige (intern stab/medlemmer)</span>
-                  </label>
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={hasTasks}
-                      onChange={(e) => setHasTasks(e.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                    />
-                    <span>Har oppgaver / sjekkliste</span>
-                  </label>
-                </div>
-              </div>
-            )}
-
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-neutral-800">Beskrivelse</label>
               <textarea
@@ -234,6 +227,129 @@ export default function ActivityEditPage() {
                 onChange={(e) => setDescription(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2 text-[15px] text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-red-600"
               />
+            </div>
+          </div>
+        </section>
+
+        {/* Moduler */}
+        <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+          <h2 className="text-lg font-semibold text-black">Moduler</h2>
+          <div className="mt-4 grid gap-6 md:grid-cols-2">
+            <div>
+              <h3 className="text-sm font-semibold text-neutral-900">Kjernefunksjoner</h3>
+              <div className="mt-3 space-y-3 text-sm text-neutral-800">
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={hasParticipants}
+                    onChange={(e) => setHasParticipants(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                  />
+                  <span>Deltakere</span>
+                </label>
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={hasLeaders}
+                    onChange={(e) => setHasLeaders(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                  />
+                  <span>Ledere</span>
+                </label>
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={hasSessions}
+                    onChange={(e) => setHasSessions(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                  />
+                  <span>Økter</span>
+                </label>
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={hasFiles}
+                    onChange={(e) => setHasFiles(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                  />
+                  <span>Filer</span>
+                </label>
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={hasMessages}
+                    onChange={(e) => setHasMessages(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                  />
+                  <span>Meldinger</span>
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold text-neutral-900">Event-moduler</h3>
+              <div className="mt-3 space-y-3 text-sm text-neutral-800">
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={hasGuests}
+                    onChange={(e) => setHasGuests(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                    disabled={!isEventType}
+                  />
+                  <span className={!isEventType ? "text-neutral-500" : undefined}>
+                    Gjester
+                    {!isEventType ? (
+                      <span className="block text-xs text-neutral-500">Kun tilgjengelig for eventer</span>
+                    ) : null}
+                  </span>
+                </label>
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={hasAttendance}
+                    onChange={(e) => setHasAttendance(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                    disabled={!isEventType}
+                  />
+                  <span className={!isEventType ? "text-neutral-500" : undefined}>
+                    Innsjekk
+                    {!isEventType ? (
+                      <span className="block text-xs text-neutral-500">Kun tilgjengelig for eventer</span>
+                    ) : null}
+                  </span>
+                </label>
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={hasVolunteers}
+                    onChange={(e) => setHasVolunteers(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                    disabled={!isEventType}
+                  />
+                  <span className={!isEventType ? "text-neutral-500" : undefined}>
+                    Frivillige
+                    {!isEventType ? (
+                      <span className="block text-xs text-neutral-500">Kun tilgjengelig for eventer</span>
+                    ) : null}
+                  </span>
+                </label>
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={hasTasks}
+                    onChange={(e) => setHasTasks(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                    disabled={!isEventType}
+                  />
+                  <span className={!isEventType ? "text-neutral-500" : undefined}>
+                    Oppgaver
+                    {!isEventType ? (
+                      <span className="block text-xs text-neutral-500">Kun tilgjengelig for eventer</span>
+                    ) : null}
+                  </span>
+                </label>
+              </div>
             </div>
           </div>
         </section>

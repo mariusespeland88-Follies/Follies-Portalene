@@ -87,7 +87,7 @@ export default function CleanupActivitiesPage() {
       const { data } = await supabase
         .from("activities")
         .select(
-          "id, name, type, archived, has_guests, has_attendance, has_volunteers, has_tasks"
+          "id, name, type, archived, has_participants, has_leaders, has_sessions, has_files, has_messages, has_guests, has_attendance, has_volunteers, has_tasks"
         );
       setDbActs((data ?? []) as DbActivity[]);
       setLsActs(readLsActivities());

@@ -78,6 +78,11 @@ export default function ActivityNewPage() {
     capacity: "",
     start: "",
     end: "",
+    hasParticipants: true,
+    hasLeaders: true,
+    hasSessions: true,
+    hasFiles: true,
+    hasMessages: true,
     hasGuests: false,
     hasAttendance: false,
     hasVolunteers: false,
@@ -127,15 +132,26 @@ export default function ActivityNewPage() {
       const { data: sess } = await supabase.auth.getSession();
 
       const typeForDb = toDbType(form.type);
-      const hasGuests = form.type === "event" ? form.hasGuests : false;
-      const hasAttendance = form.type === "event" ? form.hasAttendance : false;
-      const hasVolunteers = form.type === "event" ? form.hasVolunteers : false;
-      const hasTasks = form.type === "event" ? form.hasTasks : false;
+      const isEvent = typeForDb === "event";
+      const hasParticipants = Boolean(form.hasParticipants);
+      const hasLeaders = Boolean(form.hasLeaders);
+      const hasSessions = Boolean(form.hasSessions);
+      const hasFiles = Boolean(form.hasFiles);
+      const hasMessages = Boolean(form.hasMessages);
+      const hasGuests = isEvent ? Boolean(form.hasGuests) : false;
+      const hasAttendance = isEvent ? Boolean(form.hasAttendance) : false;
+      const hasVolunteers = isEvent ? Boolean(form.hasVolunteers) : false;
+      const hasTasks = isEvent ? Boolean(form.hasTasks) : false;
 
       const base = {
         name: form.name?.trim() || "Uten navn",
         type: typeForDb,            // <- sender 'forestilling' når UI-valget er "show"
         archived: false,
+        has_participants: hasParticipants,
+        has_leaders: hasLeaders,
+        has_sessions: hasSessions,
+        has_files: hasFiles,
+        has_messages: hasMessages,
         has_guests: hasGuests,
         has_attendance: hasAttendance,
         has_volunteers: hasVolunteers,
@@ -150,7 +166,7 @@ export default function ActivityNewPage() {
           .from("activities")
           .insert(base)
           .select(
-            "id, name, type, archived, created_at, has_guests, has_attendance, has_volunteers, has_tasks"
+            "id, name, type, archived, created_at, has_participants, has_leaders, has_sessions, has_files, has_messages, has_guests, has_attendance, has_volunteers, has_tasks"
           )
           .single();
 
@@ -174,6 +190,11 @@ export default function ActivityNewPage() {
         capacity: form.capacity ? Number(form.capacity) : undefined,
         start: form.start || undefined,
         end: form.end || undefined,
+        has_participants: hasParticipants,
+        has_leaders: hasLeaders,
+        has_sessions: hasSessions,
+        has_files: hasFiles,
+        has_messages: hasMessages,
         has_guests: hasGuests,
         has_attendance: hasAttendance,
         has_volunteers: hasVolunteers,
@@ -245,53 +266,132 @@ export default function ActivityNewPage() {
             </div>
           </div>
 
-          {form.type === "event" && (
-            <div className="md:col-span-2 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-              <h3 className="text-sm font-semibold text-neutral-900">Event-valg</h3>
-                <div className="mt-3 space-y-3 text-sm text-neutral-800">
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={form.hasGuests}
-                    onChange={(e) => onChange("hasGuests", e.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                  />
-                    <span>Har gjester (f.eks. familier på Julaften)</span>
-                  </label>
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={form.hasAttendance}
-                    onChange={(e) => onChange("hasAttendance", e.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                    />
-                    <span>Har innsjekk / oppmøte</span>
-                  </label>
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={form.hasVolunteers}
-                      onChange={(e) => onChange("hasVolunteers", e.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                    />
-                    <span>Har frivillige (intern stab/medlemmer)</span>
-                  </label>
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={form.hasTasks}
-                      onChange={(e) => onChange("hasTasks", e.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                    />
-                    <span>Har oppgaver / sjekkliste</span>
-                  </label>
-                </div>
-              </div>
-            )}
-
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-neutral-800">Beskrivelse</label>
             <textarea rows={5} value={form.description} onChange={(e)=>onChange("description", e.target.value)} className={TEXTAREA} />
+          </div>
+        </div>
+      </section>
+
+      {/* Moduler */}
+      <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+        <h2 className="text-lg font-semibold text-black">Moduler</h2>
+        <div className="mt-4 grid gap-6 md:grid-cols-2">
+          <div>
+            <h3 className="text-sm font-semibold text-neutral-900">Kjernefunksjoner</h3>
+            <div className="mt-3 space-y-3 text-sm text-neutral-800">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={form.hasParticipants}
+                  onChange={(e) => onChange("hasParticipants", e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                />
+                <span>Deltakere</span>
+              </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={form.hasLeaders}
+                  onChange={(e) => onChange("hasLeaders", e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                />
+                <span>Ledere</span>
+              </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={form.hasSessions}
+                  onChange={(e) => onChange("hasSessions", e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                />
+                <span>Økter</span>
+              </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={form.hasFiles}
+                  onChange={(e) => onChange("hasFiles", e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                />
+                <span>Filer</span>
+              </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={form.hasMessages}
+                  onChange={(e) => onChange("hasMessages", e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                />
+                <span>Meldinger</span>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-neutral-900">Event-moduler</h3>
+            <div className="mt-3 space-y-3 text-sm text-neutral-800">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={form.hasGuests}
+                  onChange={(e) => onChange("hasGuests", e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                  disabled={form.type !== "event"}
+                />
+                <span className={form.type !== "event" ? "text-neutral-500" : undefined}>
+                  Gjester
+                  {form.type !== "event" ? (
+                    <span className="block text-xs text-neutral-500">Kun tilgjengelig for eventer</span>
+                  ) : null}
+                </span>
+              </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={form.hasAttendance}
+                  onChange={(e) => onChange("hasAttendance", e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                  disabled={form.type !== "event"}
+                />
+                <span className={form.type !== "event" ? "text-neutral-500" : undefined}>
+                  Innsjekk
+                  {form.type !== "event" ? (
+                    <span className="block text-xs text-neutral-500">Kun tilgjengelig for eventer</span>
+                  ) : null}
+                </span>
+              </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={form.hasVolunteers}
+                  onChange={(e) => onChange("hasVolunteers", e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                  disabled={form.type !== "event"}
+                />
+                <span className={form.type !== "event" ? "text-neutral-500" : undefined}>
+                  Frivillige
+                  {form.type !== "event" ? (
+                    <span className="block text-xs text-neutral-500">Kun tilgjengelig for eventer</span>
+                  ) : null}
+                </span>
+              </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={form.hasTasks}
+                  onChange={(e) => onChange("hasTasks", e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                  disabled={form.type !== "event"}
+                />
+                <span className={form.type !== "event" ? "text-neutral-500" : undefined}>
+                  Oppgaver
+                  {form.type !== "event" ? (
+                    <span className="block text-xs text-neutral-500">Kun tilgjengelig for eventer</span>
+                  ) : null}
+                </span>
+              </label>
+            </div>
           </div>
         </div>
       </section>
