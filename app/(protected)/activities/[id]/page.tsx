@@ -446,7 +446,7 @@ export default function ActivityDetailPage() {
         <div className="border border-white/20 bg-white/10 p-5 backdrop-blur-sm md:p-6 lg:p-7">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-4">
-              <div className="relative h-16 w-16 overflow-hidden rounded-2xl ring-1 ring-white/60 bg-white/10 backdrop-blur-[1px] flex items-center justify-center text-xl font-semibold text-white">
+              <div className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-white/10 text-xl font-semibold text-white ring-1 ring-white/60 backdrop-blur-[1px]">
                 {avatar && imgOk ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -458,29 +458,30 @@ export default function ActivityDetailPage() {
                 ) : (
                   <span>{initialsText}</span>
                 )}
-            </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-semibold tracking-tight text-white">
-                  {act.name}
-                </h1>
-                <span
-                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${typeClass(
-                    (act as any)?.type
-                  )} ring-1 ring-white/40`}
-                >
-                  {typeLabel}
-                </span>
               </div>
-              <p className="mt-1 text-sm text-white/90">
-                {(act as any).start_date
-                  ? `Start: ${(act as any).start_date}`
-                  : "Start: —"}{" "}
-                ·{" "}
-                {(act as any).end_date
-                  ? `Slutt: ${(act as any).end_date}`
-                  : "Slutt: —"}
-              </p>
+              <div>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-3xl font-semibold tracking-tight text-white">
+                    {act.name}
+                  </h1>
+                  <span
+                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${typeClass(
+                      (act as any)?.type
+                    )} ring-1 ring-white/40`}
+                  >
+                    {typeLabel}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-white/90">
+                  {(act as any).start_date
+                    ? `Start: ${(act as any).start_date}`
+                    : "Start: —"}{" "}
+                  ·{" "}
+                  {(act as any).end_date
+                    ? `Slutt: ${(act as any).end_date}`
+                    : "Slutt: —"}
+                </p>
+              </div>
             </div>
             <div className="mt-4 flex items-center gap-2 md:mt-0">
               <Link
@@ -503,15 +504,15 @@ export default function ActivityDetailPage() {
       </div>
 
       {/* Faner */}
-      <div className="mt-6 flex gap-6 border-b border-neutral-200">
+      <div className="mt-6 flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-300 bg-white/80 p-1 shadow-sm backdrop-blur-sm">
         {tabItems.map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`-mb-px border-b-2 pb-2 transition-colors ${
+            className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 ${
               tab === key
-                ? "border-zinc-900 text-zinc-900"
-                : "border-transparent text-zinc-500 hover:text-zinc-700"
+                ? "bg-white text-zinc-900 shadow-sm"
+                : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
             }`}
           >
             {label}
