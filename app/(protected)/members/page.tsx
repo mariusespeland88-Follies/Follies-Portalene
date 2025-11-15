@@ -3,8 +3,8 @@
 import * as React from "react";
 
 /**
- * Medlemmer – Indigo/Sky “Bold Glow”
- * DESIGN: badge ved avatar, navn/e-post lenger ned, større avstand mellom knapper.
+ * Medlemmer – Follies Portal
+ * DESIGN: mer sort, større avatar, tydelige kort, rød hero.
  * LOGIKK: urørt (DB-first, LS-fallback, speiling, roller/filtrering).
  */
 
@@ -12,11 +12,15 @@ type AnyObj = Record<string, any>;
 
 const MEM_V1 = "follies.members.v1";
 const MEM_FB = "follies.members";
-const PERMS  = "follies.perms.v1";
+const PERMS = "follies.perms.v1";
 
 /* ---------------- utils (uendret) ---------------- */
 function parseJSON<T>(raw: string | null, fallback: T): T {
-  try { return raw ? (JSON.parse(raw) as T) : fallback; } catch { return fallback; }
+  try {
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 function readLS(key: string): string | null {
   if (typeof window === "undefined") return null;
@@ -27,7 +31,11 @@ function writeLS(key: string, value: any) {
   window.localStorage.setItem(key, JSON.stringify(value));
 }
 function toStr(v: any): string {
-  try { return v == null ? "" : String(v); } catch { return ""; }
+  try {
+    return v == null ? "" : String(v);
+  } catch {
+    return "";
+  }
 }
 function pick(o: AnyObj, keys: string[], fb: any = ""): any {
   for (const k of keys) if (o && o[k] !== undefined) return o[k];
@@ -43,13 +51,13 @@ function memberId(m: AnyObj): string {
   return toStr(m.id ?? m.uuid ?? m._id ?? m.memberId);
 }
 function fullName(m: AnyObj): string {
-  const fn = pick(m, ["first_name","firstName","fornavn"], "");
-  const ln = pick(m, ["last_name","lastName","etternavn"], "");
-  const full = pick(m, ["full_name","fullName","name","navn"], "");
+  const fn = pick(m, ["first_name", "firstName", "fornavn"], "");
+  const ln = pick(m, ["last_name", "lastName", "etternavn"], "");
+  const full = pick(m, ["full_name", "fullName", "name", "navn"], "");
   return (full ? String(full) : [fn, ln].filter(Boolean).join(" ").trim()) || "Uten navn";
 }
 function emailOf(m: AnyObj): string {
-  return pick(m, ["email","epost","mail"], "");
+  return pick(m, ["email", "epost", "mail"], "");
 }
 
 /* --------------- data readers (LS) --------------- */
@@ -73,15 +81,17 @@ function readPermsLS(): Perms {
   const p = parseJSON<Perms>(readLS(PERMS), {});
   return p && typeof p === "object" ? p : {};
 }
-function writePermsLS(p: Perms) { writeLS(PERMS, p || {}); }
+function writePermsLS(p: Perms) {
+  writeLS(PERMS, p || {});
+}
 
 /* --------------- roles helpers (uendret) --------------- */
 function rolesOfMember(perms: Perms, memberIdStr: string, fallbackMember?: AnyObj): string[] {
   const rec = perms[memberIdStr];
   if (rec && Array.isArray(rec.roles)) return rec.roles;
-  const r = pick(fallbackMember || {}, ["roles","roller"], []);
+  const r = pick(fallbackMember || {}, ["roles", "roller"], []);
   if (Array.isArray(r)) return r.map(toStr);
-  const single = pick(fallbackMember || {}, ["role","rolle"], "");
+  const single = pick(fallbackMember || {}, ["role", "rolle"], "");
   return single ? [toStr(single)] : [];
 }
 function isLeader(perms: Perms, member: AnyObj): boolean {
@@ -94,52 +104,63 @@ type TabKey = "members" | "leaders";
 /* ----------------- UI bits (design) ----------------- */
 
 function LightHeader({
-  members, leaders, search, setSearch, me
+  members,
+  leaders,
+  search,
+  setSearch,
+  me,
 }: {
-  members: number; leaders: number;
-  search: string; setSearch: (v: string) => void;
+  members: number;
+  leaders: number;
+  search: string;
+  setSearch: (v: string) => void;
   me?: { id?: string; member?: AnyObj | null };
 }) {
   return (
-    <div className="rounded-3xl border border-zinc-300 bg-gradient-to-r from-red-800 to-red-600 shadow-lg text-white">
-      <div className="p-8">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h1 className="text-4xl font-extrabold tracking-tight text-white">Medlemmer</h1>
-            <p className="mt-1 text-red-100/90">Administrer alle medlemmer og ledere i Follies.</p>
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:max-w-sm">
-              <StatPill label="Medlemmer" value={members} />
-              <StatPill label="Ledere" value={leaders} />
+    <div className="overflow-hidden rounded-3xl border border-black/20 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+      {/* RØD HERO-INNHOLD */}
+      <div className="bg-gradient-to-r from-red-900 to-red-600 text-white">
+        <div className="p-8">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h1 className="text-4xl font-extrabold tracking-tight text-white">Medlemmer</h1>
+              <p className="mt-1 text-red-100/90">Administrer alle medlemmer og ledere i Follies.</p>
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:max-w-sm">
+                <StatPill label="Medlemmer" value={members} />
+                <StatPill label="Ledere" value={leaders} />
+              </div>
             </div>
-          </div>
-          <div className="flex w-full max-w-lg flex-col items-stretch gap-3">
-            <Search value={search} onChange={setSearch} />
-            <div className="flex gap-2">
-              {me?.member ? (
+            <div className="flex w-full max-w-lg flex-col items-stretch gap-3">
+              <Search value={search} onChange={setSearch} />
+              <div className="flex gap-2">
+                {me?.member ? (
+                  <a
+                    href={`/members/${encodeURIComponent(memberId(me.member!))}/edit`}
+                    className="inline-flex items-center justify-center rounded-xl border border-white/40 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/20"
+                  >
+                    Rediger meg
+                  </a>
+                ) : null}
                 <a
-                  href={`/members/${encodeURIComponent(memberId(me.member!))}/edit`}
-                  className="inline-flex items-center justify-center rounded-xl border border-white/40 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/20"
+                  href="/members/new"
+                  className="inline-flex items-center justify-center rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-black/30 transition hover:bg-red-400"
                 >
-                  Rediger meg
+                  + Nytt medlem
                 </a>
-              ) : null}
-              <a
-                href="/members/new"
-                className="inline-flex items-center justify-center rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-black/20 transition hover:bg-red-400"
-              >
-                + Nytt medlem
-              </a>
+              </div>
             </div>
           </div>
         </div>
       </div>
+      {/* Tynn sort bunnstripe under hero */}
+      <div className="h-1 w-full bg-black/40" />
     </div>
   );
 }
 
 function StatPill({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-xl border border-zinc-300 bg-white p-3 shadow-sm text-zinc-900">
+    <div className="rounded-xl border border-black/15 bg-white px-4 py-3 shadow-sm text-zinc-900">
       <p className="text-[11px] uppercase tracking-wider text-zinc-500">{label}</p>
       <p className="text-xl font-bold text-zinc-900">{value}</p>
     </div>
@@ -198,14 +219,22 @@ function Avatar({ name, src }: { name: string; src?: string | null }) {
     .slice(0, 2)
     .map((s) => s[0]?.toUpperCase() ?? "")
     .join("");
+
+  // Med profilbilde
   if (src) {
+    // eslint-disable-next-line @next/next/no-img-element
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img src={src} alt={name || "Profilbilde"} className="h-12 w-12 rounded-full object-cover" />
+      <img
+        src={src}
+        alt={name || "Profilbilde"}
+        className="h-16 w-16 rounded-xl border border-black/15 object-cover"
+      />
     );
   }
+
+  // Uten profilbilde → nøytral avatar
   return (
-    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-200 text-sm font-semibold text-zinc-700">
+    <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-black/10 bg-zinc-200 text-lg font-semibold text-zinc-700">
       {letters || "?"}
     </div>
   );
@@ -252,9 +281,9 @@ export default function MembersPage() {
   const [search, setSearch] = React.useState("");
 
   // Kilder
-  const [listLS, setListLS]   = React.useState<AnyObj[]>([]);
+  const [listLS, setListLS] = React.useState<AnyObj[]>([]);
   const [permsLS, setPermsLS] = React.useState<Perms>({});
-  const [listDB, setListDB]   = React.useState<AnyObj[]>([]);
+  const [listDB, setListDB] = React.useState<AnyObj[]>([]);
   const [permsDB, setPermsDB] = React.useState<Perms>({});
 
   const [me, setMe] = React.useState<{ id?: string; email?: string; member?: AnyObj | null }>({});
@@ -262,7 +291,7 @@ export default function MembersPage() {
   // Init: LS + identitet (uendret)
   React.useEffect(() => {
     const ms = readMembersLS();
-    const p  = readPermsLS();
+    const p = readPermsLS();
     setListLS(ms);
     setPermsLS(p);
 
@@ -331,13 +360,19 @@ export default function MembersPage() {
   React.useEffect(() => {
     loadFromSupabase();
     const h = () => loadFromSupabase();
-    try { window.addEventListener("follies:auth-sync", h); } catch {}
-    return () => { try { window.removeEventListener("follies:auth-sync", h); } catch {} };
+    try {
+      window.addEventListener("follies:auth-sync", h);
+    } catch {}
+    return () => {
+      try {
+        window.removeEventListener("follies:auth-sync", h);
+      } catch {}
+    };
   }, []);
 
   // Velg kilde (uendret)
   const useDB = listDB.length > 0;
-  const list  = useDB ? listDB : listLS;
+  const list = useDB ? listDB : listLS;
   const perms = useDB ? permsDB : permsLS;
 
   const counts = React.useMemo(() => {
@@ -363,13 +398,7 @@ export default function MembersPage() {
   /* ---------------- UI ---------------- */
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6 text-neutral-900">
-      <LightHeader
-        members={counts.members}
-        leaders={counts.leaders}
-        search={search}
-        setSearch={setSearch}
-        me={me}
-      />
+      <LightHeader members={counts.members} leaders={counts.leaders} search={search} setSearch={setSearch} me={me} />
 
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Tabs tab={tab} setTab={setTab} />
@@ -377,64 +406,64 @@ export default function MembersPage() {
 
       {/* Grid – brede kort */}
       {filtered.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-zinc-300 bg-white p-10 text-center shadow-md">
+        <div className="rounded-2xl border border-dashed border-black/30 bg-white p-10 text-center shadow-[0_4px_12px_rgba(0,0,0,0.07)]">
           <h3 className="text-lg font-semibold text-neutral-900">Ingen treff</h3>
           <p className="mt-1 text-neutral-600">
             {search ? `Fant ingen resultater for “${search}”.` : "Det ligger ingen personer i denne kategorien ennå."}
           </p>
-            <a
-              href="/members/new"
-              className="mt-4 inline-flex rounded-xl bg-red-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-md shadow-black/20 transition hover:bg-red-500"
-            >
-              + Nytt medlem
-            </a>
+          <a
+            href="/members/new"
+            className="mt-4 inline-flex rounded-xl bg-red-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-md shadow-black/20 transition hover:bg-red-500"
+          >
+            + Nytt medlem
+          </a>
         </div>
       ) : (
-        <ul className="grid grid-cols-1 gap-7 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {filtered.map((m) => {
-              const id    = memberId(m);
-              const name  = fullName(m);
-              const email = emailOf(m);
-              const leader = isLeader(perms, m);
-              const avatarUrl = memberAvatarUrl(m);
+        <ul className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {filtered.map((m) => {
+            const id = memberId(m);
+            const name = fullName(m);
+            const email = emailOf(m);
+            const leader = isLeader(perms, m);
+            const avatarUrl = memberAvatarUrl(m);
 
-              return (
-                <li
-                  key={id}
-                  className="group relative flex min-h-[220px] flex-col justify-between overflow-hidden rounded-2xl border border-zinc-300 bg-white p-7 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
-                >
-                  {/* øvre del: avatar + badge */}
-                  <div className="flex items-start justify-between gap-5">
-                    <div className="flex items-start gap-5">
-                      <Avatar name={name} src={avatarUrl} />
-                      <div className="flex flex-col">
-                        <Badge leader={leader} text={leader ? "LEDER" : "MEDLEM"} />
-                      </div>
+            return (
+              <li
+                key={id}
+                className="group relative flex min-h-[220px] flex-col justify-between overflow-hidden rounded-2xl border border-black/20 bg-white p-7 shadow-[0_4px_12px_rgba(0,0,0,0.07)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
+              >
+                {/* øvre del: avatar + badge */}
+                <div className="flex items-start justify-between gap-5">
+                  <div className="flex items-start gap-4">
+                    <Avatar name={name} src={avatarUrl} />
+                    <div className="flex flex-col">
+                      <Badge leader={leader} text={leader ? "LEDER" : "MEDLEM"} />
                     </div>
                   </div>
-
-                {/* midtdel: LENGER NED (mer luft) */}
-                <div className="mt-6">
-                  <div className="text-xl font-semibold text-neutral-900 truncate" title={name}>
-                    {name}
-                  </div>
-                  <p className="text-sm text-neutral-600 truncate">{email || "—"}</p>
                 </div>
 
-                {/* nederst: større mellomrom mellom knappene */}
+                {/* midtdel */}
+                <div className="mt-6">
+                  <div className="truncate text-xl font-semibold text-neutral-900" title={name}>
+                    {name}
+                  </div>
+                  <p className="truncate text-sm text-neutral-600">{email || "—"}</p>
+                </div>
+
+                {/* nederst: knapper */}
                 <div className="mt-7 flex flex-wrap items-center gap-4">
                   <a
                     href={`/members/${encodeURIComponent(id)}`}
-                    className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 transition hover:border-zinc-400 hover:text-zinc-900"
+                    className="inline-flex items-center gap-2 rounded-xl border border-black/20 bg-white px-3.5 py-1.5 text-sm font-semibold text-zinc-800 transition hover:border-black/40 hover:text-zinc-900 hover:bg-zinc-50"
                   >
                     Åpne
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                      <path d="M13 5l7 7-7 7v-4H4v-6h9V5z"/>
+                      <path d="M13 5l7 7-7 7v-4H4v-6h9V5z" />
                     </svg>
                   </a>
                   <a
                     href={`/members/${encodeURIComponent(id)}/edit`}
-                    className="inline-flex items-center rounded-xl bg-red-600 px-3 py-1.5 text-sm font-semibold text-white shadow-md shadow-black/20 transition hover:bg-red-500"
+                    className="inline-flex items-center rounded-xl bg-red-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow-md shadow-black/20 transition hover:bg-red-500"
                   >
                     Rediger
                   </a>
