@@ -21,6 +21,8 @@ export default function ActivityEditPage() {
   const [endDate, setEndDate] = useState<string>("");
   const [hasGuests, setHasGuests] = useState(false);
   const [hasAttendance, setHasAttendance] = useState(false);
+  const [hasVolunteers, setHasVolunteers] = useState(false);
+  const [hasTasks, setHasTasks] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -35,6 +37,8 @@ export default function ActivityEditPage() {
           setEndDate(act.end_date ?? "");
           setHasGuests(Boolean((act as any)?.has_guests));
           setHasAttendance(Boolean((act as any)?.has_attendance));
+          setHasVolunteers(Boolean((act as any)?.has_volunteers));
+          setHasTasks(Boolean((act as any)?.has_tasks));
         }
       } finally {
         setLoading(false);
@@ -46,6 +50,8 @@ export default function ActivityEditPage() {
     if (!String(type ?? "").toLowerCase().includes("event")) {
       setHasGuests(false);
       setHasAttendance(false);
+      setHasVolunteers(false);
+      setHasTasks(false);
     }
   }, [type]);
 
@@ -63,6 +69,8 @@ export default function ActivityEditPage() {
         end_date: endDate || null,
         has_guests: isEvent ? hasGuests : false,
         has_attendance: isEvent ? hasAttendance : false,
+        has_volunteers: isEvent ? hasVolunteers : false,
+        has_tasks: isEvent ? hasTasks : false,
       };
 
       if (id) {
@@ -195,6 +203,24 @@ export default function ActivityEditPage() {
                       className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
                     />
                     <span>Har innsjekk / oppmøte</span>
+                  </label>
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={hasVolunteers}
+                      onChange={(e) => setHasVolunteers(e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                    />
+                    <span>Har frivillige (intern stab/medlemmer)</span>
+                  </label>
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={hasTasks}
+                      onChange={(e) => setHasTasks(e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                    />
+                    <span>Har oppgaver / sjekkliste</span>
                   </label>
                 </div>
               </div>

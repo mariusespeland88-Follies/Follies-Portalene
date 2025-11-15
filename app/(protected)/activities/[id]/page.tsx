@@ -19,6 +19,8 @@ import {
 } from "../../../../lib/activitiesClient";
 import GuestsTab from "./GuestsTab";
 import AttendanceTab from "./AttendanceTab";
+import VolunteersTab from "./VolunteersTab";
+import TasksTab from "./TasksTab";
 
 type AnyObj = Record<string, any>;
 type Tab =
@@ -29,7 +31,9 @@ type Tab =
   | "filer"
   | "meldinger"
   | "gjester"
-  | "innsjekk";
+  | "innsjekk"
+  | "frivillige"
+  | "oppgaver";
 
 type Visuals = { coverUrl: string | null; accent: string | null };
 
@@ -230,10 +234,22 @@ export default function ActivityDetailPage() {
     return t.includes("event") && Boolean((act as any)?.has_attendance);
   }, [act]);
 
+  const showVolunteersTab = useMemo(() => {
+    if (!act) return false;
+    return Boolean((act as any)?.has_volunteers);
+  }, [act]);
+
+  const showTasksTab = useMemo(() => {
+    if (!act) return false;
+    return Boolean((act as any)?.has_tasks);
+  }, [act]);
+
   useEffect(() => {
     if (tab === "gjester" && !showGuestsTab) setTab("oversikt");
     if (tab === "innsjekk" && !showAttendanceTab) setTab("oversikt");
-  }, [showGuestsTab, showAttendanceTab, tab]);
+    if (tab === "frivillige" && !showVolunteersTab) setTab("oversikt");
+    if (tab === "oppgaver" && !showTasksTab) setTab("oversikt");
+  }, [showAttendanceTab, showGuestsTab, showTasksTab, showVolunteersTab, tab]);
 
   const reloadRoster = async (activityId: string) => {
     const [pRes, lRes] = await Promise.all([
@@ -353,6 +369,8 @@ export default function ActivityDetailPage() {
   ];
   if (showGuestsTab) tabItems.push(["gjester", "Gjester"]);
   if (showAttendanceTab) tabItems.push(["innsjekk", "Innsjekk"]);
+  if (showVolunteersTab) tabItems.push(["frivillige", "Frivillige"]);
+  if (showTasksTab) tabItems.push(["oppgaver", "Oppgaver"]);
   tabItems.push(["filer", "Filer"], ["meldinger", "Meldinger"]);
 
   return (
@@ -473,6 +491,10 @@ export default function ActivityDetailPage() {
             />
           )}
 
+          {tab === "frivillige" && showVolunteersTab && (
+            <VolunteersTab activityId={String(act.id)} />
+          )}
+
           {tab === "okter" && (
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
               <div className="flex items-center justify-between">
@@ -527,6 +549,10 @@ export default function ActivityDetailPage() {
 
           {tab === "innsjekk" && showAttendanceTab && (
             <AttendanceTab activityId={String(act.id)} activityName={act.name} />
+          )}
+
+          {tab === "oppgaver" && showTasksTab && (
+            <TasksTab activityId={String(act.id)} />
           )}
 
           {tab === "filer" && (

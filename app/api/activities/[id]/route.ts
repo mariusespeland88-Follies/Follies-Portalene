@@ -26,6 +26,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     "end_date",
     "has_guests",
     "has_attendance",
+    "has_volunteers",
+    "has_tasks",
   ].join(",");
 
   const res = await sb(`activity?id=eq.${params.id}&select=${selectFields}`);
@@ -48,6 +50,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     'end_date',
     'has_guests',
     'has_attendance',
+    'has_volunteers',
+    'has_tasks',
   ];
   const payload: Record<string, any> = {};
   for (const k of allowed) if (k in body) payload[k] = body[k];
