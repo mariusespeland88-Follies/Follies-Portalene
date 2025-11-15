@@ -14,6 +14,7 @@ export type ActivityLike = {
   has_attendance?: boolean | null;
   has_volunteers?: boolean | null;
   has_tasks?: boolean | null;
+  tab_config?: string[] | null; // hvilke faner denne aktiviteten bruker
   [k: string]: any;
 };
 
@@ -26,6 +27,7 @@ export type Activity = {
   has_attendance?: boolean | null;
   has_volunteers?: boolean | null;
   has_tasks?: boolean | null;
+  tab_config?: string[] | null; // hvilke faner denne aktiviteten bruker
   [k: string]: any;
 };
 
@@ -33,11 +35,38 @@ export type Activity = {
 export type ActivityType = string;
 
 const LS_KEY = "follies.activities.v1";
+const LS_FALLBACK_KEY = "follies.activities";
+
+function safeJSON<T>(s: string | null): T | null {
+  try {
+    return s ? (JSON.parse(s) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasWindow(): boolean {
+  return typeof window !== "undefined";
+}
 
 function normalizeActivityRecord(row: any): Activity | null {
   if (!row) return null;
   const rawId = row.id ?? row.uuid ?? row._id ?? row.slug ?? null;
   if (!rawId) return null;
+
+  // Forsøk å lese fanekonfig fra ulike felt-navn (f.eks. Supabase jsonb, gammel "tabs", etc.)
+  const rawTabs =
+    row.tab_config ??
+    row.tabs ??
+    row.tabConfig ??
+    row.faneoppsett ??
+    null;
+
+  let tabConfig: string[] | undefined;
+  if (Array.isArray(rawTabs)) {
+    tabConfig = rawTabs.map((v) => String(v));
+  }
+
   const normalized: Activity = {
     ...(row as Record<string, any>),
     id: String(rawId),
@@ -45,30 +74,26 @@ function normalizeActivityRecord(row: any): Activity | null {
     type: String(row.type ?? ""),
     archived: row.archived ?? false,
     has_guests:
-      typeof row.has_guests === "boolean" ? row.has_guests : Boolean(row.has_guests),
+      typeof row.has_guests === "boolean"
+        ? row.has_guests
+        : Boolean(row.has_guests),
     has_attendance:
-      typeof row.has_attendance === "boolean" ? row.has_attendance : Boolean(row.has_attendance),
+      typeof row.has_attendance === "boolean"
+        ? row.has_attendance
+        : Boolean(row.has_attendance),
     has_volunteers:
-      typeof row.has_volunteers === "boolean" ? row.has_volunteers : Boolean(row.has_volunteers),
+      typeof row.has_volunteers === "boolean"
+        ? row.has_volunteers
+        : Boolean(row.has_volunteers),
     has_tasks:
-      typeof row.has_tasks === "boolean" ? row.has_tasks : Boolean(row.has_tasks),
+      typeof row.has_tasks === "boolean"
+        ? row.has_tasks
+        : Boolean(row.has_tasks),
+    tab_config: tabConfig,
   };
+
   return normalized;
 }
-
-function upsertLocalActivity(activity: Activity): void {
-  if (!hasWindow()) return;
-  const current = loadAllFromLocalStorage();
-  const idx = current.findIndex((a) => String(a.id) === String(activity.id));
-  if (idx >= 0) {
-    current[idx] = { ...current[idx], ...activity };
-  } else {
-    current.push(activity);
-  }
-  saveAllToLocalStorage(current);
-}
-
-const LS_FALLBACK_KEY = "follies.activities";
 
 function dedupeAndNormalize(lists: any[][]): Activity[] {
   const map = new Map<string, Activity>();
@@ -81,18 +106,6 @@ function dedupeAndNormalize(lists: any[][]): Activity[] {
     }
   }
   return Array.from(map.values());
-}
-
-function safeJSON<T>(s: string | null): T | null {
-  try {
-    return s ? (JSON.parse(s) as T) : null;
-  } catch {
-    return null;
-  }
-}
-
-function hasWindow(): boolean {
-  return typeof window !== "undefined";
 }
 
 function loadAllFromLocalStorage(): Activity[] {
@@ -110,6 +123,18 @@ function saveAllToLocalStorage(list: Activity[]): void {
   const json = JSON.stringify(normalized);
   localStorage.setItem(LS_KEY, json);
   localStorage.setItem(LS_FALLBACK_KEY, json);
+}
+
+function upsertLocalActivity(activity: Activity): void {
+  if (!hasWindow()) return;
+  const current = loadAllFromLocalStorage();
+  const idx = current.findIndex((a) => String(a.id) === String(activity.id));
+  if (idx >= 0) {
+    current[idx] = { ...current[idx], ...activity };
+  } else {
+    current.push(activity);
+  }
+  saveAllToLocalStorage(current);
 }
 
 /**
@@ -130,7 +155,7 @@ export async function fetchActivity(id: string): Promise<Activity | null> {
   const all = loadAllFromLocalStorage();
   const localHit = all.find((a) => String(a.id) === String(id)) ?? null;
 
-  if (typeof window !== 'undefined') {
+  if (typeof window !== "undefined") {
     try {
       const res = await fetch(`/api/activities/${encodeURIComponent(id)}`);
       if (res.ok) {
@@ -142,7 +167,7 @@ export async function fetchActivity(id: string): Promise<Activity | null> {
         }
       }
     } catch (err) {
-      console.warn('fetchActivity: kunne ikke hente fra API', err);
+      console.warn("fetchActivity: kunne ikke hente fra API", err);
     }
   }
 
@@ -190,9 +215,21 @@ export async function saveActivity(a: ActivityLike): Promise<Activity> {
       ? (a as any).hasTasks
       : false;
 
+  // Fane-oppsett: støtt både `tab_config` og evt. eldre `tabs`-felt
+  const rawTabs =
+    (a as any).tab_config ??
+    (a as any).tabs ??
+    (a as any).tabConfig ??
+    null;
+
+  let tabConfig: string[] | undefined;
+  if (Array.isArray(rawTabs)) {
+    tabConfig = rawTabs.map((v) => String(v));
+  }
+
   const idx = current.findIndex((x) => String(x.id) === String(id));
   const next: Activity = {
-    ...a,
+    ...(a as any),
     id, // sørg for at id settes eksplisitt
     name: (a.name ?? "").toString(),
     type: (a.type ?? "").toString(),
@@ -201,6 +238,7 @@ export async function saveActivity(a: ActivityLike): Promise<Activity> {
     has_attendance: hasAttendanceValue,
     has_volunteers: hasVolunteersValue,
     has_tasks: hasTasksValue,
+    tab_config: tabConfig,
   };
 
   if (idx >= 0) {
