@@ -256,7 +256,7 @@ export default function AppHeader() {
   };
 
   return (
-    <header className="relative z-20 border-b border-slate-800 bg-slate-900 text-white">
+    <header className="relative z-20 border-b border-black bg-black text-white">
       <div className="relative mx-auto flex h-20 max-w-6xl items-center justify-between gap-6 px-4 sm:px-6">
         <div className="flex h-full items-center gap-4">
           <Link href="/" className="flex h-full items-center gap-3">
@@ -331,7 +331,7 @@ export default function AppHeader() {
         </div>
       </div>
 
-      <div className="relative border-t border-slate-800 bg-slate-900 md:hidden">
+      <div className="relative border-t border-black bg-black md:hidden">
         <div className="mx-auto flex max-w-6xl items-center gap-4 overflow-x-auto px-4 py-3 text-sm">
           {NAV_ITEMS.map((item) => (
             <div key={item.href}>{renderNavLink(item.href, item.label)}</div>

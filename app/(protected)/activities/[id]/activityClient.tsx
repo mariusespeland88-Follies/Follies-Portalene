@@ -55,7 +55,7 @@ const labelForType = (t?: string | null) => {
 const typeClass = (t?: string | null) => {
   const lbl = labelForType(t);
   if (lbl === "Forestilling") return "bg-purple-700";
-  if (lbl === "Event") return "bg-rose-700";
+  if (lbl === "Event") return "bg-red-700";
   return "bg-red-700";
 };
 
@@ -63,7 +63,7 @@ const gradientFor = (accent?: string | null, t?: string | null) => {
   if (accent) return `linear-gradient(90deg, ${accent} 0%, ${accent}CC 50%, ${accent}99 100%)`;
   const lbl = labelForType(t);
   if (lbl === "Forestilling") return "linear-gradient(90deg,#6d28d9 0%,#a21caf 50%,#d946ef 100%)";
-  if (lbl === "Event") return "linear-gradient(90deg,#be123c 0%,#e11d48 50%,#f43f5e 100%)";
+  if (lbl === "Event") return "linear-gradient(90deg,#7f1d1d 0%,#991b1b 50%,#b91c1c 100%)";
   return "linear-gradient(90deg,#7f1d1d 0%,#b91c1c 50%,#dc2626 100%)";
 };
 
