@@ -101,14 +101,14 @@ function LightHeader({
   me?: { id?: string; member?: AnyObj | null };
 }) {
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-red-200 bg-white shadow-lg">
-      <div className="pointer-events-none absolute -top-24 -left-20 h-56 w-56 rounded-full bg-red-300/60 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-20 -right-20 h-64 w-64 rounded-full bg-red-200/50 blur-3xl" />
+    <div className="relative overflow-hidden rounded-3xl border border-red-900/50 bg-gradient-to-r from-red-950 via-red-900 to-red-700 shadow-xl shadow-red-900/30 text-white">
+      <div className="pointer-events-none absolute -top-32 -left-24 h-64 w-64 rounded-full bg-red-500/30 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-28 -right-24 h-72 w-72 rounded-full bg-black/40 blur-3xl" />
       <div className="relative z-10 p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-4xl font-extrabold tracking-tight text-neutral-900">Medlemmer</h1>
-            <p className="mt-1 text-neutral-600">Administrer alle medlemmer og ledere i Follies.</p>
+            <h1 className="text-4xl font-extrabold tracking-tight text-white">Medlemmer</h1>
+            <p className="mt-1 text-red-100/90">Administrer alle medlemmer og ledere i Follies.</p>
             <div className="mt-5 grid grid-cols-2 gap-3 sm:max-w-sm">
               <StatPill label="Medlemmer" value={members} />
               <StatPill label="Ledere" value={leaders} />
@@ -120,14 +120,14 @@ function LightHeader({
               {me?.member ? (
                 <a
                   href={`/members/${encodeURIComponent(memberId(me.member!))}/edit`}
-                  className="inline-flex items-center justify-center rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-800 transition hover:border-red-400 hover:text-red-600"
+                  className="inline-flex items-center justify-center rounded-xl border border-white/40 bg-white px-4 py-2.5 text-sm font-semibold text-red-800 transition hover:bg-white/90 hover:text-red-900"
                 >
                   Rediger meg
                 </a>
               ) : null}
               <a
                 href="/members/new"
-                className="inline-flex items-center justify-center rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow shadow-red-500/40 transition hover:bg-red-500"
+                className="inline-flex items-center justify-center rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white shadow shadow-black/20 transition hover:bg-red-400"
               >
                 + Nytt medlem
               </a>
@@ -141,9 +141,9 @@ function LightHeader({
 
 function StatPill({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-2xl border border-red-200 bg-white px-5 py-4 shadow-sm">
-      <p className="text-[11px] uppercase tracking-wider text-neutral-500">{label}</p>
-      <p className="text-xl font-bold text-neutral-900">{value}</p>
+    <div className="rounded-2xl border border-red-700/40 bg-white/90 px-5 py-4 shadow-sm shadow-red-900/10 backdrop-blur">
+      <p className="text-[11px] uppercase tracking-wider text-red-700/90">{label}</p>
+      <p className="text-xl font-bold text-red-900">{value}</p>
     </div>
   );
 }
@@ -182,10 +182,10 @@ function Search({ value, onChange }: { value: string; onChange: (v: string) => v
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Søk navn, e-post eller rolle…"
-        className="w-full rounded-2xl border border-neutral-300 bg-white px-11 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-500 outline-none focus:border-red-400 focus:ring-2 focus:ring-red-500"
+        className="w-full rounded-2xl border border-white/40 bg-white/95 px-11 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-500 outline-none focus:border-white focus:ring-2 focus:ring-red-300/80"
       />
       <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-        <svg width="16" height="16" viewBox="0 0 24 24" className="fill-red-400">
+        <svg width="16" height="16" viewBox="0 0 24 24" className="fill-red-500">
           <path d="M10 2a8 8 0 105.293 14.293l4.207 4.207 1.414-1.414-4.207-4.207A8 8 0 0010 2zm0 2a6 6 0 110 12A6 6 0 0110 4z" />
         </svg>
       </div>
@@ -202,8 +202,8 @@ function Avatar({ name }: { name: string }) {
     .join("");
   return (
     <div className="relative">
-      <div className="absolute -inset-1 rounded-3xl bg-gradient-to-br from-red-200 via-red-100 to-white opacity-90 blur" />
-      <div className="relative flex h-20 w-20 items-center justify-center rounded-3xl bg-white text-lg font-semibold text-neutral-700 ring-1 ring-red-200">
+      <div className="absolute -inset-1 rounded-3xl bg-gradient-to-br from-red-700 via-red-500 to-red-400 opacity-70 blur" />
+      <div className="relative flex h-20 w-20 items-center justify-center rounded-3xl bg-white text-lg font-semibold text-neutral-800 ring-1 ring-red-500/40">
         {letters || "?"}
       </div>
     </div>
@@ -353,7 +353,7 @@ export default function MembersPage() {
 
       {/* Grid – brede kort */}
       {filtered.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-red-200 bg-white p-10 text-center shadow-sm">
+        <div className="rounded-3xl border border-dashed border-red-500/50 bg-white p-10 text-center shadow-sm">
           <h3 className="text-lg font-semibold text-neutral-900">Ingen treff</h3>
           <p className="mt-1 text-neutral-600">
             {search ? `Fant ingen resultater for “${search}”.` : "Det ligger ingen personer i denne kategorien ennå."}
