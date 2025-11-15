@@ -148,7 +148,7 @@ export default function ActivityEditPage() {
       {/* Info-kort – samme look som 'Opprett' */}
       <form onSubmit={onSave} className="space-y-6">
         {/* Grunninfo */}
-        <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div className="grid gap-5 md:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-neutral-800">Navn</label>
@@ -239,7 +239,7 @@ export default function ActivityEditPage() {
         </section>
 
         {/* Detaljer */}
-        <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div className="grid gap-5 md:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-neutral-800">Startdato (valgfri)</label>

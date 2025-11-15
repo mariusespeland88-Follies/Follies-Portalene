@@ -440,7 +440,7 @@ export default function ActivityDetailPage() {
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
       {/* HERO */}
       <div
-        className="rounded-2xl p-5 md:p-6 lg:p-7 ring-1 ring-black/5 shadow-sm"
+        className="rounded-2xl border border-black/10 p-5 shadow-md md:p-6 lg:p-7"
         style={{ background: gradient }}
       >
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -503,15 +503,15 @@ export default function ActivityDetailPage() {
       </div>
 
       {/* Faner */}
-      <div className="mt-6 border-b border-neutral-200 flex gap-6">
+      <div className="mt-6 flex gap-6 border-b border-neutral-200">
         {tabItems.map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`pb-2 -mb-px ${
+            className={`-mb-px border-b-2 pb-2 transition-colors ${
               tab === key
-                ? "border-b-2 border-red-600 text-neutral-900"
-                : "text-neutral-500 hover:text-neutral-800"
+                ? "border-zinc-900 text-zinc-900"
+                : "border-transparent text-zinc-500 hover:text-zinc-700"
             }`}
           >
             {label}
@@ -524,7 +524,7 @@ export default function ActivityDetailPage() {
         {/* Venstre */}
         <section className="lg:col-span-2 space-y-6">
           {tab === "oversikt" && (
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
               <h2 className="text-lg font-semibold">Oversikt</h2>
               <p className="mt-2 text-[15px] text-neutral-800">
                 {(act as any).description
@@ -565,7 +565,7 @@ export default function ActivityDetailPage() {
           )}
 
           {tab === "okter" && (
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-neutral-900">
                   Økter
@@ -640,14 +640,14 @@ export default function ActivityDetailPage() {
           )}
 
           {tab === "filer" && (
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 text-neutral-700">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm text-neutral-700">
               Her kan vi senere legge opplasting/visning av filer
               (Bilder/Tekst/Musikk/Annet).
             </div>
           )}
 
           {tab === "meldinger" && (
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 text-neutral-700">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm text-neutral-700">
               Her kan vi senere legge kunngjøringer/meldinger til
               deltakere/ledere.
             </div>
@@ -656,7 +656,7 @@ export default function ActivityDetailPage() {
 
         {/* Høyre – Info-kort */}
         <aside className="space-y-6">
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-neutral-900">Info</h3>
             <dl className="mt-3 text-sm text-neutral-700 space-y-2">
               <div className="flex justify-between gap-4">
@@ -695,7 +695,7 @@ export default function ActivityDetailPage() {
 
 function MissingActivityDbIdNotice({ title }: { title: string }) {
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
       <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
       <p className="mt-2 text-sm text-neutral-700">
         Denne funksjonen krever at aktiviteten er koblet til Supabase med en
@@ -724,7 +724,7 @@ function PeoplePanel({
   busyId?: string | null;
 }) {
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
         <span className="inline-flex items-center rounded-full bg-black/85 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/10">

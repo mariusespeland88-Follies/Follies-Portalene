@@ -192,7 +192,7 @@ export default function MyActivitiesDiagPage() {
       </div>
 
       {/* Fix-panelet */}
-      <section className="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+      <section className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Fix nå</h2>
         <div className="mt-3 grid gap-4 md:grid-cols-2">
           <div>
@@ -233,7 +233,7 @@ export default function MyActivitiesDiagPage() {
       </section>
 
       {/* Inndata */}
-      <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Inndata</h2>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           <div>
@@ -262,7 +262,7 @@ export default function MyActivitiesDiagPage() {
       </section>
 
       {/* Resultat */}
-      <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+      <section className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Resultat</h2>
         {loading ? (
           <div className="mt-3">Laster…</div>

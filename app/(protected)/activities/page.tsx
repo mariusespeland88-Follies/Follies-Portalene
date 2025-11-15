@@ -296,7 +296,10 @@ export default function ActivitiesPage() {
           {filtered.map((a) => {
             const img = coverOf(a);
             return (
-              <li key={a.id} className="group overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md">
+              <li
+                key={a.id}
+                className="group overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm transition hover:shadow-md"
+              >
                 {/* Bilde (16:9) */}
                 <div className="relative">
                   <div className="pt-[56.25%]" />
