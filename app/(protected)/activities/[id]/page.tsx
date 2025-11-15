@@ -440,78 +440,81 @@ export default function ActivityDetailPage() {
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
       {/* HERO */}
       <div
-        className="rounded-2xl border border-black/10 p-5 shadow-md md:p-6 lg:p-7"
+        className="relative mb-8 overflow-hidden rounded-3xl border-2 border-red-900/30 bg-gradient-to-br from-red-800 via-red-700 to-red-600 text-white shadow-[0_30px_60px_-15px_rgba(127,29,29,0.7)] ring-1 ring-red-300/40"
         style={{ background: gradient }}
       >
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="relative h-16 w-16 overflow-hidden rounded-2xl ring-1 ring-white/60 bg-white/10 backdrop-blur-[1px] flex items-center justify-center text-xl font-semibold text-white">
-              {avatar && imgOk ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={avatar}
-                  alt=""
-                  className="h-full w-full object-cover"
-                  onError={() => setImgOk(false)}
-                />
-              ) : (
-                <span>{initialsText}</span>
-              )}
-            </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-semibold tracking-tight text-white">
-                  {act.name}
-                </h1>
-                <span
-                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${typeClass(
-                    (act as any)?.type
-                  )} ring-1 ring-white/40`}
-                >
-                  {typeLabel}
-                </span>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.35),_transparent_55%)] mix-blend-screen opacity-70" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.25),_transparent_60%)] opacity-70" />
+        <div className="relative border border-white/20 bg-white/10 p-6 backdrop-blur-md md:p-7 lg:p-8">
+          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-start gap-5 md:items-center">
+              <div className="relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-3xl bg-white/15 text-2xl font-semibold text-white shadow-lg ring-4 ring-white/40">
+                {avatar && imgOk ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={avatar}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    onError={() => setImgOk(false)}
+                  />
+                ) : (
+                  <span className="drop-shadow-lg">{initialsText}</span>
+                )}
               </div>
-              <p className="mt-1 text-sm text-white/90">
-                {(act as any).start_date
-                  ? `Start: ${(act as any).start_date}`
-                  : "Start: —"}{" "}
-                ·{" "}
-                {(act as any).end_date
-                  ? `Slutt: ${(act as any).end_date}`
-                  : "Slutt: —"}
-              </p>
+              <div>
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+                  <h1 className="text-4xl font-semibold tracking-tight text-white drop-shadow-sm">
+                    {act.name}
+                  </h1>
+                  <span
+                    className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white ${typeClass(
+                      (act as any)?.type
+                    )} shadow-md ring-2 ring-white/30`}
+                  >
+                    {typeLabel}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm font-medium text-white/90">
+                  {(act as any).start_date
+                    ? `Start: ${(act as any).start_date}`
+                    : "Start: —"}{" "}
+                  ·{" "}
+                  {(act as any).end_date
+                    ? `Slutt: ${(act as any).end_date}`
+                    : "Slutt: —"}
+                </p>
+              </div>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Link
-              href="/activities"
-              className="rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold text-white ring-1 ring-white/40 hover:bg-white/25"
-            >
-              Til oversikt
-            </Link>
-            <button
-              onClick={() =>
-                router.push(`/activities/${encodeURIComponent(preferredRouteId)}/edit`)
-              }
-              className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 hover:bg-white/90"
-            >
-              Rediger
-            </button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Link
+                href="/activities"
+                className="inline-flex items-center justify-center rounded-xl border border-white/40 bg-white/20 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-white/30"
+              >
+                Til oversikt
+              </Link>
+              <button
+                onClick={() =>
+                  router.push(`/activities/${encodeURIComponent(preferredRouteId)}/edit`)
+                }
+                className="inline-flex items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-neutral-900 shadow-sm transition-all hover:-translate-y-0.5 hover:bg-white/90"
+              >
+                Rediger
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Faner */}
-      <div className="mt-6 flex gap-6 border-b border-neutral-200">
+      <div className="mt-8 flex flex-wrap items-center gap-2 rounded-3xl border-2 border-white/70 bg-white/90 p-2 shadow-xl backdrop-blur">
         {tabItems.map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`-mb-px border-b-2 pb-2 transition-colors ${
+            className={`rounded-2xl px-5 py-2 text-sm font-semibold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400/60 ${
               tab === key
-                ? "border-zinc-900 text-zinc-900"
-                : "border-transparent text-zinc-500 hover:text-zinc-700"
+                ? "bg-red-600 text-white shadow-lg shadow-red-500/30"
+                : "text-zinc-500 hover:-translate-y-0.5 hover:bg-zinc-100 hover:text-zinc-800"
             }`}
           >
             {label}
