@@ -58,7 +58,6 @@ function normalizeTypeForUi(raw: string | null | undefined): ActivityType {
   const v = String(raw ?? "").toLowerCase();
   if (v.includes("event")) return "event";
   if (v.includes("forest")) return "forestilling";
-  // både "tilbud" og "offer" havner her:
   return "offer";
 }
 
@@ -66,7 +65,7 @@ export default function ActivityEditPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const rawId = String(id ?? "");
-  const looksLikeDbId = UUID_REGEX.test(rawId); // <-- kun ekte UUID patcher DB
+  const looksLikeDbId = UUID_REGEX.test(rawId);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -74,13 +73,9 @@ export default function ActivityEditPage() {
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState<string>("");
-  const [type, setType] = useState<ActivityType>("offer"); // intern: "offer" | "event" | "forestilling"
+  const [type, setType] = useState<ActivityType>("offer");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
-  const [hasGuests, setHasGuests] = useState(false);
-  const [hasAttendance, setHasAttendance] = useState(false);
-  const [hasVolunteers, setHasVolunteers] = useState(false);
-  const [hasTasks, setHasTasks] = useState(false);
 
   const [tabs, setTabs] = useState<ActivityTab[]>(DEFAULT_TABS_BASE);
 
@@ -104,13 +99,10 @@ export default function ActivityEditPage() {
           const v = Boolean((act as any)?.has_volunteers);
           const t = Boolean((act as any)?.has_tasks);
 
-          setHasGuests(g);
-          setHasAttendance(a);
-          setHasVolunteers(v);
-          setHasTasks(t);
-
-          // tab_config fra DB hvis finnes
-          const rawTabs = (act as any).tab_config as string[] | null | undefined;
+          const rawTabs = (act as any).tab_config as
+            | string[]
+            | null
+            | undefined;
           const validSet = new Set<ActivityTab>(ALL_TABS.map((x) => x.key));
 
           let initialTabs: ActivityTab[] = [];
@@ -123,17 +115,11 @@ export default function ActivityEditPage() {
               }
             }
           } else {
-            // fallback basert på type + has_*-flagg
             initialTabs = [...DEFAULT_TABS_BASE];
-            const isEvent =
-              String((act as any).type ?? "").toLowerCase().includes("event");
-
-            if (isEvent) {
-              if (g) initialTabs.push("gjester");
-              if (a) initialTabs.push("innsjekk");
-              if (v) initialTabs.push("frivillige");
-              if (t) initialTabs.push("oppgaver");
-            }
+            if (g) initialTabs.push("gjester");
+            if (a) initialTabs.push("innsjekk");
+            if (v) initialTabs.push("frivillige");
+            if (t) initialTabs.push("oppgaver");
           }
 
           setTabs(ensureOversikt(initialTabs));
@@ -144,71 +130,31 @@ export default function ActivityEditPage() {
     })();
   }, [rawId]);
 
-  // Hvis man bytter bort fra event → slå av event-flagg og tilhørende faner
-  useEffect(() => {
-    const isEvent = String(type ?? "").toLowerCase().includes("event");
-    if (!isEvent) {
-      setHasGuests(false);
-      setHasAttendance(false);
-      setHasVolunteers(false);
-      setHasTasks(false);
-      setTabs((prev) => {
-        const set = new Set<ActivityTab>(prev);
-        set.delete("gjester");
-        set.delete("innsjekk");
-        set.delete("frivillige");
-        set.delete("oppgaver");
-        return ensureOversikt(Array.from(set));
-      });
-    }
-  }, [type]);
-
-  // Sørg for at event-flagg og tabs henger sammen
-  useEffect(() => {
-    const isEvent = String(type ?? "").toLowerCase().includes("event");
-    if (!isEvent) return;
-
-    setTabs((prevTabs) => {
-      const set = new Set<ActivityTab>(prevTabs);
-      if (hasGuests) set.add("gjester");
-      else set.delete("gjester");
-
-      if (hasAttendance) set.add("innsjekk");
-      else set.delete("innsjekk");
-
-      if (hasVolunteers) set.add("frivillige");
-      else set.delete("frivillige");
-
-      if (hasTasks) set.add("oppgaver");
-      else set.delete("oppgaver");
-
-      return ensureOversikt(Array.from(set));
-    });
-  }, [type, hasGuests, hasAttendance, hasVolunteers, hasTasks]);
-
   const onSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(null);
     setSaving(true);
     try {
-      const isEvent = String(type ?? "").toLowerCase().includes("event");
-
       const cleanedTabs = ensureOversikt(tabs);
+
+      const hasGuests = cleanedTabs.includes("gjester");
+      const hasAttendance = cleanedTabs.includes("innsjekk");
+      const hasVolunteers = cleanedTabs.includes("frivillige");
+      const hasTasks = cleanedTabs.includes("oppgaver");
 
       const payload = {
         name,
         description,
-        type, // "offer" | "event" | "forestilling" i DB
+        type,
         start_date: startDate || null,
         end_date: endDate || null,
-        has_guests: isEvent ? hasGuests : false,
-        has_attendance: isEvent ? hasAttendance : false,
-        has_volunteers: isEvent ? hasVolunteers : false,
-        has_tasks: isEvent ? hasTasks : false,
+        has_guests: hasGuests,
+        has_attendance: hasAttendance,
+        has_volunteers: hasVolunteers,
+        has_tasks: hasTasks,
         tab_config: cleanedTabs,
       };
 
-      // PATCH DB KUN hvis id ser ut som en ekte Supabase UUID
       if (rawId && looksLikeDbId) {
         const response = await fetch(`/api/activities/${rawId}`, {
           method: "PATCH",
@@ -217,7 +163,6 @@ export default function ActivityEditPage() {
         });
         const json = await response.json().catch(() => null);
         if (!response.ok && response.status !== 404) {
-          // 404 betyr "ikke i DB" → da lar vi LS ta over
           throw new Error(json?.error || "Klarte ikke å lagre i databasen.");
         }
       }
@@ -248,7 +193,6 @@ export default function ActivityEditPage() {
     setSaving(true);
     try {
       await hardDeleteActivity(String(rawId), { redirectToList: true });
-      // redirect i helperen → /activities
     } catch (e: any) {
       setErr(e?.message || "Kunne ikke slette aktiviteten.");
       setSaving(false);
@@ -261,7 +205,7 @@ export default function ActivityEditPage() {
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 text-neutral-900">
       {/* Topp-linje */}
-      <div className="mb-6 flex flex_wrap items-center justify-between gap-3">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-semibold tracking-tight">
           Rediger aktivitet
         </h1>
@@ -297,7 +241,6 @@ export default function ActivityEditPage() {
         </div>
       )}
 
-      {/* Info-kort – samme look som 'Opprett' */}
       <form onSubmit={onSave} className="space-y-6">
         {/* Grunninfo */}
         <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
@@ -347,52 +290,6 @@ export default function ActivityEditPage() {
               </p>
             </div>
 
-            {String(type ?? "").toLowerCase().includes("event") && (
-              <div className="md:col-span-2 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-                <h3 className="text-sm font-semibold text-neutral-900">
-                  Event-valg
-                </h3>
-                <div className="mt-3 space-y-3 text-sm text-neutral-800">
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={hasGuests}
-                      onChange={(e) => setHasGuests(e.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                    />
-                    <span>Har gjester (f.eks. familier på Julaften)</span>
-                  </label>
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={hasAttendance}
-                      onChange={(e) => setHasAttendance(e.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                    />
-                    <span>Har innsjekk / oppmøte</span>
-                  </label>
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={hasVolunteers}
-                      onChange={(e) => setHasVolunteers(e.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                    />
-                    <span>Har frivillige (intern stab/medlemmer)</span>
-                  </label>
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={hasTasks}
-                      onChange={(e) => setHasTasks(e.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                    />
-                    <span>Har oppgaver / sjekkliste</span>
-                  </label>
-                </div>
-              </div>
-            )}
-
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-neutral-800">
                 Beskrivelse
@@ -421,30 +318,11 @@ export default function ActivityEditPage() {
               const checked = tabs.includes(key);
               const isOversikt = key === "oversikt";
 
-              const isEventTab =
-                key === "gjester" ||
-                key === "innsjekk" ||
-                key === "frivillige" ||
-                key === "oppgaver";
-
-              const isEvent =
-                String(type ?? "").toLowerCase().includes("event");
-
-              const depsOk =
-                !isEventTab ||
-                (isEvent &&
-                  ((key === "gjester" && hasGuests) ||
-                    (key === "innsjekk" && hasAttendance) ||
-                    (key === "frivillige" && hasVolunteers) ||
-                    (key === "oppgaver" && hasTasks)));
-
-              const disabled = isOversikt || !depsOk;
-
               return (
                 <label
                   key={key}
                   className={`flex items-center gap-2 rounded-lg px-2 py-1 text-sm ${
-                    disabled
+                    isOversikt
                       ? "cursor-not-allowed text-neutral-400"
                       : "cursor-pointer text-neutral-800 hover:bg-neutral-50"
                   }`}
@@ -453,7 +331,7 @@ export default function ActivityEditPage() {
                     type="checkbox"
                     className="h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
                     checked={checked}
-                    disabled={disabled}
+                    disabled={isOversikt}
                     onChange={(e) => {
                       const isChecked = e.target.checked;
                       setTabs((prevTabs) => {
@@ -464,14 +342,7 @@ export default function ActivityEditPage() {
                       });
                     }}
                   />
-                  <span>
-                    {label}
-                    {isOversikt && " (alltid)"}
-                    {!depsOk && isEventTab && !isEvent
-                      ? " (kun for event)"
-                      : null}
-                    {!depsOk && isEventTab && isEvent ? " (aktiver i Event-valg)" : null}
-                  </span>
+                  <span>{label}{isOversikt && " (alltid)"}</span>
                 </label>
               );
             })}
