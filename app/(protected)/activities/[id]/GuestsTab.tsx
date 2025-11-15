@@ -430,16 +430,21 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                 className={INPUT_CLASSES}
               />
             </label>
-            <label className="flex items-center gap-3 text-sm text-neutral-800 md:col-span-2">
-              <input
-                type="checkbox"
-                checked={formState.isNorwegian}
+            <label className="text-sm text-neutral-800 md:col-span-2">
+              <span className="mb-1 block">Nasjonalitet</span>
+              <select
+                value={formState.isNorwegian ? "true" : "false"}
                 onChange={(e) =>
-                  setFormState((prev) => ({ ...prev, isNorwegian: e.target.checked }))
+                  setFormState((prev) => ({
+                    ...prev,
+                    isNorwegian: e.target.value === "true",
+                  }))
                 }
-                className="h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-              />
-              <span>Norsk?</span>
+                className={INPUT_CLASSES}
+              >
+                <option value="true">Norge</option>
+                <option value="false">Annen nasjonalitet</option>
+              </select>
             </label>
             <label className="text-sm text-neutral-800 md:col-span-2">
               Notater
@@ -494,7 +499,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                   Telefon
                 </th>
                 <th className="cursor-pointer px-3 py-2" onClick={() => toggleSort("norwegian")}>
-                  Norsk?
+                  Nasjonalitet
                 </th>
                 <th className="cursor-pointer px-3 py-2" onClick={() => toggleSort("children")}>
                   Barn
@@ -513,11 +518,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                     </td>
                     <td className="px-3 py-3 text-neutral-700">{guest.phone}</td>
                     <td className="px-3 py-3 text-neutral-700">
-                      {guest.is_norwegian === null
-                        ? "—"
-                        : guest.is_norwegian
-                        ? "Ja"
-                        : "Nei"}
+                      {guest.is_norwegian ? "Norge" : "Annen"}
                     </td>
                     <td className="px-3 py-3 text-neutral-700">
                       Barn: {guest.children?.length ?? 0}
