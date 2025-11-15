@@ -102,7 +102,7 @@ const labelForType = (t?: string | null) => {
 const typeClass = (t?: string | null) => {
   const lbl = labelForType(t);
   if (lbl === "Forestilling") return "bg-purple-700";
-  if (lbl === "Event") return "bg-rose-700";
+  if (lbl === "Event") return "bg-red-700";
   return "bg-red-700"; // Tilbud
 };
 
@@ -113,8 +113,8 @@ const gradientFor = (accent?: string | null, t?: string | null) => {
   if (lbl === "Forestilling")
     return "linear-gradient(90deg,#6d28d9 0%,#a21caf 50%,#d946ef 100%)";
   if (lbl === "Event")
-    return "linear-gradient(90deg,#be123c 0%,#e11d48 50%,#f43f5e 100%)";
-  return "linear-gradient(90deg,#7f1d1d 0%,#b91c1c 50%,#dc2626 100%)";
+    return "linear-gradient(90deg,#450a0a 0%,#7f1d1d 45%,#b91c1c 100%)";
+  return "linear-gradient(90deg,#2b0000 0%,#7f1d1d 45%,#b91c1c 100%)";
 };
 
 const initials = (name?: string) =>
@@ -440,7 +440,7 @@ export default function ActivityDetailPage() {
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
       {/* HERO */}
       <div
-        className="mb-6 overflow-hidden rounded-2xl border border-zinc-300 bg-gradient-to-r from-red-700 to-red-600 shadow-lg text-white"
+        className="mb-6 overflow-hidden rounded-2xl border border-zinc-300 bg-gradient-to-r from-red-950 via-red-900 to-red-700 shadow-lg text-white"
         style={{ background: gradient }}
       >
         <div className="border border-white/20 bg-white/10 p-5 backdrop-blur-sm md:p-6 lg:p-7">
