@@ -227,14 +227,14 @@ function Avatar({ name, src }: { name: string; src?: string | null }) {
       <img
         src={src}
         alt={name || "Profilbilde"}
-        className="h-16 w-16 rounded-xl border border-black/15 object-cover"
+        className="h-20 w-20 rounded-2xl border border-black/15 object-cover"
       />
     );
   }
 
   // Uten profilbilde → nøytral avatar
   return (
-    <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-black/10 bg-zinc-200 text-lg font-semibold text-zinc-700">
+    <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-black/10 bg-zinc-200 text-xl font-semibold text-zinc-700">
       {letters || "?"}
     </div>
   );
@@ -430,13 +430,16 @@ export default function MembersPage() {
             return (
               <li
                 key={id}
-                className="group relative flex min-h-[220px] flex-col justify-between overflow-hidden rounded-2xl border border-black/20 bg-white p-7 shadow-[0_4px_12px_rgba(0,0,0,0.07)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
+                className="group relative flex min-h-[230px] flex-col justify-between overflow-hidden rounded-2xl border border-black/20 bg-white p-7 shadow-[0_4px_12px_rgba(0,0,0,0.07)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
               >
+                {/* sort stripe øverst */}
+                <div className="-mx-7 -mt-7 mb-5 h-[3px] w-[calc(100%+3.5rem)] bg-black/15" />
+
                 {/* øvre del: avatar + badge */}
                 <div className="flex items-start justify-between gap-5">
                   <div className="flex items-start gap-4">
                     <Avatar name={name} src={avatarUrl} />
-                    <div className="flex flex-col">
+                    <div className="mt-1">
                       <Badge leader={leader} text={leader ? "LEDER" : "MEDLEM"} />
                     </div>
                   </div>
