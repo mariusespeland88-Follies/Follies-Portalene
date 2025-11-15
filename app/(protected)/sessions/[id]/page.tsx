@@ -258,14 +258,14 @@ export default function SessionProfilePage() {
         </div>
       </div>
 
-      <section className="mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-neutral-200">
+      <section className="mt-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-neutral-900">Plan / beskrivelse</h2>
         <div className="mt-2 text-[15px] text-neutral-900 whitespace-pre-line">
           {meta.note ? meta.note : "Ingen plan er lagt inn."}
         </div>
       </section>
 
-      <section className="mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-neutral-200">
+      <section className="mt-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-neutral-900">Ledere & deltakere</h2>
           <div className="flex items-center gap-2">

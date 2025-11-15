@@ -346,7 +346,10 @@ export default function PersonalCalendar() {
     <div className="bg-neutral-50 w-full">
       <main className="w-full px-3 sm:px-6 py-6 text-neutral-900">
         {/* HERO */}
-        <div className="rounded-2xl p-4 md:p-5 ring-1 ring-black/5 shadow-sm" style={{ background: "linear-gradient(90deg,#6b0f1a 0%,#b91c1c 50%,#dc2626 100%)" }}>
+        <div
+          className="rounded-2xl border border-black/10 p-4 shadow-md md:p-5"
+          style={{ background: "linear-gradient(90deg,#6b0f1a 0%,#b91c1c 50%,#dc2626 100%)" }}
+        >
           <div className="flex items-center justify-between gap-3">
             <div>
               <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-white">Kalender</h1>
@@ -391,7 +394,7 @@ export default function PersonalCalendar() {
         {/* Fullbreddelayout: venstre = kalender, høyre = 360px sidepanel */}
         <div className="mt-4 grid grid-cols-1 xl:[grid-template-columns:minmax(0,1fr)_360px] gap-4 w-full">
           {/* Venstre: månedsgitter */}
-          <section className="rounded-2xl bg-white p-3 md:p-4 shadow-sm ring-1 ring-black/5">
+          <section className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm md:p-4">
             {/* Ukedager */}
             <div className="grid grid-cols-7 gap-1 text-[12px] md:text-[13px] font-semibold text-neutral-700 px-1">
               {WEEKDAYS.map((w) => (<div key={w} className="text-center">{w}</div>))}
@@ -476,7 +479,7 @@ export default function PersonalCalendar() {
           </section>
 
           {/* Høyre: panel (Valgt dag / Kommende) */}
-          <aside className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+          <aside className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
             <SidePanel
               selectedDay={selectedDay}
               selectedEvents={selectedEvents}

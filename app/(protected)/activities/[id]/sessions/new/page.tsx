@@ -288,7 +288,7 @@ export default function NewSessionPage() {
       </div>
 
       {/* Tid / sted / plan */}
-      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-neutral-200">
+      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="block">
             <div className="mb-1 text-sm font-medium text-neutral-900">Tittel <span className="text-red-600">*</span></div>
@@ -319,7 +319,7 @@ export default function NewSessionPage() {
       </section>
 
       {/* Målgruppe */}
-      <section className="rounded-2xl bg-white p-6 shadowsm ring-1 ring-neutral-200">
+      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <div className="text-sm font-semibold text-neutral-900 mb-2">Målgruppe</div>
         <div className="flex flex-wrap gap-4 text-neutral-900">
           <label className="inline-flex items-center gap-2">

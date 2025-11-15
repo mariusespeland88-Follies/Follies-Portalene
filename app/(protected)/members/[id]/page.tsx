@@ -458,8 +458,8 @@ function Card({
 }) {
   const cls =
     tone === "muted"
-      ? "rounded-2xl bg-indigo-50 p-6 shadow ring-1 ring-indigo-200"
-      : "rounded-2xl bg-white p-6 shadow ring-1 ring-neutral-200";
+      ? "rounded-2xl border border-indigo-100 bg-indigo-50 p-6 shadow-sm"
+      : "rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm";
   return (
     <section className={cls}>
       <div className="flex items-center justify-between">

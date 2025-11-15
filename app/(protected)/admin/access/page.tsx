@@ -295,7 +295,7 @@ export default function AdminAccessPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Skjema (to kolonner for felt) */}
-        <section className="xl:col-span-2 rounded-xl border bg-white p-5 shadow-sm ring-1 ring-black/5">
+        <section className="xl:col-span-2 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-black">Opprett ny leder</h2>
           <p className="mt-1 text-sm text-neutral-700">
             Fyll inn personens detaljer. Bruker legges inn som medlem og får leder-rolle. (Innlogging kobles senere når Supabase er på plass.)
@@ -369,7 +369,7 @@ export default function AdminAccessPage() {
         </section>
 
         {/* Lederliste */}
-        <section className="rounded-xl border bg-white p-5 shadow-sm ring-1 ring-black/5">
+        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-black">Ledere</h2>
             <span className="inline-flex items-center rounded-full bg-black/85 px-2.5 py-0.5 text-xs font-semibold text-white">

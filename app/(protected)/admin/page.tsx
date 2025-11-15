@@ -349,14 +349,14 @@ export default function AdminPage() {
       )}
 
       {/* ADMIN-HUB: pent rutenett med handlingsknapper */}
-      <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-black">Verktøy</h2>
         <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {actions.map((a) => (
             <li key={a.id}>
               <Link
                 href={a.href}
-                className={`block rounded-xl border p-4 ring-1 ring-black/5 hover:shadow-sm transition ${
+                className={`block rounded-2xl border border-zinc-200 p-4 shadow-sm transition ${
                   a.tone === "primary" ? "bg-neutral-50" : "bg-white"
                 }`}
               >
@@ -374,7 +374,7 @@ export default function AdminPage() {
       {/* Underseksjoner: Skjema + Lister (beholder funksjonelt oppsett) */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Skjema */}
-        <section className="xl:col-span-2 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+        <section className="xl:col-span-2 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-black">Opprett leder</h2>
           <p className="mt-1 text-sm text-neutral-700">
             Fyll inn personens detaljer. Personen opprettes i Supabase og får leder-rolle.
@@ -428,7 +428,7 @@ export default function AdminPage() {
         </section>
 
         {/* Lister – Supabase hvis mulig, ellers LS */}
-        <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-black">
               Ledere {useDB ? <span className="text-xs text-neutral-500">(Supabase)</span> : <span className="text-xs text-neutral-500">(lokal)</span>}

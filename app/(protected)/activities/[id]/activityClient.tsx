@@ -315,7 +315,10 @@ export default function ActivityClient() {
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
       {/* HERO */}
-      <div className="rounded-2xl p-5 md:p-6 lg:p-7 ring-1 ring-black/5 shadow-sm" style={{ background: gradient }}>
+      <div
+        className="rounded-2xl border border-black/10 p-5 shadow-md md:p-6 lg:p-7"
+        style={{ background: gradient }}
+      >
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
             <div className="relative h-16 w-16 overflow-hidden rounded-2xl ring-1 ring-white/60 bg-white/10 backdrop-blur-[1px] flex items-center justify-center text-xl font-semibold text-white">
@@ -354,7 +357,7 @@ export default function ActivityClient() {
       </div>
 
       {/* Faner */}
-      <div className="mt-6 border-b border-neutral-200 flex gap-6">
+      <div className="mt-6 flex gap-6 border-b border-neutral-200">
         {([
           ["oversikt", "Oversikt"],
           ["deltakere", `Deltakere (${participants.length})`],
@@ -366,7 +369,11 @@ export default function ActivityClient() {
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`pb-2 -mb-px ${tab === key ? "border-b-2 border-red-600 text-neutral-900" : "text-neutral-500 hover:text-neutral-800"}`}
+            className={`-mb-px border-b-2 pb-2 transition-colors ${
+              tab === key
+                ? "border-zinc-900 text-zinc-900"
+                : "border-transparent text-zinc-500 hover:text-zinc-700"
+            }`}
           >
             {label}
           </button>
@@ -377,7 +384,7 @@ export default function ActivityClient() {
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <section className="lg:col-span-2 space-y-6">
           {tab === "oversikt" && (
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
               <h2 className="text-lg font-semibold">Oversikt</h2>
               <p className="mt-2 text-[15px] text-neutral-800">{act.description ? act.description : "Ingen beskrivelse."}</p>
             </div>
@@ -399,20 +406,20 @@ export default function ActivityClient() {
           )}
 
           {tab === "filer" && (
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 text-neutral-700">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm text-neutral-700">
               Her kan vi senere legge opplasting/visning av filer (Bilder/Tekst/Musikk/Annet).
             </div>
           )}
 
           {tab === "meldinger" && (
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 text-neutral-700">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm text-neutral-700">
               Her kan vi senere legge kunngjøringer/meldinger til deltakere/ledere.
             </div>
           )}
         </section>
 
         <aside className="space-y-6">
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-neutral-900">Info</h3>
             <dl className="mt-3 text-sm text-neutral-700 space-y-2">
               <div className="flex justify-between gap-4"><dt>Type</dt><dd className="font-medium">{typeLabel}</dd></div>
@@ -430,7 +437,7 @@ export default function ActivityClient() {
 /* --- småkomponenter uten hooks --- */
 function PeoplePanel({ title, people }: { title: string; people: AnyObj[] }) {
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
         <span className="inline-flex items-center rounded-full bg-black/85 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/10">

@@ -353,7 +353,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
   };
 
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-neutral-900">Gjester</h2>
         <div className="flex flex-wrap items-center gap-2">

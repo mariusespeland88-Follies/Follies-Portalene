@@ -218,7 +218,7 @@ export default function ActivityNewPage() {
       </div>
 
       {/* Grunninfo */}
-      <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="grid gap-5 md:grid-cols-2">
           <div>
             <label className="block text-sm font-medium text-neutral-800">Navn</label>
@@ -297,7 +297,7 @@ export default function ActivityNewPage() {
       </section>
 
       {/* Detaljer */}
-      <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+      <section className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="grid gap-5 md:grid-cols-3">
           <div>
             <label className="block text-sm font-medium text-neutral-800">Sted</label>
@@ -319,10 +319,10 @@ export default function ActivityNewPage() {
       </section>
 
       {/* Cover-bilde */}
-      <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+      <section className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-black">Cover-bilde</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-[220px,1fr]">
-          <div className="overflow-hidden rounded-xl ring-1 ring-neutral-200">
+          <div className="overflow-hidden rounded-2xl border border-zinc-200">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={coverPreview} alt="" className="h-40 w-full object-cover" />
           </div>
