@@ -97,6 +97,8 @@ export default function MemberEditPage() {
   const [error, setError] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const [memberEmail, setMemberEmail] = useState<string>("");
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -236,6 +238,27 @@ export default function MemberEditPage() {
   }, [form.first_name, form.last_name]);
 
   const isLoaded = !loading && !error;
+
+  async function sendInvite(email: string) {
+    setInviteBusy(true);
+    setInviteMsg(null);
+    try {
+      const res = await fetch("/api/admin/invite-member", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json?.error || "Kunne ikke sende invitasjon.");
+      }
+      setInviteMsg(`Invitasjon sendt til ${email}.`);
+    } catch (e: any) {
+      setInviteMsg(e?.message || "Noe gikk galt ved sending av invitasjon.");
+    } finally {
+      setInviteBusy(false);
+    }
+  }
 
   function handleToggleActivity(activityId: string) {
     setSelectedActs((prev) => {
@@ -457,6 +480,14 @@ export default function MemberEditPage() {
               Vis medlem
             </Link>
             <button
+              type="button"
+              onClick={() => memberEmail && sendInvite(memberEmail)}
+              disabled={inviteBusy || !memberEmail}
+              className="rounded-lg bg-black px-3.5 py-2 text-sm font-semibold text-white hover:bg-neutral-900 disabled:opacity-50"
+            >
+              {inviteBusy ? "Sender…" : "Send innloggingslenke"}
+            </button>
+            <button
               onClick={handleSave}
               disabled={saving}
               className="inline-flex items-center justify-center rounded-xl bg-red-600 px-5 py-2.5 text-base font-semibold text-white shadow-lg shadow-red-600/30 transition focus:outline-none focus:ring-2 focus:ring-red-500 disabled:cursor-not-allowed disabled:opacity-60"
@@ -465,6 +496,12 @@ export default function MemberEditPage() {
             </button>
           </div>
         </div>
+
+        {inviteMsg && (
+          <div className="mb-4 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-800">
+            {inviteMsg}
+          </div>
+        )}
 
         {(error || banner) && (
           <div className="mb-6">
