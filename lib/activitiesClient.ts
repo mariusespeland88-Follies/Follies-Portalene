@@ -12,6 +12,8 @@ export type ActivityLike = {
   archived?: boolean;
   has_guests?: boolean | null;
   has_attendance?: boolean | null;
+  has_volunteers?: boolean | null;
+  has_tasks?: boolean | null;
   [k: string]: any;
 };
 
@@ -22,6 +24,8 @@ export type Activity = {
   archived?: boolean;
   has_guests?: boolean | null;
   has_attendance?: boolean | null;
+  has_volunteers?: boolean | null;
+  has_tasks?: boolean | null;
   [k: string]: any;
 };
 
@@ -44,6 +48,10 @@ function normalizeActivityRecord(row: any): Activity | null {
       typeof row.has_guests === "boolean" ? row.has_guests : Boolean(row.has_guests),
     has_attendance:
       typeof row.has_attendance === "boolean" ? row.has_attendance : Boolean(row.has_attendance),
+    has_volunteers:
+      typeof row.has_volunteers === "boolean" ? row.has_volunteers : Boolean(row.has_volunteers),
+    has_tasks:
+      typeof row.has_tasks === "boolean" ? row.has_tasks : Boolean(row.has_tasks),
   };
   return normalized;
 }
@@ -158,6 +166,18 @@ export async function saveActivity(a: ActivityLike): Promise<Activity> {
       : typeof (a as any).hasAttendance === "boolean"
       ? (a as any).hasAttendance
       : false;
+  const hasVolunteersValue =
+    typeof a.has_volunteers === "boolean"
+      ? a.has_volunteers
+      : typeof (a as any).hasVolunteers === "boolean"
+      ? (a as any).hasVolunteers
+      : false;
+  const hasTasksValue =
+    typeof a.has_tasks === "boolean"
+      ? a.has_tasks
+      : typeof (a as any).hasTasks === "boolean"
+      ? (a as any).hasTasks
+      : false;
 
   const idx = current.findIndex((x) => String(x.id) === String(id));
   const next: Activity = {
@@ -168,6 +188,8 @@ export async function saveActivity(a: ActivityLike): Promise<Activity> {
     archived: a.archived ?? false,
     has_guests: hasGuestsValue,
     has_attendance: hasAttendanceValue,
+    has_volunteers: hasVolunteersValue,
+    has_tasks: hasTasksValue,
   };
 
   if (idx >= 0) {

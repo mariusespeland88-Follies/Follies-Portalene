@@ -7,7 +7,7 @@
  * - Klikk på en økt åpner /sessions/[id].
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClientComponentClient } from "@/lib/supabase/browser";
@@ -19,6 +19,8 @@ import {
 } from "../../../../lib/activitiesClient";
 import GuestsTab from "./GuestsTab";
 import AttendanceTab from "./AttendanceTab";
+import VolunteersTab from "./VolunteersTab";
+import TasksTab from "./TasksTab";
 
 type AnyObj = Record<string, any>;
 type Tab =
@@ -29,7 +31,9 @@ type Tab =
   | "filer"
   | "meldinger"
   | "gjester"
-  | "innsjekk";
+  | "innsjekk"
+  | "frivillige"
+  | "oppgaver";
 
 type Visuals = { coverUrl: string | null; accent: string | null };
 
@@ -48,6 +52,40 @@ const safeJSON = <T,>(s: string | null): T | null => {
   }
 };
 const S = (v: any) => String(v ?? "");
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function pickActivityDbId(
+  activity: DbActivity | null,
+  fallback: string | null | undefined
+): string | null {
+  const fallbackValue = fallback ? String(fallback) : null;
+  const candidates: (string | null | undefined)[] = [
+    activity?.id,
+    (activity as any)?.activity_id,
+    (activity as any)?.activityId,
+    (activity as any)?.db_id,
+    (activity as any)?.dbId,
+    (activity as any)?.supabase_id,
+    (activity as any)?.supabaseId,
+    (activity as any)?.raw?.id,
+    (activity as any)?.raw?.activity_id,
+    fallbackValue,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const value = String(candidate);
+    if (UUID_REGEX.test(value)) return value;
+  }
+
+  if (fallbackValue && UUID_REGEX.test(fallbackValue)) {
+    return fallbackValue;
+  }
+
+  return null;
+}
 
 /* ----------------------------- UI helpers ----------------------------- */
 const labelForType = (t?: string | null) => {
@@ -203,12 +241,14 @@ export default function ActivityDetailPage() {
   const id = Array.isArray(params?.id)
     ? params.id[0]
     : (params?.id as string | undefined);
+  const routeIdValue = String(id ?? "");
 
   const [tab, setTab] = useState<Tab>("oversikt");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
   const [act, setAct] = useState<DbActivity | null>(null);
+  const [activityDbId, setActivityDbId] = useState<string | null>(null);
   const [vis, setVis] = useState<Visuals>({ coverUrl: null, accent: null });
 
   const [participants, setParticipants] = useState<any[]>([]);
@@ -230,12 +270,30 @@ export default function ActivityDetailPage() {
     return t.includes("event") && Boolean((act as any)?.has_attendance);
   }, [act]);
 
+  const showVolunteersTab = useMemo(() => {
+    if (!act) return false;
+    return Boolean((act as any)?.has_volunteers);
+  }, [act]);
+
+  const showTasksTab = useMemo(() => {
+    if (!act) return false;
+    return Boolean((act as any)?.has_tasks);
+  }, [act]);
+
   useEffect(() => {
     if (tab === "gjester" && !showGuestsTab) setTab("oversikt");
     if (tab === "innsjekk" && !showAttendanceTab) setTab("oversikt");
-  }, [showGuestsTab, showAttendanceTab, tab]);
+    if (tab === "frivillige" && !showVolunteersTab) setTab("oversikt");
+    if (tab === "oppgaver" && !showTasksTab) setTab("oversikt");
+  }, [showAttendanceTab, showGuestsTab, showTasksTab, showVolunteersTab, tab]);
 
-  const reloadRoster = async (activityId: string) => {
+  const reloadRoster = useCallback(async (activityId: string | null) => {
+    if (!activityId) {
+      const { participants: lp, leaders: ll } = lsRosterByRole(routeIdValue);
+      setParticipants(lp);
+      setLeaders(ll);
+      return;
+    }
     const [pRes, lRes] = await Promise.all([
       fetchPeopleForRole(supabase, activityId, "participant"),
       fetchPeopleForRole(supabase, activityId, "leader"),
@@ -246,7 +304,7 @@ export default function ActivityDetailPage() {
       lRes.list.length === 0 &&
       (pRes.error || lRes.error)
     ) {
-      const { participants: lp, leaders: ll } = lsRosterByRole(activityId);
+      const { participants: lp, leaders: ll } = lsRosterByRole(routeIdValue);
       setParticipants(lp);
       setLeaders(ll);
       return;
@@ -254,12 +312,13 @@ export default function ActivityDetailPage() {
 
     setParticipants(pRes.list);
     setLeaders(lRes.list);
-  };
+  }, [routeIdValue, supabase]);
 
   useEffect(() => {
+    setActivityDbId(null);
     let alive = true;
     (async () => {
-      if (!id) {
+      if (!routeIdValue) {
         setErr("Mangler aktivitets-ID i URLen.");
         setLoading(false);
         return;
@@ -268,22 +327,25 @@ export default function ActivityDetailPage() {
         setLoading(true);
         setErr(null);
 
-        let a = await fetchActivity(String(id));
+        let a = await fetchActivity(routeIdValue);
         if (!a) {
           const res = await fetchActivities();
-          a = res.data.find((x) => String(x.id) === String(id)) ?? null;
+          a = res.data.find((x) => String(x.id) === routeIdValue) ?? null;
         }
         if (!alive) return;
         if (!a) {
-          setErr(`Fant ikke aktiviteten (id: ${id}).`);
+          setErr(`Fant ikke aktiviteten (id: ${routeIdValue}).`);
           setLoading(false);
           return;
         }
         setAct(a);
-        setVis(visualsFromLocalStorage(String(id)));
+        setVis(visualsFromLocalStorage(routeIdValue));
 
-        await reloadRoster(String(id));
-        setSessions(lsLoadSessions(String(id)));
+        const resolvedDbId = pickActivityDbId(a, routeIdValue);
+        setActivityDbId(resolvedDbId);
+
+        await reloadRoster(resolvedDbId);
+        setSessions(lsLoadSessions(routeIdValue));
         setLoading(false);
       } catch (e) {
         console.error("Feil:", e);
@@ -296,22 +358,23 @@ export default function ActivityDetailPage() {
     return () => {
       alive = false;
     };
-  }, [id, supabase]);
+  }, [reloadRoster, routeIdValue]);
 
   const typeLabel = useMemo(() => labelForType((act as any)?.type), [act]);
 
   const setRole = async (memberId: string, role: "participant" | "leader") => {
-    if (!id) return;
+    const resolvedId = pickActivityDbId(act, activityDbId ?? routeIdValue);
+    if (!resolvedId) return;
     try {
       setBusyId(memberId);
       const res = await fetch("/api/admin/enrollments/update-role", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ activityId: String(id), memberId, role }),
+        body: JSON.stringify({ activityId: resolvedId, memberId, role }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j?.error || "Kunne ikke oppdatere rolle");
-      await reloadRoster(String(id));
+      await reloadRoster(resolvedId);
     } catch (e: any) {
       alert(e?.message || "Noe gikk galt ved oppdatering av rolle.");
     } finally {
@@ -345,6 +408,7 @@ export default function ActivityDetailPage() {
   const gradient = gradientFor(vis.accent, (act as any)?.type);
   const avatar = vis.coverUrl || null;
   const initialsText = initials(act.name);
+  const preferredRouteId = routeIdValue || activityDbId || String(act.id);
   const tabItems: [Tab, string][] = [
     ["oversikt", "Oversikt"],
     ["deltakere", `Deltakere (${participants.length})`],
@@ -353,6 +417,8 @@ export default function ActivityDetailPage() {
   ];
   if (showGuestsTab) tabItems.push(["gjester", "Gjester"]);
   if (showAttendanceTab) tabItems.push(["innsjekk", "Innsjekk"]);
+  if (showVolunteersTab) tabItems.push(["frivillige", "Frivillige"]);
+  if (showTasksTab) tabItems.push(["oppgaver", "Oppgaver"]);
   tabItems.push(["filer", "Filer"], ["meldinger", "Meldinger"]);
 
   return (
@@ -410,7 +476,9 @@ export default function ActivityDetailPage() {
               Til oversikt
             </Link>
             <button
-              onClick={() => router.push(`/activities/${act.id}/edit`)}
+              onClick={() =>
+                router.push(`/activities/${encodeURIComponent(preferredRouteId)}/edit`)
+              }
               className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 hover:bg-white/90"
             >
               Rediger
@@ -473,6 +541,14 @@ export default function ActivityDetailPage() {
             />
           )}
 
+          {tab === "frivillige" && showVolunteersTab && (
+            activityDbId ? (
+              <VolunteersTab activityId={activityDbId} />
+            ) : (
+              <MissingActivityDbIdNotice title="Frivillige" />
+            )
+          )}
+
           {tab === "okter" && (
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
               <div className="flex items-center justify-between">
@@ -481,7 +557,7 @@ export default function ActivityDetailPage() {
                 </h2>
                 <Link
                   href={`/activities/${encodeURIComponent(
-                    String(act.id)
+                    preferredRouteId
                   )}/sessions/new`}
                   className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700"
                 >
@@ -522,11 +598,30 @@ export default function ActivityDetailPage() {
           )}
 
           {tab === "gjester" && showGuestsTab && (
-            <GuestsTab activityId={String(act.id)} />
+            activityDbId ? (
+              <GuestsTab activityId={activityDbId} />
+            ) : (
+              <MissingActivityDbIdNotice title="Gjester" />
+            )
           )}
 
           {tab === "innsjekk" && showAttendanceTab && (
-            <AttendanceTab activityId={String(act.id)} activityName={act.name} />
+            activityDbId ? (
+              <AttendanceTab
+                activityId={activityDbId}
+                activityName={act.name}
+              />
+            ) : (
+              <MissingActivityDbIdNotice title="Innsjekk" />
+            )
+          )}
+
+          {tab === "oppgaver" && showTasksTab && (
+            activityDbId ? (
+              <TasksTab activityId={activityDbId} />
+            ) : (
+              <MissingActivityDbIdNotice title="Oppgaver" />
+            )
           )}
 
           {tab === "filer" && (
@@ -582,6 +677,19 @@ export default function ActivityDetailPage() {
 }
 
 /* ------------------------------ Delkomponenter ------------------------------ */
+
+function MissingActivityDbIdNotice({ title }: { title: string }) {
+  return (
+    <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+      <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
+      <p className="mt-2 text-sm text-neutral-700">
+        Denne funksjonen krever at aktiviteten er koblet til Supabase med en
+        gyldig ID. Ta kontakt med en administrator for å synkronisere
+        aktiviteten dersom du forventer å se data her.
+      </p>
+    </div>
+  );
+}
 
 function PeoplePanel({
   title,
