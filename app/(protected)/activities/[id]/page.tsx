@@ -5,7 +5,8 @@
  * - UENDRET look for hero/faner/deltakere/ledere.
  * - Fane "Økter": viser økter for aktiviteten + knapp "Lag ny økt" (går til /activities/[id]/sessions/new).
  * - Klikk på en økt åpner /sessions/[id].
- * - NYTT: Per-aktivitet valg av hvilke faner som vises ("Tilpass visning").
+ * - NYTT: Hvilke faner som vises styres av activity.tab_config (DB),
+ *   med fallback basert på type + has_*-flagg.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -44,7 +45,6 @@ const CAL_LS = "follies.calendar.v1";
 const SESS_LS = "follies.activitySessions.v1";
 const LS_MEM_V1 = "follies.members.v1";
 const LS_MEM_OLD = "follies.members";
-const LS_ACTIVITY_TABS = "follies.activityTabs.v1";
 
 const safeJSON = <T,>(s: string | null): T | null => {
   try {
@@ -204,48 +204,6 @@ function lsLoadSessions(activityId: string): any[] {
   return all[activityId] ?? [];
 }
 
-/* ---------------------------- Tabs-konfig (LS) ---------------------------- */
-
-type TabsConfig = {
-  [activityId: string]: Tab[];
-};
-
-const DEFAULT_TABS: Tab[] = [
-  "oversikt",
-  "deltakere",
-  "ledere",
-  "okter",
-  "gjester",
-  "innsjekk",
-  "frivillige",
-  "oppgaver",
-  "filer",
-  "meldinger",
-];
-
-function loadActivityTabs(activityId: string, fallback: Tab[]): Tab[] {
-  if (typeof window === "undefined") return fallback;
-  const raw = window.localStorage.getItem(LS_ACTIVITY_TABS);
-  const parsed = safeJSON<TabsConfig>(raw);
-  if (!parsed) return fallback;
-
-  const found = parsed[activityId];
-  if (!found || !found.length) return fallback;
-
-  // Filtrer ut tabs som ikke lenger eksisterer i koden
-  const validSet = new Set<Tab>(DEFAULT_TABS);
-  const cleaned = found.filter((t) => validSet.has(t));
-  return cleaned.length ? cleaned : fallback;
-}
-
-function saveActivityTabs(activityId: string, tabs: Tab[]) {
-  if (typeof window === "undefined") return;
-  const raw = window.localStorage.getItem(LS_ACTIVITY_TABS);
-  const parsed = safeJSON<TabsConfig>(raw) ?? {};
-  parsed[activityId] = tabs;
-  window.localStorage.setItem(LS_ACTIVITY_TABS, JSON.stringify(parsed));
-}
-
 /* ------------------------ DB-hent i to steg ------------------------ */
 // NB: supabase er ANY for å unngå generics-krangling i Vercel/TS
 async function fetchPeopleForRole(
@@ -276,6 +234,59 @@ async function fetchPeopleForRole(
   return { list: (members || []) as AnyObj[], error: null };
 }
 
+/* -------------------- Tab-oppsett fra DB (tab_config) -------------------- */
+
+const ALL_TAB_KEYS: Tab[] = [
+  "oversikt",
+  "deltakere",
+  "ledere",
+  "okter",
+  "gjester",
+  "innsjekk",
+  "frivillige",
+  "oppgaver",
+  "filer",
+  "meldinger",
+];
+
+function computeEnabledTabs(act: DbActivity | null): Tab[] {
+  const fallbackBase = ["oversikt", "deltakere", "ledere", "okter", "filer", "meldinger"] as Tab[];
+
+  if (!act) return fallbackBase;
+
+  const rawConfig = (act as any).tab_config as string[] | null | undefined;
+  const validSet = new Set<Tab>(ALL_TAB_KEYS);
+
+  if (Array.isArray(rawConfig) && rawConfig.length) {
+    const cleaned: Tab[] = [];
+    for (const entry of rawConfig) {
+      const key = String(entry) as Tab;
+      if (validSet.has(key) && !cleaned.includes(key)) {
+        cleaned.push(key);
+      }
+    }
+    if (cleaned.length) {
+      if (!cleaned.includes("oversikt")) cleaned.unshift("oversikt");
+      return cleaned;
+    }
+  }
+
+  // Fallback hvis tab_config ikke er satt: bestem ut fra type + has_*-flagg
+  const type = String((act as any).type ?? "").toLowerCase();
+  const isEvent = type.includes("event");
+
+  const tabs = [...fallbackBase];
+
+  if (isEvent) {
+    if ((act as any).has_guests) tabs.push("gjester");
+    if ((act as any).has_attendance) tabs.push("innsjekk");
+    if ((act as any).has_volunteers) tabs.push("frivillige");
+    if ((act as any).has_tasks) tabs.push("oppgaver");
+  }
+
+  return tabs;
+}
+
 /* -------------------------------- Hoved -------------------------------- */
 export default function ActivityDetailPage() {
   const params = useParams();
@@ -302,10 +313,7 @@ export default function ActivityDetailPage() {
 
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const [showTabsConfig, setShowTabsConfig] = useState(false);
-  const [enabledTabs, setEnabledTabs] = useState<Tab[]>(() =>
-    loadActivityTabs(routeIdValue, DEFAULT_TABS)
-  );
+  const [enabledTabs, setEnabledTabs] = useState<Tab[]>([]);
 
   const showGuestsTab = useMemo(() => {
     if (!act) return false;
@@ -329,6 +337,15 @@ export default function ActivityDetailPage() {
     return Boolean((act as any)?.has_tasks);
   }, [act]);
 
+  // Oppdater enablede faner når aktiviteten endrer seg
+  useEffect(() => {
+    const next = computeEnabledTabs(act);
+    setEnabledTabs(next);
+    if (!next.includes(tab)) {
+      setTab("oversikt");
+    }
+  }, [act, tab]);
+
   // Hvis aktiverte features endres, og vi står på en fane som ikke lenger finnes, hopp til oversikt
   useEffect(() => {
     if (tab === "gjester" && !showGuestsTab) setTab("oversikt");
@@ -336,13 +353,6 @@ export default function ActivityDetailPage() {
     if (tab === "frivillige" && !showVolunteersTab) setTab("oversikt");
     if (tab === "oppgaver" && !showTasksTab) setTab("oversikt");
   }, [showAttendanceTab, showGuestsTab, showTasksTab, showVolunteersTab, tab]);
-
-  // Hvis en fane skrus av i "Tilpass visning" og vi sto på den, hopp til oversikt
-  useEffect(() => {
-    if (!enabledTabs.includes(tab)) {
-      setTab("oversikt");
-    }
-  }, [enabledTabs, tab]);
 
   const reloadRoster = useCallback(
     async (activityId: string | null) => {
@@ -459,18 +469,6 @@ export default function ActivityDetailPage() {
   const preferredRouteId =
     routeIdValue || effectiveActivityDbId || String(act?.id || "");
 
-  const updateTabs = (next: Tab[]) => {
-    // Oversikt skal alltid være på
-    if (!next.includes("oversikt")) {
-      next = ["oversikt", ...next];
-    }
-    setEnabledTabs(next);
-    saveActivityTabs(routeIdValue, next);
-    if (!next.includes(tab)) {
-      setTab("oversikt");
-    }
-  };
-
   if (loading)
     return <main className="px-4 py-6 text-neutral-900">Laster…</main>;
   if (err) {
@@ -530,9 +528,17 @@ export default function ActivityDetailPage() {
   allTabDefs.push({ key: "filer", label: "Filer" });
   allTabDefs.push({ key: "meldinger", label: "Meldinger" });
 
-  // Faner som faktisk skal vises (både enablet + faktisk mulig for denne aktiviteten)
-  const visibleTabDefs = allTabDefs.filter((def) =>
-    enabledTabs.includes(def.key)
+  const isTabFeatureAvailable = (key: Tab): boolean => {
+    if (key === "gjester") return showGuestsTab;
+    if (key === "innsjekk") return showAttendanceTab;
+    if (key === "frivillige") return showVolunteersTab;
+    if (key === "oppgaver") return showTasksTab;
+    return true;
+  };
+
+  // Faner som faktisk skal vises (må både være enablet i config + feature tilgjengelig)
+  const visibleTabDefs = allTabDefs.filter(
+    (def) => enabledTabs.includes(def.key) && isTabFeatureAvailable(def.key)
   );
 
   return (
@@ -571,7 +577,7 @@ export default function ActivityDetailPage() {
                     {typeLabel}
                   </span>
                 </div>
-                <p className="mt-1 text-sm text:white/90">
+                <p className="mt-1 text-sm text-white/90">
                   {(act as any).start_date
                     ? `Start: ${(act as any).start_date}`
                     : "Start: —"}{" "}
@@ -585,7 +591,7 @@ export default function ActivityDetailPage() {
             <div className="mt-4 flex items-center gap-2 md:mt-0">
               <Link
                 href="/activities"
-                className="rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold text:white ring-1 ring-white/40 hover:bg-white/25"
+                className="rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold text-white ring-1 ring-white/40 hover:bg-white/25"
               >
                 Til oversikt
               </Link>
@@ -595,7 +601,7 @@ export default function ActivityDetailPage() {
                     `/activities/${encodeURIComponent(preferredRouteId)}/edit`
                   )
                 }
-                className="rounded-lg bg:white px-3.5 py-2 text-sm font-semibold text-neutral-900 hover:bg:white/90"
+                className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 hover:bg-white/90"
               >
                 Rediger
               </button>
@@ -604,74 +610,21 @@ export default function ActivityDetailPage() {
         </div>
       </div>
 
-      {/* Faner + Tilpass visning */}
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-300 bg-white/80 px-2 py-1 shadow-sm backdrop-blur-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          {visibleTabDefs.map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 ${
-                tab === key
-                  ? "bg-white text-zinc-900 shadow-sm"
-                  : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div className="relative">
+      {/* Faner */}
+      <div className="mt-6 flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-300 bg-white/80 p-1 shadow-sm backdrop-blur-sm">
+        {visibleTabDefs.map(({ key, label }) => (
           <button
-            type="button"
-            onClick={() => setShowTabsConfig((v) => !v)}
-            className="rounded-xl border border-zinc-300 bg:white px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
+            key={key}
+            onClick={() => setTab(key)}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 ${
+              tab === key
+                ? "bg-white text-zinc-900 shadow-sm"
+                : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+            }`}
           >
-            Tilpass visning
+            {label}
           </button>
-          {showTabsConfig && (
-            <div className="absolute right-0 z-20 mt-2 w-64 rounded-xl border border-zinc-300 bg:white p-3 text-xs shadow-lg">
-              <p className="mb-2 text-[11px] text-zinc-600">
-                Velg hvilke kategorier som skal vises for{" "}
-                <span className="font-semibold">{act.name}</span>. Lagres bare
-                for denne aktiviteten.
-              </p>
-              <div className="max-h-64 space-y-1 overflow-auto pr-1">
-                {allTabDefs.map(({ key, label }) => {
-                  const checked = enabledTabs.includes(key);
-                  const disabled = key === "oversikt";
-                  return (
-                    <label
-                      key={key}
-                      className="flex items-center gap-2 rounded-md px-1 py-0.5 text-xs text-zinc-800 hover:bg-zinc-50"
-                    >
-                      <input
-                        type="checkbox"
-                        className="h-3 w-3"
-                        checked={checked}
-                        disabled={disabled}
-                        onChange={() => {
-                          let next: Tab[];
-                          if (checked) {
-                            next = enabledTabs.filter((t) => t !== key);
-                          } else {
-                            next = [...enabledTabs, key];
-                          }
-                          updateTabs(next);
-                        }}
-                      />
-                      <span>
-                        {label}
-                        {disabled ? " (alltid)" : ""}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
+        ))}
       </div>
 
       {/* Innhold */}
@@ -679,7 +632,7 @@ export default function ActivityDetailPage() {
         {/* Venstre */}
         <section className="lg:col-span-2 space-y-6">
           {tab === "oversikt" && (
-            <div className="rounded-2xl border border-zinc-300 bg:white p-5 shadow-sm">
+            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
               <h2 className="text-lg font-semibold">Oversikt</h2>
               <p className="mt-2 text-[15px] text-neutral-800">
                 {(act as any).description
@@ -720,7 +673,7 @@ export default function ActivityDetailPage() {
           )}
 
           {tab === "okter" && (
-            <div className="rounded-2xl border border-zinc-300 bg:white p-5 shadow-sm">
+            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-neutral-900">
                   Økter
@@ -729,7 +682,7 @@ export default function ActivityDetailPage() {
                   href={`/activities/${encodeURIComponent(
                     preferredRouteId
                   )}/sessions/new`}
-                  className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text:white hover:bg-red-700"
+                  className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700"
                 >
                   Lag ny økt
                 </Link>
@@ -756,7 +709,7 @@ export default function ActivityDetailPage() {
                       </div>
                       <Link
                         href={`/sessions/${encodeURIComponent(String(s.id))}`}
-                        className="rounded-lg bg:white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
+                        className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
                       >
                         Åpne økt
                       </Link>
@@ -795,14 +748,14 @@ export default function ActivityDetailPage() {
           )}
 
           {tab === "filer" && (
-            <div className="rounded-2xl border border-zinc-300 bg:white p-5 shadow-sm text-neutral-700">
+            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm text-neutral-700">
               Her kan vi senere legge opplasting/visning av filer
               (Bilder/Tekst/Musikk/Annet).
             </div>
           )}
 
           {tab === "meldinger" && (
-            <div className="rounded-2xl border border-zinc-300 bg:white p-5 shadow-sm text-neutral-700">
+            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm text-neutral-700">
               Her kan vi senere legge kunngjøringer/meldinger til
               deltakere/ledere.
             </div>
@@ -811,7 +764,7 @@ export default function ActivityDetailPage() {
 
         {/* Høyre – Info-kort */}
         <aside className="space-y-6">
-          <div className="rounded-2xl border border-zinc-300 bg:white p-5 shadow-sm">
+          <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-neutral-900">Info</h3>
             <dl className="mt-3 text-sm text-neutral-700 space-y-2">
               <div className="flex justify-between gap-4">
@@ -826,13 +779,13 @@ export default function ActivityDetailPage() {
                   {(act as any)?.archived ? "Arkivert" : "Aktiv"}
                 </dd>
               </div>
-              <div className="flex justify_between gap-4">
+              <div className="flex justify-between gap-4">
                 <dt>Start</dt>
                 <dd className="font-medium">
                   {(act as any)?.start_date || "—"}
                 </dd>
               </div>
-              <div className="flex justify_between gap-4">
+              <div className="flex justify-between gap-4">
                 <dt>Slutt</dt>
                 <dd className="font-medium">
                   {(act as any)?.end_date || "—"}
@@ -850,7 +803,7 @@ export default function ActivityDetailPage() {
 
 function MissingActivityDbIdNotice({ title }: { title: string }) {
   return (
-    <div className="rounded-2xl border border-zinc-300 bg:white p-5 shadow-sm">
+    <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
       <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
       <p className="mt-2 text-sm text-neutral-700">
         Denne funksjonen krever at aktiviteten er koblet til Supabase med en
@@ -879,10 +832,10 @@ function PeoplePanel({
   busyId?: string | null;
 }) {
   return (
-    <div className="rounded-2xl border border-zinc-300 bg:white p-5 shadow-sm">
-      <div className="flex items-center justify_between">
+    <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
+      <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
-        <span className="inline-flex items-center rounded-full bg:black/85 px-3 py-1 text-xs font-semibold text:white ring-1 ring-white/10">
+        <span className="inline-flex items-center rounded-full bg-black/85 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/10">
           {people.length}
         </span>
       </div>
@@ -902,7 +855,7 @@ function PeoplePanel({
             return (
               <li
                 key={mid}
-                className="flex items-center justify_between gap-3 py-3"
+                className="flex items-center justify-between gap-3 py-3"
               >
                 <div>
                   <p className="text-[15px] font-medium text-neutral-900">
@@ -920,13 +873,13 @@ function PeoplePanel({
                 <div className="flex items-center gap-2">
                   <Link
                     href={`/members/${mid}`}
-                    className="rounded-lg bg:white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
+                    className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
                   >
                     Åpne
                   </Link>
                   <Link
                     href={`/members/${mid}/edit`}
-                    className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text:white hover:bg-red-700"
+                    className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"
                   >
                     Rediger
                   </Link>
@@ -934,7 +887,7 @@ function PeoplePanel({
                     <button
                       disabled={isBusy}
                       onClick={() => onPromote(mid)}
-                      className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text:white hover:bg-red-700 disabled:opacity-60"
+                      className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
                       title="Gjør til leder"
                     >
                       Gjør til leder
@@ -944,7 +897,7 @@ function PeoplePanel({
                     <button
                       disabled={isBusy}
                       onClick={() => onDemote(mid)}
-                      className="rounded-lg bg:white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 disabled:opacity-60"
+                      className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 disabled:opacity-60"
                       title="Fjern som leder"
                     >
                       Fjern
