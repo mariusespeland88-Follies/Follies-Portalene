@@ -120,7 +120,7 @@ const ALL_TABS: { key: ActivityTab; label: string }[] = [
   { key: "meldinger", label: "Meldinger" },
 ];
 
-const DEFAULT_TABS_OFFER: ActivityTab[] = [
+const DEFAULT_TABS: ActivityTab[] = [
   "oversikt",
   "deltakere",
   "ledere",
@@ -129,30 +129,15 @@ const DEFAULT_TABS_OFFER: ActivityTab[] = [
   "meldinger",
 ];
 
-const DEFAULT_TABS_EVENT: ActivityTab[] = [
-  "oversikt",
-  "deltakere",
-  "ledere",
-  "okter",
-  "filer",
-  "meldinger",
-];
-
-const DEFAULT_TABS_SHOW: ActivityTab[] = [
-  "oversikt",
-  "deltakere",
-  "ledere",
-  "okter",
-  "filer",
-  "meldinger",
-];
-
-// Hjelper for å sørge for at 'oversikt' alltid er med
 const ensureOversikt = (tabs: ActivityTab[]): ActivityTab[] => {
   const set = new Set<ActivityTab>(tabs);
   set.add("oversikt");
   return Array.from(set);
 };
+
+// VIKTIG: "show" (UI = Forestilling) skal lagres som "forestilling" i DB/LS
+const toDbType = (t: ActivityType): "offer" | "event" | "forestilling" =>
+  t === "show" ? "forestilling" : t;
 
 export default function ActivityNewPage() {
   const router = useRouter();
@@ -165,13 +150,9 @@ export default function ActivityNewPage() {
     capacity: "",
     start: "",
     end: "",
-    hasGuests: false,
-    hasAttendance: false,
-    hasVolunteers: false,
-    hasTasks: false,
   });
 
-  const [tabs, setTabs] = useState<ActivityTab[]>(DEFAULT_TABS_OFFER);
+  const [tabs, setTabs] = useState<ActivityTab[]>(DEFAULT_TABS);
 
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -189,76 +170,11 @@ export default function ActivityNewPage() {
     value: (typeof form)[K]
   ) {
     setForm((prev) => {
-      let next = { ...prev, [key]: value };
+      const next = { ...prev, [key]: value };
 
-      // Når type endres: nullstill event-flagg og sett fornuftig tab-default
       if (key === "type") {
-        const t = value as ActivityType;
-
-        if (t !== "event") {
-          next.hasGuests = false;
-          next.hasAttendance = false;
-          next.hasVolunteers = false;
-          next.hasTasks = false;
-        }
-
-        let baseTabs: ActivityTab[] = DEFAULT_TABS_OFFER;
-        if (t === "event") baseTabs = DEFAULT_TABS_EVENT;
-        if (t === "show") baseTabs = DEFAULT_TABS_SHOW;
-        setTabs(ensureOversikt(baseTabs));
-      }
-
-      // Event-flagg styrer tilgjengelige tabs
-      if (key === "hasGuests") {
-        const checked = Boolean(value);
-        setTabs((prevTabs) => {
-          const set = new Set<ActivityTab>(prevTabs);
-          if (checked && form.type === "event") {
-            set.add("gjester");
-          } else {
-            set.delete("gjester");
-          }
-          return ensureOversikt(Array.from(set));
-        });
-      }
-
-      if (key === "hasAttendance") {
-        const checked = Boolean(value);
-        setTabs((prevTabs) => {
-          const set = new Set<ActivityTab>(prevTabs);
-          if (checked && form.type === "event") {
-            set.add("innsjekk");
-          } else {
-            set.delete("innsjekk");
-          }
-          return ensureOversikt(Array.from(set));
-        });
-      }
-
-      if (key === "hasVolunteers") {
-        const checked = Boolean(value);
-        setTabs((prevTabs) => {
-          const set = new Set<ActivityTab>(prevTabs);
-          if (checked && form.type === "event") {
-            set.add("frivillige");
-          } else {
-            set.delete("frivillige");
-          }
-          return ensureOversikt(Array.from(set));
-        });
-      }
-
-      if (key === "hasTasks") {
-        const checked = Boolean(value);
-        setTabs((prevTabs) => {
-          const set = new Set<ActivityTab>(prevTabs);
-          if (checked && form.type === "event") {
-            set.add("oppgaver");
-          } else {
-            set.delete("oppgaver");
-          }
-          return ensureOversikt(Array.from(set));
-        });
+        // valg: vi kan justere default tabs per type om vi vil, men holder dem like nå
+        setTabs((prevTabs) => ensureOversikt(prevTabs.length ? prevTabs : DEFAULT_TABS));
       }
 
       return next;
@@ -286,10 +202,6 @@ export default function ActivityNewPage() {
     }
   }
 
-  // VIKTIG: "show" (UI = Forestilling) skal lagres som "forestilling" i DB/LS
-  const toDbType = (t: ActivityType): "offer" | "event" | "forestilling" =>
-    t === "show" ? "forestilling" : t;
-
   async function save() {
     setSaving(true);
     setErr(null);
@@ -298,22 +210,24 @@ export default function ActivityNewPage() {
       const { data: sess } = await supabase.auth.getSession();
 
       const typeForDb = toDbType(form.type);
-      const hasGuests = form.type === "event" ? form.hasGuests : false;
-      const hasAttendance = form.type === "event" ? form.hasAttendance : false;
-      const hasVolunteers = form.type === "event" ? form.hasVolunteers : false;
-      const hasTasks = form.type === "event" ? form.hasTasks : false;
 
       const cleanedTabs = ensureOversikt(tabs);
 
+      // Booleans styres nå av hvilke faner som er valgt – for ALLE typer
+      const hasGuests = cleanedTabs.includes("gjester");
+      const hasAttendance = cleanedTabs.includes("innsjekk");
+      const hasVolunteers = cleanedTabs.includes("frivillige");
+      const hasTasks = cleanedTabs.includes("oppgaver");
+
       const base = {
         name: form.name?.trim() || "Uten navn",
-        type: typeForDb, // <- 'forestilling' / 'offer' / 'event'
+        type: typeForDb,
         archived: false,
         has_guests: hasGuests,
         has_attendance: hasAttendance,
         has_volunteers: hasVolunteers,
         has_tasks: hasTasks,
-        tab_config: cleanedTabs, // <-- NYTT: hvilke faner denne aktiviteten har
+        tab_config: cleanedTabs,
       };
 
       let dbId: string | null = null;
@@ -341,7 +255,7 @@ export default function ActivityNewPage() {
       // Hvis DB ikke ga id (ikke innlogget eller feil), lag lokal id
       const localId = dbId ?? (crypto?.randomUUID?.() ?? `a-${Date.now()}`);
 
-      // Speil til localStorage (lagre NORMALISERT type, ikke 'show')
+      // Speil til localStorage
       const next = {
         id: localId,
         name: base.name,
@@ -462,60 +376,6 @@ export default function ActivityNewPage() {
             </div>
           </div>
 
-          {form.type === "event" && (
-            <div className="md:col-span-2 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-              <h3 className="text-sm font-semibold text-neutral-900">
-                Event-valg
-              </h3>
-              <div className="mt-3 space-y-3 text-sm text-neutral-800">
-                <label className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={form.hasGuests}
-                    onChange={(e) =>
-                      onChange("hasGuests", e.target.checked as any)
-                    }
-                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                  />
-                  <span>Har gjester (f.eks. familier på Julaften)</span>
-                </label>
-                <label className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={form.hasAttendance}
-                    onChange={(e) =>
-                      onChange("hasAttendance", e.target.checked as any)
-                    }
-                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                  />
-                  <span>Har innsjekk / oppmøte</span>
-                </label>
-                <label className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={form.hasVolunteers}
-                    onChange={(e) =>
-                      onChange("hasVolunteers", e.target.checked as any)
-                    }
-                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                  />
-                  <span>Har frivillige (intern stab/medlemmer)</span>
-                </label>
-                <label className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={form.hasTasks}
-                    onChange={(e) =>
-                      onChange("hasTasks", e.target.checked as any)
-                    }
-                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                  />
-                  <span>Har oppgaver / sjekkliste</span>
-                </label>
-              </div>
-            </div>
-          )}
-
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-neutral-800">
               Beskrivelse
@@ -544,29 +404,12 @@ export default function ActivityNewPage() {
             const checked = tabs.includes(key);
             const isOversikt = key === "oversikt";
 
-            // Event-spesifikke faner er bare relevante hvis aktivitet og flagg matcher
-            const isEventTab =
-              key === "gjester" ||
-              key === "innsjekk" ||
-              key === "frivillige" ||
-              key === "oppgaver";
-
-            const depsOk =
-              !isEventTab ||
-              (form.type === "event" &&
-                ((key === "gjester" && form.hasGuests) ||
-                  (key === "innsjekk" && form.hasAttendance) ||
-                  (key === "frivillige" && form.hasVolunteers) ||
-                  (key === "oppgaver" && form.hasTasks)));
-
-            const disabled = isOversikt || !depsOk;
-
             return (
               <label
                 key={key}
                 className={`flex items-center gap-2 rounded-lg px-2 py-1 text-sm ${
-                  disabled
-                    ? "cursor-not-allowed text-neutral-400"
+                  isOversikt
+                    ? "cursor-not-allowed text-neutral-500"
                     : "cursor-pointer text-neutral-800 hover:bg-neutral-50"
                 }`}
               >
@@ -574,33 +417,18 @@ export default function ActivityNewPage() {
                   type="checkbox"
                   className="h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
                   checked={checked}
-                  disabled={disabled}
+                  disabled={isOversikt}
                   onChange={(e) => {
                     const isChecked = e.target.checked;
                     setTabs((prevTabs) => {
                       const set = new Set<ActivityTab>(prevTabs);
-                      if (isChecked) {
-                        set.add(key);
-                      } else {
-                        set.delete(key);
-                      }
+                      if (isChecked) set.add(key);
+                      else set.delete(key);
                       return ensureOversikt(Array.from(set));
                     });
                   }}
                 />
-                <span>
-                  {label}
-                  {isOversikt && " (alltid)"}
-                  {!depsOk && isEventTab && form.type !== "event"
-                    ? " (kun for event)"
-                    : null}
-                  {!depsOk &&
-                  isEventTab &&
-                  form.type === "event" &&
-                  !checked
-                    ? " (aktiver i Event-valg)"
-                    : null}
-                </span>
+                <span>{label}{isOversikt && " (alltid)"}</span>
               </label>
             );
           })}
