@@ -440,23 +440,24 @@ export default function ActivityDetailPage() {
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
       {/* HERO */}
       <div
-        className="rounded-2xl border border-black/10 p-5 shadow-md md:p-6 lg:p-7"
+        className="mb-6 overflow-hidden rounded-2xl border border-zinc-300 bg-gradient-to-r from-red-700 to-red-600 shadow-lg text-white"
         style={{ background: gradient }}
       >
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="relative h-16 w-16 overflow-hidden rounded-2xl ring-1 ring-white/60 bg-white/10 backdrop-blur-[1px] flex items-center justify-center text-xl font-semibold text-white">
-              {avatar && imgOk ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={avatar}
-                  alt=""
-                  className="h-full w-full object-cover"
-                  onError={() => setImgOk(false)}
-                />
-              ) : (
-                <span>{initialsText}</span>
-              )}
+        <div className="border border-white/20 bg-white/10 p-5 backdrop-blur-sm md:p-6 lg:p-7">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-4">
+              <div className="relative h-16 w-16 overflow-hidden rounded-2xl ring-1 ring-white/60 bg-white/10 backdrop-blur-[1px] flex items-center justify-center text-xl font-semibold text-white">
+                {avatar && imgOk ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={avatar}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    onError={() => setImgOk(false)}
+                  />
+                ) : (
+                  <span>{initialsText}</span>
+                )}
             </div>
             <div>
               <div className="flex items-center gap-3">
@@ -481,23 +482,22 @@ export default function ActivityDetailPage() {
                   : "Slutt: —"}
               </p>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Link
-              href="/activities"
-              className="rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold text-white ring-1 ring-white/40 hover:bg-white/25"
-            >
-              Til oversikt
-            </Link>
-            <button
-              onClick={() =>
-                router.push(`/activities/${encodeURIComponent(preferredRouteId)}/edit`)
-              }
-              className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 hover:bg-white/90"
-            >
-              Rediger
-            </button>
+            <div className="mt-4 flex items-center gap-2 md:mt-0">
+              <Link
+                href="/activities"
+                className="rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold text-white ring-1 ring-white/40 hover:bg-white/25"
+              >
+                Til oversikt
+              </Link>
+              <button
+                onClick={() =>
+                  router.push(`/activities/${encodeURIComponent(preferredRouteId)}/edit`)
+                }
+                className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 hover:bg-white/90"
+              >
+                Rediger
+              </button>
+            </div>
           </div>
         </div>
       </div>
