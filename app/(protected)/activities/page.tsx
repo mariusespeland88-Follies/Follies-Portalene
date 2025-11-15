@@ -179,10 +179,19 @@ function normalizeActivitiesFromRaw(list: AnyObj[]): Activity[] {
       pick(a?.has_messages, (a as any)?.hasMessages),
       true
     );
-    const hasGuests = Boolean(a?.has_guests ?? a?.hasGuests ?? false);
-    const hasAttendance = Boolean(a?.has_attendance ?? a?.hasAttendance ?? false);
-    const hasVolunteers = Boolean(a?.has_volunteers ?? a?.hasVolunteers ?? false);
-    const hasTasks = Boolean(a?.has_tasks ?? a?.hasTasks ?? false);
+    const hasGuests = boolWithDefault(
+      pick(a?.has_guests, (a as any)?.hasGuests),
+      false
+    );
+    const hasAttendance = boolWithDefault(
+      pick(a?.has_attendance, (a as any)?.hasAttendance),
+      false
+    );
+    const hasVolunteers = boolWithDefault(
+      pick(a?.has_volunteers, (a as any)?.hasVolunteers),
+      false
+    );
+    const hasTasks = boolWithDefault(pick(a?.has_tasks, (a as any)?.hasTasks), false);
 
     return {
       id,

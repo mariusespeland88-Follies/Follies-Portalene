@@ -26,16 +26,16 @@ export type Activity = {
   id: string;
   name: string;
   type: string;
-  archived?: boolean;
-  has_participants?: boolean | null;
-  has_leaders?: boolean | null;
-  has_sessions?: boolean | null;
-  has_files?: boolean | null;
-  has_messages?: boolean | null;
-  has_guests?: boolean | null;
-  has_attendance?: boolean | null;
-  has_volunteers?: boolean | null;
-  has_tasks?: boolean | null;
+  archived: boolean;
+  has_participants: boolean;
+  has_leaders: boolean;
+  has_sessions: boolean;
+  has_files: boolean;
+  has_messages: boolean;
+  has_guests: boolean;
+  has_attendance: boolean;
+  has_volunteers: boolean;
+  has_tasks: boolean;
   [k: string]: any;
 };
 
@@ -46,8 +46,16 @@ const LS_KEY = "follies.activities.v1";
 
 function normalizeActivityRecord(row: any): Activity | null {
   if (!row) return null;
-  const rawId = row.id ?? row.uuid ?? row._id ?? row.slug ?? null;
+  const rawId =
+    row.id ??
+    row.uuid ??
+    row._id ??
+    row.activity_id ??
+    row.activityId ??
+    row.slug ??
+    null;
   if (!rawId) return null;
+
   const boolFromRow = (
     snakeValue: any,
     fallbackKeys: string[],
@@ -67,12 +75,34 @@ function normalizeActivityRecord(row: any): Activity | null {
     return defaultValue;
   };
 
+  const normalizeType = (value: any): string => {
+    const raw = String(value ?? "").toLowerCase();
+    if (!raw) return "offer";
+    if (raw.includes("forest")) return "show";
+    if (
+      raw.includes("event") ||
+      raw.includes("arrangement") ||
+      raw.includes("konsert") ||
+      raw.includes("åpen") ||
+      raw.includes("open")
+    ) {
+      return "event";
+    }
+    if (raw.includes("offer") || raw.includes("tilbud")) return "offer";
+    return raw;
+  };
+
+  const id = String(rawId);
   const normalized: Activity = {
     ...(row as Record<string, any>),
-    id: String(rawId),
-    name: String(row.name ?? ""),
-    type: String(row.type ?? ""),
-    archived: row.archived ?? false,
+    id,
+    name: String(row.name ?? row.title ?? row.navn ?? `Aktivitet ${id}`),
+    type: normalizeType(row.type ?? row.category ?? row.kategori ?? ""),
+    archived: Boolean(
+      row.archived ??
+        row.is_archived ??
+        (typeof row.status === "string" && row.status.toLowerCase() === "archived")
+    ),
     has_participants: boolFromRow(row.has_participants, ["hasParticipants"], true),
     has_leaders: boolFromRow(row.has_leaders, ["hasLeaders"], true),
     has_sessions: boolFromRow(row.has_sessions, ["hasSessions"], true),
@@ -106,8 +136,9 @@ function dedupeAndNormalize(lists: any[][]): Activity[] {
     for (const entry of list) {
       const normalized = normalizeActivityRecord(entry);
       if (!normalized) continue;
-      const prev = map.get(normalized.id) ?? {};
-      map.set(normalized.id, { ...prev, ...normalized });
+      const prev = map.get(normalized.id);
+      const merged = { ...(prev ?? {}), ...normalized } as Activity;
+      map.set(normalized.id, merged);
     }
   }
   return Array.from(map.values());
@@ -248,7 +279,7 @@ export async function saveActivity(a: ActivityLike): Promise<Activity> {
     id, // sørg for at id settes eksplisitt
     name: (a.name ?? "").toString(),
     type: (a.type ?? "").toString(),
-    archived: a.archived ?? false,
+    archived: Boolean(a.archived),
     has_participants: hasParticipantsValue,
     has_leaders: hasLeadersValue,
     has_sessions: hasSessionsValue,
