@@ -62,7 +62,15 @@ function defaultRole(existing: Role | undefined): Role {
   return "participant";
 }
 
-function RolePill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function RolePill({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -83,11 +91,15 @@ export default function MemberEditPage() {
   const supabase = createClientComponentClient();
 
   const id = useMemo(() => {
-    const raw = Array.isArray(params?.id) ? params?.id[0] : (params?.id as string | undefined);
+    const raw = Array.isArray(params?.id)
+      ? params?.id[0]
+      : (params?.id as string | undefined);
     return raw ? String(raw) : undefined;
   }, [params?.id]);
 
-  const [form, setForm] = useState<MemberFormState>(() => emptyMemberFormState());
+  const [form, setForm] = useState<MemberFormState>(() =>
+    emptyMemberFormState()
+  );
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [selectedActs, setSelectedActs] = useState<string[]>([]);
@@ -96,7 +108,6 @@ export default function MemberEditPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
-  const [memberEmail, setMemberEmail] = useState<string>("");
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteMsg, setInviteMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -118,7 +129,9 @@ export default function MemberEditPage() {
         if (!active) return;
         if (!actError && Array.isArray(data)) {
           setActivities((prev) =>
-            mergeActivities(prev, data as any).filter((activity) => !activity.archived)
+            mergeActivities(prev, data as any).filter(
+              (activity) => !activity.archived
+            )
           );
         }
       } catch {
@@ -144,20 +157,22 @@ export default function MemberEditPage() {
         setError(null);
         setBanner(null);
 
-        const [{ data: memberData, error: memberErr }, { data: enrollmentData, error: enrollErr }] =
-          await Promise.all([
-            supabase
-              .from("members")
-              .select(
-                "id, first_name, last_name, email, phone, address, postal_code, city, dob, start_date, start_year, guardian_name, guardian_phone, guardian_email, allergies, medical_info, internal_notes, archived, avatar_url"
-              )
-              .eq("id", id)
-              .maybeSingle(),
-            supabase
-              .from("enrollments")
-              .select("activity_id, role")
-              .eq("member_id", id),
-          ]);
+        const [
+          { data: memberData, error: memberErr },
+          { data: enrollmentData, error: enrollErr },
+        ] = await Promise.all([
+          supabase
+            .from("members")
+            .select(
+              "id, first_name, last_name, email, phone, address, postal_code, city, dob, start_date, start_year, guardian_name, guardian_phone, guardian_email, allergies, medical_info, internal_notes, archived, avatar_url"
+            )
+            .eq("id", id)
+            .maybeSingle(),
+          supabase
+            .from("enrollments")
+            .select("activity_id, role")
+            .eq("member_id", id),
+        ]);
 
         if (!active) return;
 
@@ -194,7 +209,6 @@ export default function MemberEditPage() {
           archived: !!member.archived,
           avatar_url: member.avatar_url ?? null,
         });
-        setMemberEmail(member.email ?? "");
 
         if (enrollErr) {
           console.error(enrollErr);
@@ -254,7 +268,9 @@ export default function MemberEditPage() {
       }
       setInviteMsg(`Invitasjon sendt til ${email}.`);
     } catch (e: any) {
-      setInviteMsg(e?.message || "Noe gikk galt ved sending av invitasjon.");
+      setInviteMsg(
+        e?.message || "Noe gikk galt ved sending av invitasjon."
+      );
     } finally {
       setInviteBusy(false);
     }
@@ -283,7 +299,9 @@ export default function MemberEditPage() {
     if (role === "none") {
       setSelectedActs((prev) => prev.filter((x) => x !== activityId));
     } else {
-      setSelectedActs((prev) => (prev.includes(activityId) ? prev : [...prev, activityId]));
+      setSelectedActs((prev) =>
+        prev.includes(activityId) ? prev : [...prev, activityId]
+      );
     }
   }
 
@@ -321,11 +339,13 @@ export default function MemberEditPage() {
         }
         const BUCKET = "profile-pictures";
         const path = `members/${id}/${Date.now()}-${avatarFile.name}`;
-        const { error: uploadErr } = await supabase.storage.from(BUCKET).upload(path, avatarFile, {
-          upsert: false,
-          cacheControl: "3600",
-          contentType: avatarFile.type,
-        });
+        const { error: uploadErr } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, avatarFile, {
+            upsert: false,
+            cacheControl: "3600",
+            contentType: avatarFile.type,
+          });
         if (uploadErr) throw uploadErr;
         const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
         avatarUrlToSave = data.publicUrl;
@@ -355,7 +375,10 @@ export default function MemberEditPage() {
         if (updatePayload[key] === undefined) delete updatePayload[key];
       });
 
-      const { error: updateErr } = await supabase.from("members").update(updatePayload).eq("id", id);
+      const { error: updateErr } = await supabase
+        .from("members")
+        .update(updatePayload)
+        .eq("id", id);
       if (updateErr) {
         console.error(updateErr);
         throw new Error("Kunne ikke oppdatere medlemmet.");
@@ -366,7 +389,10 @@ export default function MemberEditPage() {
         desiredRoles[aid] = defaultRole(selectedRoles[aid]);
       }
 
-      const { data: currentEnrollments, error: enrollLoadErr } = await supabase
+      const {
+        data: currentEnrollments,
+        error: enrollLoadErr,
+      } = await supabase
         .from("enrollments")
         .select("activity_id, role")
         .eq("member_id", id);
@@ -383,7 +409,9 @@ export default function MemberEditPage() {
       }
 
       const desiredSet = new Set(selectedActs);
-      const toDelete = [...currentMap.keys()].filter((aid) => !desiredSet.has(aid));
+      const toDelete = [...currentMap.keys()].filter(
+        (aid) => !desiredSet.has(aid)
+      );
       if (toDelete.length) {
         const { error: deleteErr } = await supabase
           .from("enrollments")
@@ -407,7 +435,9 @@ export default function MemberEditPage() {
           .upsert(upsertPayload, { onConflict: "member_id,activity_id" });
         if (upsertErr) {
           console.error(upsertErr);
-          throw new Error("Kunne ikke oppdatere aktiviteter for medlemmet.");
+          throw new Error(
+            "Kunne ikke oppdatere aktiviteter for medlemmet."
+          );
         }
       }
 
@@ -463,14 +493,20 @@ export default function MemberEditPage() {
     );
   }
 
+  const emailForDisplay = form.email?.trim() || "";
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 text-neutral-100">
       <div className="rounded-3xl border border-red-600/40 bg-neutral-950/80 p-8 shadow-[0_0_60px_rgba(239,68,68,0.25)] backdrop-blur">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-red-400">Rediger medlem</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-red-400">
+              Rediger medlem
+            </h1>
             <p className="mt-1 text-sm text-neutral-400">{fullName}</p>
-            <p className="text-xs text-neutral-500">{memberEmail || "Ingen e-post"}</p>
+            <p className="text-xs text-neutral-500">
+              {emailForDisplay || "Ingen e-post"}
+            </p>
           </div>
           <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
             <Link
@@ -481,8 +517,10 @@ export default function MemberEditPage() {
             </Link>
             <button
               type="button"
-              onClick={() => memberEmail && sendInvite(memberEmail)}
-              disabled={inviteBusy || !memberEmail}
+              onClick={() =>
+                emailForDisplay && sendInvite(emailForDisplay)
+              }
+              disabled={inviteBusy || !emailForDisplay}
               className="rounded-lg bg-black px-3.5 py-2 text-sm font-semibold text-white hover:bg-neutral-900 disabled:opacity-50"
             >
               {inviteBusy ? "Sender…" : "Send innloggingslenke"}
@@ -498,7 +536,7 @@ export default function MemberEditPage() {
         </div>
 
         {inviteMsg && (
-          <div className="mb-4 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-800">
+          <div className="mb-4 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs text-neutral-200">
             {inviteMsg}
           </div>
         )}
@@ -520,48 +558,68 @@ export default function MemberEditPage() {
 
         <section className="rounded-2xl border border-red-600/25 bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 p-6 shadow-lg shadow-red-900/20">
           <div className="grid gap-6 md:grid-cols-3">
-            <div className="md:col-span-2 grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 md:col-span-2 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-semibold text-neutral-300">Fornavn</label>
+                <label className="block text-sm font-semibold text-neutral-300">
+                  Fornavn
+                </label>
                 <input
                   value={form.first_name}
-                  onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, first_name: e.target.value }))
+                  }
                   className={INPUT_CLASS}
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-neutral-300">Etternavn</label>
+                <label className="block text-sm font-semibold text-neutral-300">
+                  Etternavn
+                </label>
                 <input
                   value={form.last_name}
-                  onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, last_name: e.target.value }))
+                  }
                   className={INPUT_CLASS}
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-neutral-300">Fødselsdato</label>
+                <label className="block text-sm font-semibold text-neutral-300">
+                  Fødselsdato
+                </label>
                 <input
                   type="date"
                   value={form.dob}
-                  onChange={(e) => setForm((f) => ({ ...f, dob: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, dob: e.target.value }))
+                  }
                   className={INPUT_CLASS}
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-neutral-300">Startdato</label>
+                <label className="block text-sm font-semibold text-neutral-300">
+                  Startdato
+                </label>
                 <input
                   type="date"
                   value={form.start_date}
-                  onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, start_date: e.target.value }))
+                  }
                   className={INPUT_CLASS}
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-neutral-300">Startår</label>
+                <label className="block text-sm font-semibold text-neutral-300">
+                  Startår
+                </label>
                 <input
                   inputMode="numeric"
                   pattern="[0-9]*"
                   value={form.start_year}
-                  onChange={(e) => setForm((f) => ({ ...f, start_year: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, start_year: e.target.value }))
+                  }
                   className={INPUT_CLASS}
                 />
               </div>
@@ -569,12 +627,24 @@ export default function MemberEditPage() {
             <div className="flex flex-col items-center justify-center gap-3">
               <div className="h-40 w-40 overflow-hidden rounded-2xl border border-red-600/40 bg-neutral-900 shadow-inner shadow-red-900/30">
                 {form.avatar_url ? (
-                  <img src={form.avatar_url} alt="Profilbilde" className="h-full w-full object-cover" />
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={form.avatar_url}
+                    alt="Profilbilde"
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-sm text-neutral-500">Ingen bilde</div>
+                  <div className="flex h-full w-full items-center justify-center text-sm text-neutral-500">
+                    Ingen bilde
+                  </div>
                 )}
               </div>
-              <input ref={fileRef} type="file" accept="image/*" className={FILE_INPUT_CLASS} />
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className={FILE_INPUT_CLASS}
+              />
               <div className="flex flex-col items-center gap-2">
                 <button
                   type="button"
@@ -601,45 +671,67 @@ export default function MemberEditPage() {
         </section>
 
         <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-950/70 p-6 shadow-lg shadow-black/40">
-          <h2 className="mb-4 text-xl font-semibold text-red-300">Kontaktinfo</h2>
+          <h2 className="mb-4 text-xl font-semibold text-red-300">
+            Kontaktinfo
+          </h2>
           <div className="grid gap-5 md:grid-cols-2">
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">E-post</label>
+              <label className="block text-sm font-semibold text-neutral-300">
+                E-post
+              </label>
               <input
                 value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, email: e.target.value }))
+                }
                 className={INPUT_CLASS}
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">Telefon</label>
+              <label className="block text-sm font-semibold text-neutral-300">
+                Telefon
+              </label>
               <input
                 value={form.phone}
-                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, phone: e.target.value }))
+                }
                 className={INPUT_CLASS}
               />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-neutral-300">Adresse</label>
+              <label className="block text-sm font-semibold text-neutral-300">
+                Adresse
+              </label>
               <input
                 value={form.address}
-                onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, address: e.target.value }))
+                }
                 className={INPUT_CLASS}
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">Postnummer</label>
+              <label className="block text-sm font-semibold text-neutral-300">
+                Postnummer
+              </label>
               <input
                 value={form.postal_code}
-                onChange={(e) => setForm((f) => ({ ...f, postal_code: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, postal_code: e.target.value }))
+                }
                 className={INPUT_CLASS}
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">Sted</label>
+              <label className="block text-sm font-semibold text-neutral-300">
+                Sted
+              </label>
               <input
                 value={form.city}
-                onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, city: e.target.value }))
+                }
                 className={INPUT_CLASS}
               />
             </div>
@@ -647,29 +739,43 @@ export default function MemberEditPage() {
         </section>
 
         <section className="mt-8 rounded-2xl border border-red-600/25 bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 p-6 shadow-lg shadow-red-900/20">
-          <h2 className="mb-4 text-xl font-semibold text-red-300">Foresatt</h2>
+          <h2 className="mb-4 text-xl font-semibold text-red-300">
+            Foresatt
+          </h2>
           <div className="grid gap-5 md:grid-cols-3">
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">Navn</label>
+              <label className="block text-sm font-semibold text-neutral-300">
+                Navn
+              </label>
               <input
                 value={form.guardian_name}
-                onChange={(e) => setForm((f) => ({ ...f, guardian_name: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, guardian_name: e.target.value }))
+                }
                 className={INPUT_CLASS}
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">Telefon</label>
+              <label className="block text-sm font-semibold text-neutral-300">
+                Telefon
+              </label>
               <input
                 value={form.guardian_phone}
-                onChange={(e) => setForm((f) => ({ ...f, guardian_phone: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, guardian_phone: e.target.value }))
+                }
                 className={INPUT_CLASS}
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">E-post</label>
+              <label className="block text-sm font-semibold text-neutral-300">
+                E-post
+              </label>
               <input
                 value={form.guardian_email}
-                onChange={(e) => setForm((f) => ({ ...f, guardian_email: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, guardian_email: e.target.value }))
+                }
                 className={INPUT_CLASS}
               />
             </div>
@@ -680,18 +786,26 @@ export default function MemberEditPage() {
           <h2 className="mb-4 text-xl font-semibold text-red-300">Helse</h2>
           <div className="grid gap-5 md:grid-cols-2">
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">Allergier</label>
+              <label className="block text-sm font-semibold text-neutral-300">
+                Allergier
+              </label>
               <textarea
                 value={form.allergies}
-                onChange={(e) => setForm((f) => ({ ...f, allergies: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, allergies: e.target.value }))
+                }
                 className={`${INPUT_CLASS} min-h-[120px]`}
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">Medisinsk info</label>
+              <label className="block text-sm font-semibold text-neutral-300">
+                Medisinsk info
+              </label>
               <textarea
                 value={form.medical_info}
-                onChange={(e) => setForm((f) => ({ ...f, medical_info: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, medical_info: e.target.value }))
+                }
                 className={`${INPUT_CLASS} min-h-[120px]`}
               />
             </div>
@@ -701,10 +815,16 @@ export default function MemberEditPage() {
         <section className="mt-8 rounded-2xl border border-red-600/25 bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 p-6 shadow-lg shadow-red-900/20">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-red-300">Aktiviteter</h2>
-              <p className="text-xs text-neutral-500">Kryss av og velg rolle for medlemmet i hver aktivitet.</p>
+              <h2 className="text-xl font-semibold text-red-300">
+                Aktiviteter
+              </h2>
+              <p className="text-xs text-neutral-500">
+                Kryss av og velg rolle for medlemmet i hver aktivitet.
+              </p>
             </div>
-            <span className="text-sm font-semibold text-neutral-300">{selectedActs.length} valgt</span>
+            <span className="text-sm font-semibold text-neutral-300">
+              {selectedActs.length} valgt
+            </span>
           </div>
           <div className="mt-4 space-y-6">
             <ActivitySection
@@ -730,10 +850,17 @@ export default function MemberEditPage() {
           <h2 className="mb-4 text-xl font-semibold text-red-300">Internt</h2>
           <div className="grid gap-5 md:grid-cols-[2fr,1fr]">
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">Interne notater</label>
+              <label className="block text-sm font-semibold text-neutral-300">
+                Interne notater
+              </label>
               <textarea
                 value={form.internal_notes}
-                onChange={(e) => setForm((f) => ({ ...f, internal_notes: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    internal_notes: e.target.value,
+                  }))
+                }
                 className={`${INPUT_CLASS} min-h-[140px]`}
               />
             </div>
@@ -744,11 +871,14 @@ export default function MemberEditPage() {
                   type="checkbox"
                   className="h-4 w-4 accent-red-500"
                   checked={form.archived}
-                  onChange={(e) => setForm((f) => ({ ...f, archived: e.target.checked }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, archived: e.target.checked }))
+                  }
                 />
               </label>
               <p className="text-xs text-neutral-500">
-                Arkiverte medlemmer skjules fra standardlister, men beholdes i databasen.
+                Arkiverte medlemmer skjules fra standardlister, men beholdes i
+                databasen.
               </p>
             </div>
           </div>
@@ -767,11 +897,20 @@ type ActivitySectionProps = {
   onRoleChange: (id: string, role: Role) => void;
 };
 
-function ActivitySection({ title, activities, selectedActs, selectedRoles, onToggle, onRoleChange }: ActivitySectionProps) {
+function ActivitySection({
+  title,
+  activities,
+  selectedActs,
+  selectedRoles,
+  onToggle,
+  onRoleChange,
+}: ActivitySectionProps) {
   if (activities.length === 0) {
     return (
       <div>
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">{title}</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
+          {title}
+        </h3>
         <p className="mt-2 rounded-xl border border-dashed border-neutral-700/80 bg-neutral-900/60 p-4 text-sm text-neutral-400">
           Ingen {title.toLowerCase()} funnet.
         </p>
@@ -781,7 +920,9 @@ function ActivitySection({ title, activities, selectedActs, selectedRoles, onTog
 
   return (
     <div>
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">{title}</h3>
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
+        {title}
+      </h3>
       <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {activities.map((activity) => {
           const aid = activity.id;
@@ -800,7 +941,9 @@ function ActivitySection({ title, activities, selectedActs, selectedRoles, onTog
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-base font-semibold text-neutral-100">{activity.name}</p>
+                  <p className="text-base font-semibold text-neutral-100">
+                    {activity.name}
+                  </p>
                   <span className="inline-flex items-center rounded-full bg-red-600/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-300">
                     {typeLabel}
                   </span>
