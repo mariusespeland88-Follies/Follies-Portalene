@@ -80,6 +80,8 @@ export default function ActivityNewPage() {
     end: "",
     hasGuests: false,
     hasAttendance: false,
+    hasVolunteers: false,
+    hasTasks: false,
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -94,6 +96,8 @@ export default function ActivityNewPage() {
       if (key === "type" && value !== "event") {
         next.hasGuests = false;
         next.hasAttendance = false;
+        next.hasVolunteers = false;
+        next.hasTasks = false;
       }
       return next;
     });
@@ -125,6 +129,8 @@ export default function ActivityNewPage() {
       const typeForDb = toDbType(form.type);
       const hasGuests = form.type === "event" ? form.hasGuests : false;
       const hasAttendance = form.type === "event" ? form.hasAttendance : false;
+      const hasVolunteers = form.type === "event" ? form.hasVolunteers : false;
+      const hasTasks = form.type === "event" ? form.hasTasks : false;
 
       const base = {
         name: form.name?.trim() || "Uten navn",
@@ -132,6 +138,8 @@ export default function ActivityNewPage() {
         archived: false,
         has_guests: hasGuests,
         has_attendance: hasAttendance,
+        has_volunteers: hasVolunteers,
+        has_tasks: hasTasks,
       };
 
       let dbId: string | null = null;
@@ -141,7 +149,9 @@ export default function ActivityNewPage() {
         const { data, error } = await supabase
           .from("activities")
           .insert(base)
-          .select("id, name, type, archived, created_at, has_guests, has_attendance")
+          .select(
+            "id, name, type, archived, created_at, has_guests, has_attendance, has_volunteers, has_tasks"
+          )
           .single();
 
         if (error) {
@@ -166,6 +176,8 @@ export default function ActivityNewPage() {
         end: form.end || undefined,
         has_guests: hasGuests,
         has_attendance: hasAttendance,
+        has_volunteers: hasVolunteers,
+        has_tasks: hasTasks,
         slug: slugify(base.name || `aktivitet-${String(localId).slice(0,6)}`),
         created_at: new Date().toISOString(),
         archived: false,
@@ -236,28 +248,46 @@ export default function ActivityNewPage() {
           {form.type === "event" && (
             <div className="md:col-span-2 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
               <h3 className="text-sm font-semibold text-neutral-900">Event-valg</h3>
-              <div className="mt-3 space-y-3 text-sm text-neutral-800">
-                <label className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={form.hasGuests}
+                <div className="mt-3 space-y-3 text-sm text-neutral-800">
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={form.hasGuests}
                     onChange={(e) => onChange("hasGuests", e.target.checked)}
                     className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
                   />
-                  <span>Har gjester (f.eks. familier på Julaften)</span>
-                </label>
-                <label className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={form.hasAttendance}
+                    <span>Har gjester (f.eks. familier på Julaften)</span>
+                  </label>
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={form.hasAttendance}
                     onChange={(e) => onChange("hasAttendance", e.target.checked)}
                     className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                  />
-                  <span>Har innsjekk / oppmøte</span>
-                </label>
+                    />
+                    <span>Har innsjekk / oppmøte</span>
+                  </label>
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={form.hasVolunteers}
+                      onChange={(e) => onChange("hasVolunteers", e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                    />
+                    <span>Har frivillige (intern stab/medlemmer)</span>
+                  </label>
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={form.hasTasks}
+                      onChange={(e) => onChange("hasTasks", e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                    />
+                    <span>Har oppgaver / sjekkliste</span>
+                  </label>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-neutral-800">Beskrivelse</label>
