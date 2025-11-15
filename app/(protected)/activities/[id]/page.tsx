@@ -639,6 +639,10 @@ export default function ActivityDetailPage() {
             )
           )}
 
+          {tab === "oppgaver" && showTasksTab && (
+            <TasksTab activityId={String(act.id)} />
+          )}
+
           {tab === "filer" && (
             <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 text-neutral-700">
               Her kan vi senere legge opplasting/visning av filer
