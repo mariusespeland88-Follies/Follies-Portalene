@@ -109,7 +109,9 @@ export default function MemberEditPage() {
       try {
         const { data, error: actError } = await supabase
           .from("activities")
-          .select("id, name, type, archived")
+          .select(
+            "id, name, type, archived, has_guests, has_attendance, has_volunteers, has_tasks"
+          )
           .order("name", { ascending: true });
         if (!active) return;
         if (!actError && Array.isArray(data)) {

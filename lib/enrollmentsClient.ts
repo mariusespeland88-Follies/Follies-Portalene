@@ -156,7 +156,13 @@ async function dbMembersByIds(ids: string[]): Promise<Member[]> {
 }
 async function dbActivityName(activityId: string): Promise<string | null> {
   const supabase = createClientComponentClient();
-  const { data, error } = await supabase.from("activities").select("name").eq("id", activityId).single();
+  const { data, error } = await supabase
+    .from("activities")
+    .select(
+      "id, name, type, archived, has_guests, has_attendance, has_volunteers, has_tasks"
+    )
+    .eq("id", activityId)
+    .single();
   if (error || !data) return null;
   return (data as AnyObj).name ?? null;
 }

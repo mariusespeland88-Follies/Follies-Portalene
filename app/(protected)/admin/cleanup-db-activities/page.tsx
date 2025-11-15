@@ -39,7 +39,9 @@ export default function CleanupDbActivitiesPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("activities")
-      .select("id, name, type, archived, created_at")
+      .select(
+        "id, name, type, archived, created_at, has_guests, has_attendance, has_volunteers, has_tasks"
+      )
       .order("created_at", { ascending: false });
     if (!error) setDbActs((data ?? []) as DbActivity[]);
     setLoading(false);

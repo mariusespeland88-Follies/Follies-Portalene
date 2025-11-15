@@ -13,6 +13,10 @@ type Activity = {
   archived?: boolean;
   slug?: string | null;
   raw?: AnyObj;
+  has_guests?: boolean;
+  has_attendance?: boolean;
+  has_volunteers?: boolean;
+  has_tasks?: boolean;
 };
 
 const LS_ACT_V1 = "follies.activities.v1";
@@ -57,14 +61,23 @@ function readActivityStore(): AnyObj[] {
   const map = new Map<string, AnyObj>();
   [...old, ...v1].forEach((item, idx) => {
     const key = activityIdKey(item, `ls-${idx}`);
-    map.set(key, item);
+    map.set(key, coerceActivityFlags(item));
   });
   return Array.from(map.values());
 }
 
+function coerceActivityFlags(item: AnyObj | null | undefined): AnyObj {
+  const base = { ...(item ?? {}) } as AnyObj;
+  base.has_guests = Boolean(item?.has_guests ?? item?.hasGuests ?? false);
+  base.has_attendance = Boolean(item?.has_attendance ?? item?.hasAttendance ?? false);
+  base.has_volunteers = Boolean(item?.has_volunteers ?? item?.hasVolunteers ?? false);
+  base.has_tasks = Boolean(item?.has_tasks ?? item?.hasTasks ?? false);
+  return base;
+}
+
 function writeActivityStore(list: AnyObj[]): void {
   if (!hasWindow()) return;
-  const arr = Array.isArray(list) ? list : [];
+  const arr = Array.isArray(list) ? list.map((item) => coerceActivityFlags(item)) : [];
   const json = JSON.stringify(arr);
   localStorage.setItem(LS_ACT_V1, json);
   localStorage.setItem(LS_ACT_OLD, json);
@@ -74,12 +87,12 @@ function mergeActivityRecords(primary: AnyObj[], fallback: AnyObj[]): AnyObj[] {
   const map = new Map<string, AnyObj>();
   fallback.forEach((item, idx) => {
     const key = activityIdKey(item, `fb-${idx}`);
-    map.set(key, item);
+    map.set(key, coerceActivityFlags(item));
   });
   primary.forEach((item, idx) => {
     const key = activityIdKey(item, `db-${idx}`);
     const prev = map.get(key) || {};
-    map.set(key, { ...prev, ...item });
+    map.set(key, { ...coerceActivityFlags(prev), ...coerceActivityFlags(item) });
   });
   return Array.from(map.values());
 }
@@ -98,8 +111,23 @@ function normalizeActivitiesFromRaw(list: AnyObj[]): Activity[] {
     const archived = !!(a?.archived || a?.is_archived || String(a?.status || "").toLowerCase() === "archived");
     const slugSource = a?.slug ?? a?.seo_slug ?? null;
     const slug = slugSource ? String(slugSource) : slugify(name);
+    const hasGuests = Boolean(a?.has_guests ?? a?.hasGuests ?? false);
+    const hasAttendance = Boolean(a?.has_attendance ?? a?.hasAttendance ?? false);
+    const hasVolunteers = Boolean(a?.has_volunteers ?? a?.hasVolunteers ?? false);
+    const hasTasks = Boolean(a?.has_tasks ?? a?.hasTasks ?? false);
 
-    return { id, name, type, archived, slug, raw: a };
+    return {
+      id,
+      name,
+      type,
+      archived,
+      slug,
+      raw: a,
+      has_guests: hasGuests,
+      has_attendance: hasAttendance,
+      has_volunteers: hasVolunteers,
+      has_tasks: hasTasks,
+    };
   });
 
   const map = new Map<string, Activity>();
@@ -184,7 +212,9 @@ export default function ActivitiesPage() {
 
       const { data, error } = await supabase
         .from("activities")
-        .select("id, name, type, archived");
+        .select(
+          "id, name, type, archived, has_guests, has_attendance, has_volunteers, has_tasks"
+        );
       if (error) throw error;
 
       const rows = Array.isArray(data) ? data : [];

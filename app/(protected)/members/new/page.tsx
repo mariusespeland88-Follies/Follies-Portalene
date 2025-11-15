@@ -50,7 +50,9 @@ export default function NewMemberPage() {
       try {
         const { data, error } = await supabase
           .from("activities")
-          .select("id, name, type, archived")
+          .select(
+            "id, name, type, archived, has_guests, has_attendance, has_volunteers, has_tasks"
+          )
           .order("name", { ascending: true });
         if (!error && Array.isArray(data) && active) {
           setActivities((prev) =>

@@ -33,6 +33,12 @@ type GuestRow = {
 type ActivityRow = {
   id: string;
   name: string | null;
+  type?: string | null;
+  archived?: boolean | null;
+  has_guests?: boolean | null;
+  has_attendance?: boolean | null;
+  has_volunteers?: boolean | null;
+  has_tasks?: boolean | null;
 };
 
 function childDescription(child: GuestRow["children"][number]) {
@@ -61,7 +67,9 @@ export default async function PrintGuestsPage({
     const [{ data: activityData }, { data: guests, error: guestsError }] = await Promise.all([
       supabase
         .from("activities")
-        .select("id, name")
+        .select(
+          "id, name, type, archived, has_guests, has_attendance, has_volunteers, has_tasks"
+        )
         .eq("id", activityId)
         .single(),
       supabase

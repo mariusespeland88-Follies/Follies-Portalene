@@ -84,7 +84,11 @@ export default function CleanupActivitiesPage() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data } = await supabase.from("activities").select("id, name, type, archived");
+      const { data } = await supabase
+        .from("activities")
+        .select(
+          "id, name, type, archived, has_guests, has_attendance, has_volunteers, has_tasks"
+        );
       setDbActs((data ?? []) as DbActivity[]);
       setLsActs(readLsActivities());
       setLoading(false);

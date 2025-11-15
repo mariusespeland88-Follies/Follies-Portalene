@@ -3,6 +3,10 @@ export type Activity = {
   name: string;
   type: "offer" | "event";
   archived?: boolean;
+  has_guests?: boolean;
+  has_attendance?: boolean;
+  has_volunteers?: boolean;
+  has_tasks?: boolean;
 };
 
 const LS_ACT_V1 = "follies.activities.v1";
@@ -50,7 +54,15 @@ export function readActivitiesNormalized(): Activity[] {
       String(entry?.status ?? "").toLowerCase() === "archived"
     );
 
-    return { id, name, type, archived } as Activity;
+    const flags = activityFlags(entry);
+
+    return {
+      id,
+      name,
+      type,
+      archived,
+      ...flags,
+    } as Activity;
   });
 
   const map = new Map<string, Activity>();
@@ -103,9 +115,19 @@ export function mergeActivities(base: Activity[], extra: Activity[]): Activity[]
       name: entry?.name ?? `Aktivitet ${id}`,
       type: normalizeActivityType(entry?.type),
       archived: !!entry?.archived,
+      ...activityFlags(entry),
     });
   }
   return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function activityFlags(entry: any) {
+  return {
+    has_guests: Boolean(entry?.has_guests ?? entry?.hasGuests ?? false),
+    has_attendance: Boolean(entry?.has_attendance ?? entry?.hasAttendance ?? false),
+    has_volunteers: Boolean(entry?.has_volunteers ?? entry?.hasVolunteers ?? false),
+    has_tasks: Boolean(entry?.has_tasks ?? entry?.hasTasks ?? false),
+  };
 }
 
 export type MemberFormState = {
