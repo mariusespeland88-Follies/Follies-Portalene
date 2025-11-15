@@ -44,6 +44,9 @@ const DEFAULT_TABS_BASE: ActivityTab[] = [
   "meldinger",
 ];
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const ensureOversikt = (tabs: ActivityTab[]): ActivityTab[] => {
   const set = new Set<ActivityTab>(tabs);
   set.add("oversikt");
@@ -62,6 +65,8 @@ function normalizeTypeForUi(raw: string | null | undefined): ActivityType {
 export default function ActivityEditPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const rawId = String(id ?? "");
+  const looksLikeDbId = UUID_REGEX.test(rawId); // <-- kun ekte UUID patcher DB
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -83,7 +88,7 @@ export default function ActivityEditPage() {
     (async () => {
       setLoading(true);
       try {
-        const act = await fetchActivity(String(id));
+        const act = await fetchActivity(rawId);
         if (act) {
           setName(act.name ?? "");
           setDescription((act as any).description ?? "");
@@ -137,7 +142,7 @@ export default function ActivityEditPage() {
         setLoading(false);
       }
     })();
-  }, [id]);
+  }, [rawId]);
 
   // Hvis man bytter bort fra event → slå av event-flagg og tilhørende faner
   useEffect(() => {
@@ -203,24 +208,27 @@ export default function ActivityEditPage() {
         tab_config: cleanedTabs,
       };
 
-      if (id) {
-        const response = await fetch(`/api/activities/${id}`, {
+      // PATCH DB KUN hvis id ser ut som en ekte Supabase UUID
+      if (rawId && looksLikeDbId) {
+        const response = await fetch(`/api/activities/${rawId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
         const json = await response.json().catch(() => null);
-        if (!response.ok) {
+        if (!response.ok && response.status !== 404) {
+          // 404 betyr "ikke i DB" → da lar vi LS ta over
           throw new Error(json?.error || "Klarte ikke å lagre i databasen.");
         }
       }
 
+      // Alltid speil til localStorage
       await saveActivity({
-        id: String(id),
+        id: rawId,
         ...payload,
       });
 
-      router.push(`/activities/${id}`);
+      router.push(`/activities/${rawId}`);
     } catch (e: any) {
       setErr(e?.message || "Klarte ikke å lagre.");
     } finally {
@@ -229,7 +237,7 @@ export default function ActivityEditPage() {
   };
 
   const onDelete = async () => {
-    if (!id) return;
+    if (!rawId) return;
     if (
       !confirm(
         "Er du sikker på at du vil slette denne aktiviteten permanent?"
@@ -239,7 +247,7 @@ export default function ActivityEditPage() {
     setErr(null);
     setSaving(true);
     try {
-      await hardDeleteActivity(String(id), { redirectToList: true });
+      await hardDeleteActivity(String(rawId), { redirectToList: true });
       // redirect i helperen → /activities
     } catch (e: any) {
       setErr(e?.message || "Kunne ikke slette aktiviteten.");
@@ -253,13 +261,13 @@ export default function ActivityEditPage() {
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 text-neutral-900">
       {/* Topp-linje */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-6 flex flex_wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-semibold tracking-tight">
           Rediger aktivitet
         </h1>
         <div className="flex items-center gap-2">
           <Link
-            href={`/activities/${id}`}
+            href={`/activities/${rawId}`}
             className="rounded-lg px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-900 hover:text-white"
           >
             Tilbake
@@ -386,7 +394,7 @@ export default function ActivityEditPage() {
             )}
 
             <div className="md:col-span-2">
-              <label className="block text-sm font_medium text-neutral-800">
+              <label className="block text-sm font-medium text-neutral-800">
                 Beskrivelse
               </label>
               <textarea
@@ -462,12 +470,7 @@ export default function ActivityEditPage() {
                     {!depsOk && isEventTab && !isEvent
                       ? " (kun for event)"
                       : null}
-                    {!depsOk &&
-                    isEventTab &&
-                    isEvent &&
-                    !checked
-                      ? " (aktiver i Event-valg)"
-                      : null}
+                    {!depsOk && isEventTab && isEvent ? " (aktiver i Event-valg)" : null}
                   </span>
                 </label>
               );
