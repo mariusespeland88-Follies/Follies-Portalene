@@ -14,7 +14,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <SupabaseBridge />
       <AppHeader />
-      <main className="bg-slate-50 pb-16">{children}</main>
+      <main className="bg-zinc-100 min-h-screen pb-16">{children}</main>
     </div>
   );
 }
