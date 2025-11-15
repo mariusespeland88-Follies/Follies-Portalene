@@ -5,6 +5,7 @@
  * - UENDRET look for hero/faner/deltakere/ledere.
  * - Fane "Økter": viser økter for aktiviteten + knapp "Lag ny økt" (går til /activities/[id]/sessions/new).
  * - Klikk på en økt åpner /sessions/[id].
+ * - NYTT: Per-aktivitet valg av hvilke faner som vises ("Tilpass visning").
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -43,6 +44,7 @@ const CAL_LS = "follies.calendar.v1";
 const SESS_LS = "follies.activitySessions.v1";
 const LS_MEM_V1 = "follies.members.v1";
 const LS_MEM_OLD = "follies.members";
+const LS_ACTIVITY_TABS = "follies.activityTabs.v1";
 
 const safeJSON = <T,>(s: string | null): T | null => {
   try {
@@ -202,6 +204,48 @@ function lsLoadSessions(activityId: string): any[] {
   return all[activityId] ?? [];
 }
 
+/* ---------------------------- Tabs-konfig (LS) ---------------------------- */
+
+type TabsConfig = {
+  [activityId: string]: Tab[];
+};
+
+const DEFAULT_TABS: Tab[] = [
+  "oversikt",
+  "deltakere",
+  "ledere",
+  "okter",
+  "gjester",
+  "innsjekk",
+  "frivillige",
+  "oppgaver",
+  "filer",
+  "meldinger",
+];
+
+function loadActivityTabs(activityId: string, fallback: Tab[]): Tab[] {
+  if (typeof window === "undefined") return fallback;
+  const raw = window.localStorage.getItem(LS_ACTIVITY_TABS);
+  const parsed = safeJSON<TabsConfig>(raw);
+  if (!parsed) return fallback;
+
+  const found = parsed[activityId];
+  if (!found || !found.length) return fallback;
+
+  // Filtrer ut tabs som ikke lenger eksisterer i koden
+  const validSet = new Set<Tab>(DEFAULT_TABS);
+  const cleaned = found.filter((t) => validSet.has(t));
+  return cleaned.length ? cleaned : fallback;
+}
+
+function saveActivityTabs(activityId: string, tabs: Tab[]) {
+  if (typeof window === "undefined") return;
+  const raw = window.localStorage.getItem(LS_ACTIVITY_TABS);
+  const parsed = safeJSON<TabsConfig>(raw) ?? {};
+  parsed[activityId] = tabs;
+  window.localStorage.setItem(LS_ACTIVITY_TABS, JSON.stringify(parsed));
+}
+
 /* ------------------------ DB-hent i to steg ------------------------ */
 // NB: supabase er ANY for å unngå generics-krangling i Vercel/TS
 async function fetchPeopleForRole(
@@ -258,6 +302,11 @@ export default function ActivityDetailPage() {
 
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  const [showTabsConfig, setShowTabsConfig] = useState(false);
+  const [enabledTabs, setEnabledTabs] = useState<Tab[]>(() =>
+    loadActivityTabs(routeIdValue, DEFAULT_TABS)
+  );
+
   const showGuestsTab = useMemo(() => {
     if (!act) return false;
     const t = String((act as any)?.type ?? "").toLowerCase();
@@ -280,6 +329,7 @@ export default function ActivityDetailPage() {
     return Boolean((act as any)?.has_tasks);
   }, [act]);
 
+  // Hvis aktiverte features endres, og vi står på en fane som ikke lenger finnes, hopp til oversikt
   useEffect(() => {
     if (tab === "gjester" && !showGuestsTab) setTab("oversikt");
     if (tab === "innsjekk" && !showAttendanceTab) setTab("oversikt");
@@ -287,32 +337,42 @@ export default function ActivityDetailPage() {
     if (tab === "oppgaver" && !showTasksTab) setTab("oversikt");
   }, [showAttendanceTab, showGuestsTab, showTasksTab, showVolunteersTab, tab]);
 
-  const reloadRoster = useCallback(async (activityId: string | null) => {
-    if (!activityId) {
-      const { participants: lp, leaders: ll } = lsRosterByRole(routeIdValue);
-      setParticipants(lp);
-      setLeaders(ll);
-      return;
+  // Hvis en fane skrus av i "Tilpass visning" og vi sto på den, hopp til oversikt
+  useEffect(() => {
+    if (!enabledTabs.includes(tab)) {
+      setTab("oversikt");
     }
-    const [pRes, lRes] = await Promise.all([
-      fetchPeopleForRole(supabase, activityId, "participant"),
-      fetchPeopleForRole(supabase, activityId, "leader"),
-    ]);
+  }, [enabledTabs, tab]);
 
-    if (
-      pRes.list.length === 0 &&
-      lRes.list.length === 0 &&
-      (pRes.error || lRes.error)
-    ) {
-      const { participants: lp, leaders: ll } = lsRosterByRole(routeIdValue);
-      setParticipants(lp);
-      setLeaders(ll);
-      return;
-    }
+  const reloadRoster = useCallback(
+    async (activityId: string | null) => {
+      if (!activityId) {
+        const { participants: lp, leaders: ll } = lsRosterByRole(routeIdValue);
+        setParticipants(lp);
+        setLeaders(ll);
+        return;
+      }
+      const [pRes, lRes] = await Promise.all([
+        fetchPeopleForRole(supabase, activityId, "participant"),
+        fetchPeopleForRole(supabase, activityId, "leader"),
+      ]);
 
-    setParticipants(pRes.list);
-    setLeaders(lRes.list);
-  }, [routeIdValue, supabase]);
+      if (
+        pRes.list.length === 0 &&
+        lRes.list.length === 0 &&
+        (pRes.error || lRes.error)
+      ) {
+        const { participants: lp, leaders: ll } = lsRosterByRole(routeIdValue);
+        setParticipants(lp);
+        setLeaders(ll);
+        return;
+      }
+
+      setParticipants(pRes.list);
+      setLeaders(lRes.list);
+    },
+    [routeIdValue, supabase]
+  );
 
   const derivedActivityDbId = useMemo(
     () => pickActivityDbId(act, routeIdValue),
@@ -396,6 +456,21 @@ export default function ActivityDetailPage() {
     }
   };
 
+  const preferredRouteId =
+    routeIdValue || effectiveActivityDbId || String(act?.id || "");
+
+  const updateTabs = (next: Tab[]) => {
+    // Oversikt skal alltid være på
+    if (!next.includes("oversikt")) {
+      next = ["oversikt", ...next];
+    }
+    setEnabledTabs(next);
+    saveActivityTabs(routeIdValue, next);
+    if (!next.includes(tab)) {
+      setTab("oversikt");
+    }
+  };
+
   if (loading)
     return <main className="px-4 py-6 text-neutral-900">Laster…</main>;
   if (err) {
@@ -422,19 +497,31 @@ export default function ActivityDetailPage() {
   const gradient = gradientFor(vis.accent, (act as any)?.type);
   const avatar = vis.coverUrl || null;
   const initialsText = initials(act.name);
-  const preferredRouteId =
-    routeIdValue || effectiveActivityDbId || String(act.id);
-  const tabItems: [Tab, string][] = [
-    ["oversikt", "Oversikt"],
-    ["deltakere", `Deltakere (${participants.length})`],
-    ["ledere", `Ledere (${leaders.length})`],
-    ["okter", "Økter"],
+
+  // Definisjon av alle potensielle faner for denne aktiviteten (inkl. counts)
+  const allTabDefs: { key: Tab; label: string }[] = [
+    { key: "oversikt", label: "Oversikt" },
+    {
+      key: "deltakere",
+      label: `Deltakere (${participants.length})`,
+    },
+    {
+      key: "ledere",
+      label: `Ledere (${leaders.length})`,
+    },
+    { key: "okter", label: "Økter" },
+    ...(showGuestsTab ? [{ key: "gjester", label: "Gjester" }] : []),
+    ...(showAttendanceTab ? [{ key: "innsjekk", label: "Innsjekk" }] : []),
+    ...(showVolunteersTab ? [{ key: "frivillige", label: "Frivillige" }] : []),
+    ...(showTasksTab ? [{ key: "oppgaver", label: "Oppgaver" }] : []),
+    { key: "filer", label: "Filer" },
+    { key: "meldinger", label: "Meldinger" },
   ];
-  if (showGuestsTab) tabItems.push(["gjester", "Gjester"]);
-  if (showAttendanceTab) tabItems.push(["innsjekk", "Innsjekk"]);
-  if (showVolunteersTab) tabItems.push(["frivillige", "Frivillige"]);
-  if (showTasksTab) tabItems.push(["oppgaver", "Oppgaver"]);
-  tabItems.push(["filer", "Filer"], ["meldinger", "Meldinger"]);
+
+  // Faner som faktisk skal vises (både enablet + faktisk mulig for denne aktiviteten)
+  const visibleTabDefs = allTabDefs.filter((def) =>
+    enabledTabs.includes(def.key)
+  );
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
@@ -492,7 +579,9 @@ export default function ActivityDetailPage() {
               </Link>
               <button
                 onClick={() =>
-                  router.push(`/activities/${encodeURIComponent(preferredRouteId)}/edit`)
+                  router.push(
+                    `/activities/${encodeURIComponent(preferredRouteId)}/edit`
+                  )
                 }
                 className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 hover:bg-white/90"
               >
@@ -503,21 +592,74 @@ export default function ActivityDetailPage() {
         </div>
       </div>
 
-      {/* Faner */}
-      <div className="mt-6 flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-300 bg-white/80 p-1 shadow-sm backdrop-blur-sm">
-        {tabItems.map(([key, label]) => (
+      {/* Faner + Tilpass visning */}
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-300 bg-white/80 px-2 py-1 shadow-sm backdrop-blur-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          {visibleTabDefs.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 ${
+                tab === key
+                  ? "bg-white text-zinc-900 shadow-sm"
+                  : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="relative">
           <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 ${
-              tab === key
-                ? "bg-white text-zinc-900 shadow-sm"
-                : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
-            }`}
+            type="button"
+            onClick={() => setShowTabsConfig((v) => !v)}
+            className="rounded-xl border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
           >
-            {label}
+            Tilpass visning
           </button>
-        ))}
+          {showTabsConfig && (
+            <div className="absolute right-0 z-20 mt-2 w-64 rounded-xl border border-zinc-300 bg-white p-3 text-xs shadow-lg">
+              <p className="mb-2 text-[11px] text-zinc-600">
+                Velg hvilke kategorier som skal vises for{" "}
+                <span className="font-semibold">{act.name}</span>. Lagres bare
+                for denne aktiviteten.
+              </p>
+              <div className="max-h-64 space-y-1 overflow-auto pr-1">
+                {allTabDefs.map(({ key, label }) => {
+                  const checked = enabledTabs.includes(key);
+                  const disabled = key === "oversikt";
+                  return (
+                    <label
+                      key={key}
+                      className="flex items-center gap-2 rounded-md px-1 py-0.5 text-xs text-zinc-800 hover:bg-zinc-50"
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-3 w-3"
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={() => {
+                          let next: Tab[];
+                          if (checked) {
+                            next = enabledTabs.filter((t) => t !== key);
+                          } else {
+                            next = [...enabledTabs, key];
+                          }
+                          updateTabs(next);
+                        }}
+                      />
+                      <span>
+                        {label}
+                        {disabled ? " (alltid)" : ""}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Innhold */}
