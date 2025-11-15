@@ -271,7 +271,7 @@ async function fetchPeopleForRole(
     .select("id, first_name, last_name, email")
     .in("id", ids);
 
-  if (mErr) return { list: [] as AnyObj[], error: mErr };
+  if (mErr) return { list: (members || []) as AnyObj[], error: mErr };
 
   return { list: (members || []) as AnyObj[], error: null };
 }
@@ -498,8 +498,10 @@ export default function ActivityDetailPage() {
   const avatar = vis.coverUrl || null;
   const initialsText = initials(act.name);
 
+  type TabDef = { key: Tab; label: string };
+
   // Definisjon av alle potensielle faner for denne aktiviteten (inkl. counts)
-  const allTabDefs: { key: Tab; label: string }[] = [
+  const allTabDefs: TabDef[] = [
     { key: "oversikt", label: "Oversikt" },
     {
       key: "deltakere",
@@ -510,13 +512,23 @@ export default function ActivityDetailPage() {
       label: `Ledere (${leaders.length})`,
     },
     { key: "okter", label: "Økter" },
-    ...(showGuestsTab ? [{ key: "gjester", label: "Gjester" }] : []),
-    ...(showAttendanceTab ? [{ key: "innsjekk", label: "Innsjekk" }] : []),
-    ...(showVolunteersTab ? [{ key: "frivillige", label: "Frivillige" }] : []),
-    ...(showTasksTab ? [{ key: "oppgaver", label: "Oppgaver" }] : []),
-    { key: "filer", label: "Filer" },
-    { key: "meldinger", label: "Meldinger" },
   ];
+
+  if (showGuestsTab) {
+    allTabDefs.push({ key: "gjester", label: "Gjester" });
+  }
+  if (showAttendanceTab) {
+    allTabDefs.push({ key: "innsjekk", label: "Innsjekk" });
+  }
+  if (showVolunteersTab) {
+    allTabDefs.push({ key: "frivillige", label: "Frivillige" });
+  }
+  if (showTasksTab) {
+    allTabDefs.push({ key: "oppgaver", label: "Oppgaver" });
+  }
+
+  allTabDefs.push({ key: "filer", label: "Filer" });
+  allTabDefs.push({ key: "meldinger", label: "Meldinger" });
 
   // Faner som faktisk skal vises (både enablet + faktisk mulig for denne aktiviteten)
   const visibleTabDefs = allTabDefs.filter((def) =>
@@ -559,7 +571,7 @@ export default function ActivityDetailPage() {
                     {typeLabel}
                   </span>
                 </div>
-                <p className="mt-1 text-sm text-white/90">
+                <p className="mt-1 text-sm text:white/90">
                   {(act as any).start_date
                     ? `Start: ${(act as any).start_date}`
                     : "Start: —"}{" "}
@@ -573,7 +585,7 @@ export default function ActivityDetailPage() {
             <div className="mt-4 flex items-center gap-2 md:mt-0">
               <Link
                 href="/activities"
-                className="rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold text-white ring-1 ring-white/40 hover:bg-white/25"
+                className="rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold text:white ring-1 ring-white/40 hover:bg-white/25"
               >
                 Til oversikt
               </Link>
@@ -583,7 +595,7 @@ export default function ActivityDetailPage() {
                     `/activities/${encodeURIComponent(preferredRouteId)}/edit`
                   )
                 }
-                className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 hover:bg-white/90"
+                className="rounded-lg bg:white px-3.5 py-2 text-sm font-semibold text-neutral-900 hover:bg:white/90"
               >
                 Rediger
               </button>
@@ -614,12 +626,12 @@ export default function ActivityDetailPage() {
           <button
             type="button"
             onClick={() => setShowTabsConfig((v) => !v)}
-            className="rounded-xl border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
+            className="rounded-xl border border-zinc-300 bg:white px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
           >
             Tilpass visning
           </button>
           {showTabsConfig && (
-            <div className="absolute right-0 z-20 mt-2 w-64 rounded-xl border border-zinc-300 bg-white p-3 text-xs shadow-lg">
+            <div className="absolute right-0 z-20 mt-2 w-64 rounded-xl border border-zinc-300 bg:white p-3 text-xs shadow-lg">
               <p className="mb-2 text-[11px] text-zinc-600">
                 Velg hvilke kategorier som skal vises for{" "}
                 <span className="font-semibold">{act.name}</span>. Lagres bare
@@ -667,7 +679,7 @@ export default function ActivityDetailPage() {
         {/* Venstre */}
         <section className="lg:col-span-2 space-y-6">
           {tab === "oversikt" && (
-            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
+            <div className="rounded-2xl border border-zinc-300 bg:white p-5 shadow-sm">
               <h2 className="text-lg font-semibold">Oversikt</h2>
               <p className="mt-2 text-[15px] text-neutral-800">
                 {(act as any).description
@@ -708,7 +720,7 @@ export default function ActivityDetailPage() {
           )}
 
           {tab === "okter" && (
-            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
+            <div className="rounded-2xl border border-zinc-300 bg:white p-5 shadow-sm">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-neutral-900">
                   Økter
@@ -717,7 +729,7 @@ export default function ActivityDetailPage() {
                   href={`/activities/${encodeURIComponent(
                     preferredRouteId
                   )}/sessions/new`}
-                  className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                  className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text:white hover:bg-red-700"
                 >
                   Lag ny økt
                 </Link>
@@ -744,7 +756,7 @@ export default function ActivityDetailPage() {
                       </div>
                       <Link
                         href={`/sessions/${encodeURIComponent(String(s.id))}`}
-                        className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
+                        className="rounded-lg bg:white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
                       >
                         Åpne økt
                       </Link>
@@ -783,14 +795,14 @@ export default function ActivityDetailPage() {
           )}
 
           {tab === "filer" && (
-            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm text-neutral-700">
+            <div className="rounded-2xl border border-zinc-300 bg:white p-5 shadow-sm text-neutral-700">
               Her kan vi senere legge opplasting/visning av filer
               (Bilder/Tekst/Musikk/Annet).
             </div>
           )}
 
           {tab === "meldinger" && (
-            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm text-neutral-700">
+            <div className="rounded-2xl border border-zinc-300 bg:white p-5 shadow-sm text-neutral-700">
               Her kan vi senere legge kunngjøringer/meldinger til
               deltakere/ledere.
             </div>
@@ -799,7 +811,7 @@ export default function ActivityDetailPage() {
 
         {/* Høyre – Info-kort */}
         <aside className="space-y-6">
-          <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
+          <div className="rounded-2xl border border-zinc-300 bg:white p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-neutral-900">Info</h3>
             <dl className="mt-3 text-sm text-neutral-700 space-y-2">
               <div className="flex justify-between gap-4">
@@ -814,13 +826,13 @@ export default function ActivityDetailPage() {
                   {(act as any)?.archived ? "Arkivert" : "Aktiv"}
                 </dd>
               </div>
-              <div className="flex justify-between gap-4">
+              <div className="flex justify_between gap-4">
                 <dt>Start</dt>
                 <dd className="font-medium">
                   {(act as any)?.start_date || "—"}
                 </dd>
               </div>
-              <div className="flex justify-between gap-4">
+              <div className="flex justify_between gap-4">
                 <dt>Slutt</dt>
                 <dd className="font-medium">
                   {(act as any)?.end_date || "—"}
@@ -838,7 +850,7 @@ export default function ActivityDetailPage() {
 
 function MissingActivityDbIdNotice({ title }: { title: string }) {
   return (
-    <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-zinc-300 bg:white p-5 shadow-sm">
       <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
       <p className="mt-2 text-sm text-neutral-700">
         Denne funksjonen krever at aktiviteten er koblet til Supabase med en
@@ -867,10 +879,10 @@ function PeoplePanel({
   busyId?: string | null;
 }) {
   return (
-    <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between">
+    <div className="rounded-2xl border border-zinc-300 bg:white p-5 shadow-sm">
+      <div className="flex items-center justify_between">
         <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
-        <span className="inline-flex items-center rounded-full bg-black/85 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/10">
+        <span className="inline-flex items-center rounded-full bg:black/85 px-3 py-1 text-xs font-semibold text:white ring-1 ring-white/10">
           {people.length}
         </span>
       </div>
@@ -890,7 +902,7 @@ function PeoplePanel({
             return (
               <li
                 key={mid}
-                className="flex items-center justify-between gap-3 py-3"
+                className="flex items-center justify_between gap-3 py-3"
               >
                 <div>
                   <p className="text-[15px] font-medium text-neutral-900">
@@ -908,13 +920,13 @@ function PeoplePanel({
                 <div className="flex items-center gap-2">
                   <Link
                     href={`/members/${mid}`}
-                    className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
+                    className="rounded-lg bg:white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
                   >
                     Åpne
                   </Link>
                   <Link
                     href={`/members/${mid}/edit`}
-                    className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"
+                    className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text:white hover:bg-red-700"
                   >
                     Rediger
                   </Link>
@@ -922,7 +934,7 @@ function PeoplePanel({
                     <button
                       disabled={isBusy}
                       onClick={() => onPromote(mid)}
-                      className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                      className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text:white hover:bg-red-700 disabled:opacity-60"
                       title="Gjør til leder"
                     >
                       Gjør til leder
@@ -932,7 +944,7 @@ function PeoplePanel({
                     <button
                       disabled={isBusy}
                       onClick={() => onDemote(mid)}
-                      className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 disabled:opacity-60"
+                      className="rounded-lg bg:white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 disabled:opacity-60"
                       title="Fjern som leder"
                     >
                       Fjern
