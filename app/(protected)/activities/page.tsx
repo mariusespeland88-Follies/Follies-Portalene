@@ -288,7 +288,7 @@ export default function ActivitiesPage() {
 
       {/* Grid med store bildekort */}
       {filtered.length === 0 ? (
-        <div className="rounded-xl border border-neutral-200 bg-white p-6 text-neutral-800">
+        <div className="rounded-2xl border border-zinc-300 bg-white p-6 text-neutral-800 shadow-md">
           Ingen {tab === "offer" ? "tilbud" : tab === "event" ? "eventer" : "forestilling"} funnet.
         </div>
       ) : (
@@ -298,7 +298,7 @@ export default function ActivitiesPage() {
             return (
               <li
                 key={a.id}
-                className="group overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm transition hover:shadow-md"
+                className="group overflow-hidden rounded-2xl border border-zinc-300 bg-white shadow-md transition hover:shadow-lg"
               >
                 {/* Bilde (16:9) */}
                 <div className="relative">

@@ -440,7 +440,7 @@ export default function ActivityDetailPage() {
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
       {/* HERO */}
       <div
-        className="mb-6 overflow-hidden rounded-2xl border border-zinc-300 bg-gradient-to-r from-red-950 via-red-900 to-red-700 shadow-lg text-white"
+        className="mb-6 overflow-hidden rounded-2xl border border-zinc-300 bg-gradient-to-r from-red-800 to-red-600 shadow-lg text-white"
         style={{ background: gradient }}
       >
         <div className="border border-white/20 bg-white/10 p-5 backdrop-blur-sm md:p-6 lg:p-7">
@@ -525,7 +525,7 @@ export default function ActivityDetailPage() {
         {/* Venstre */}
         <section className="lg:col-span-2 space-y-6">
           {tab === "oversikt" && (
-            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
               <h2 className="text-lg font-semibold">Oversikt</h2>
               <p className="mt-2 text-[15px] text-neutral-800">
                 {(act as any).description
@@ -566,7 +566,7 @@ export default function ActivityDetailPage() {
           )}
 
           {tab === "okter" && (
-            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-neutral-900">
                   Økter
@@ -641,14 +641,14 @@ export default function ActivityDetailPage() {
           )}
 
           {tab === "filer" && (
-            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm text-neutral-700">
+            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm text-neutral-700">
               Her kan vi senere legge opplasting/visning av filer
               (Bilder/Tekst/Musikk/Annet).
             </div>
           )}
 
           {tab === "meldinger" && (
-            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm text-neutral-700">
+            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm text-neutral-700">
               Her kan vi senere legge kunngjøringer/meldinger til
               deltakere/ledere.
             </div>
@@ -657,7 +657,7 @@ export default function ActivityDetailPage() {
 
         {/* Høyre – Info-kort */}
         <aside className="space-y-6">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-neutral-900">Info</h3>
             <dl className="mt-3 text-sm text-neutral-700 space-y-2">
               <div className="flex justify-between gap-4">
@@ -696,7 +696,7 @@ export default function ActivityDetailPage() {
 
 function MissingActivityDbIdNotice({ title }: { title: string }) {
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
       <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
       <p className="mt-2 text-sm text-neutral-700">
         Denne funksjonen krever at aktiviteten er koblet til Supabase med en
@@ -725,7 +725,7 @@ function PeoplePanel({
   busyId?: string | null;
 }) {
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
         <span className="inline-flex items-center rounded-full bg-black/85 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/10">

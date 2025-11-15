@@ -101,10 +101,8 @@ function LightHeader({
   me?: { id?: string; member?: AnyObj | null };
 }) {
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-red-900/50 bg-gradient-to-r from-red-950 via-red-900 to-red-700 shadow-xl shadow-red-900/30 text-white">
-      <div className="pointer-events-none absolute -top-32 -left-24 h-64 w-64 rounded-full bg-red-500/30 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-28 -right-24 h-72 w-72 rounded-full bg-black/40 blur-3xl" />
-      <div className="relative z-10 p-8">
+    <div className="rounded-3xl border border-zinc-300 bg-gradient-to-r from-red-800 to-red-600 shadow-lg text-white">
+      <div className="p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h1 className="text-4xl font-extrabold tracking-tight text-white">Medlemmer</h1>
@@ -120,14 +118,14 @@ function LightHeader({
               {me?.member ? (
                 <a
                   href={`/members/${encodeURIComponent(memberId(me.member!))}/edit`}
-                  className="inline-flex items-center justify-center rounded-xl border border-white/40 bg-white px-4 py-2.5 text-sm font-semibold text-red-800 transition hover:bg-white/90 hover:text-red-900"
+                  className="inline-flex items-center justify-center rounded-xl border border-white/40 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/20"
                 >
                   Rediger meg
                 </a>
               ) : null}
               <a
                 href="/members/new"
-                className="inline-flex items-center justify-center rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white shadow shadow-black/20 transition hover:bg-red-400"
+                className="inline-flex items-center justify-center rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-black/20 transition hover:bg-red-400"
               >
                 + Nytt medlem
               </a>
@@ -141,9 +139,9 @@ function LightHeader({
 
 function StatPill({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-2xl border border-red-700/40 bg-white/90 px-5 py-4 shadow-sm shadow-red-900/10 backdrop-blur">
-      <p className="text-[11px] uppercase tracking-wider text-red-700/90">{label}</p>
-      <p className="text-xl font-bold text-red-900">{value}</p>
+    <div className="rounded-xl border border-zinc-300 bg-white p-3 shadow-sm text-zinc-900">
+      <p className="text-[11px] uppercase tracking-wider text-zinc-500">{label}</p>
+      <p className="text-xl font-bold text-zinc-900">{value}</p>
     </div>
   );
 }
@@ -163,7 +161,7 @@ function Tabs({ tab, setTab }: { tab: TabKey; setTab: (t: TabKey) => void }) {
             onClick={() => setTab(t.key as TabKey)}
             className={
               active
-                ? `${btn} bg-red-600 text-white shadow shadow-red-500/40`
+                ? `${btn} bg-red-600 text-white`
                 : `${btn} text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100`
             }
           >
@@ -182,10 +180,10 @@ function Search({ value, onChange }: { value: string; onChange: (v: string) => v
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Søk navn, e-post eller rolle…"
-        className="w-full rounded-2xl border border-white/40 bg-white/95 px-11 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-500 outline-none focus:border-white focus:ring-2 focus:ring-red-300/80"
+        className="w-full rounded-2xl border border-white/40 bg-white/95 px-11 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-500 outline-none focus:border-white focus:ring-2 focus:ring-white/60"
       />
       <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-        <svg width="16" height="16" viewBox="0 0 24 24" className="fill-red-500">
+        <svg width="16" height="16" viewBox="0 0 24 24" className="fill-white/80">
           <path d="M10 2a8 8 0 105.293 14.293l4.207 4.207 1.414-1.414-4.207-4.207A8 8 0 0010 2zm0 2a6 6 0 110 12A6 6 0 0110 4z" />
         </svg>
       </div>
@@ -193,33 +191,59 @@ function Search({ value, onChange }: { value: string; onChange: (v: string) => v
   );
 }
 
-function Avatar({ name }: { name: string }) {
+function Avatar({ name, src }: { name: string; src?: string | null }) {
   const letters = (name || "")
     .split(" ")
     .filter(Boolean)
     .slice(0, 2)
     .map((s) => s[0]?.toUpperCase() ?? "")
     .join("");
+  if (src) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={src} alt={name || "Profilbilde"} className="h-12 w-12 rounded-full object-cover" />
+    );
+  }
   return (
-    <div className="relative">
-      <div className="absolute -inset-1 rounded-3xl bg-gradient-to-br from-red-700 via-red-500 to-red-400 opacity-70 blur" />
-      <div className="relative flex h-20 w-20 items-center justify-center rounded-3xl bg-white text-lg font-semibold text-neutral-800 ring-1 ring-red-500/40">
-        {letters || "?"}
-      </div>
+    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-200 text-sm font-semibold text-zinc-700">
+      {letters || "?"}
     </div>
   );
 }
 
 function Badge({ leader, text }: { leader: boolean; text: string }) {
   return leader ? (
-    <span className="inline-flex items-center rounded-full bg-red-600 px-3 py-1 text-[12px] font-semibold text-white shadow shadow-red-600/40">
+    <span className="inline-flex items-center rounded-full border border-zinc-900 bg-zinc-900 px-3 py-1 text-[12px] font-semibold text-white">
       {text}
     </span>
   ) : (
-    <span className="inline-flex items-center rounded-full border border-neutral-200 bg-white px-3 py-1 text-[12px] font-semibold text-neutral-700">
+    <span className="inline-flex items-center rounded-full border border-zinc-300 bg-white px-3 py-1 text-[12px] font-semibold text-zinc-700">
       {text}
     </span>
   );
+}
+
+function memberAvatarUrl(m: AnyObj): string | null {
+  const raw = pick(
+    m,
+    [
+      "avatar_url",
+      "avatarUrl",
+      "profile_image",
+      "profileImage",
+      "image_url",
+      "imageUrl",
+      "photo_url",
+      "photoUrl",
+      "picture",
+      "photo",
+      "image",
+      "avatar",
+    ],
+    ""
+  );
+  const url = toStr(raw).trim();
+  return url ? url : null;
 }
 
 /* ----------------- Component (LOGIKK uendret) ----------------- */
@@ -353,43 +377,41 @@ export default function MembersPage() {
 
       {/* Grid – brede kort */}
       {filtered.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-red-500/50 bg-white p-10 text-center shadow-sm">
+          <div className="rounded-2xl border border-dashed border-zinc-300 bg-white p-10 text-center shadow-md">
           <h3 className="text-lg font-semibold text-neutral-900">Ingen treff</h3>
           <p className="mt-1 text-neutral-600">
             {search ? `Fant ingen resultater for “${search}”.` : "Det ligger ingen personer i denne kategorien ennå."}
           </p>
-          <a
-            href="/members/new"
-            className="mt-4 inline-flex rounded-xl bg-red-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow shadow-red-500/40 transition hover:bg-red-500"
-          >
-            + Nytt medlem
-          </a>
+            <a
+              href="/members/new"
+              className="mt-4 inline-flex rounded-xl bg-red-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-md shadow-black/20 transition hover:bg-red-500"
+            >
+              + Nytt medlem
+            </a>
         </div>
       ) : (
         <ul className="grid grid-cols-1 gap-7 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {filtered.map((m) => {
-            const id    = memberId(m);
-            const name  = fullName(m);
-            const email = emailOf(m);
-            const leader = isLeader(perms, m);
+            {filtered.map((m) => {
+              const id    = memberId(m);
+              const name  = fullName(m);
+              const email = emailOf(m);
+              const leader = isLeader(perms, m);
+              const avatarUrl = memberAvatarUrl(m);
 
-            return (
-              <li
-                key={id}
-                className="group relative flex min-h-[220px] flex-col justify-between overflow-hidden rounded-3xl border border-neutral-200 bg-white p-8 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
-              >
-                {/* toppstripe */}
-                <div className="pointer-events-none absolute left-0 top-0 h-[4px] w-full bg-gradient-to-r from-red-600 via-red-500 to-red-600 opacity-95" />
-
-                {/* øvre del: avatar + badge */}
-                <div className="flex items-start justify-between gap-5">
-                  <div className="flex items-start gap-5">
-                    <Avatar name={name} />
-                    <div className="flex flex-col">
-                      <Badge leader={leader} text={leader ? "LEDER" : "MEDLEM"} />
+              return (
+                <li
+                  key={id}
+                  className="group relative flex min-h-[220px] flex-col justify-between overflow-hidden rounded-2xl border border-zinc-300 bg-white p-7 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
+                >
+                  {/* øvre del: avatar + badge */}
+                  <div className="flex items-start justify-between gap-5">
+                    <div className="flex items-start gap-5">
+                      <Avatar name={name} src={avatarUrl} />
+                      <div className="flex flex-col">
+                        <Badge leader={leader} text={leader ? "LEDER" : "MEDLEM"} />
+                      </div>
                     </div>
                   </div>
-                </div>
 
                 {/* midtdel: LENGER NED (mer luft) */}
                 <div className="mt-6">
@@ -403,7 +425,7 @@ export default function MembersPage() {
                 <div className="mt-7 flex flex-wrap items-center gap-4">
                   <a
                     href={`/members/${encodeURIComponent(id)}`}
-                    className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 bg-white px-3 py-1.5 text-sm font-semibold text-neutral-800 transition hover:border-red-400 hover:text-red-600"
+                    className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 transition hover:border-zinc-400 hover:text-zinc-900"
                   >
                     Åpne
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -412,7 +434,7 @@ export default function MembersPage() {
                   </a>
                   <a
                     href={`/members/${encodeURIComponent(id)}/edit`}
-                    className="inline-flex items-center rounded-xl bg-red-600 px-3 py-1.5 text-sm font-semibold text-white shadow shadow-red-500/40 transition hover:bg-red-500"
+                    className="inline-flex items-center rounded-xl bg-red-600 px-3 py-1.5 text-sm font-semibold text-white shadow-md shadow-black/20 transition hover:bg-red-500"
                   >
                     Rediger
                   </a>
