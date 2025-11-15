@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const db = createClient(supabaseUrl, serviceRoleKey);
 
 // Mapper kun felter som finnes i din schema
 function mapActs(rows: any[] | null | undefined) {
@@ -19,6 +15,11 @@ function mapActs(rows: any[] | null | undefined) {
 
 export async function GET(req: NextRequest) {
   try {
+    const db = getSupabaseServiceRoleClient();
+    if (!db) {
+      return NextResponse.json({ ok: false, error: "Server mangler Supabase-konfig." }, { status: 500 });
+    }
+
     // Robust parsing i Node-runtime
     const url = new URL(req.url, "http://localhost");
     const email = (url.searchParams.get("email") || "").trim();

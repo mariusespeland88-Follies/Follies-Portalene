@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const db = createClient(supabaseUrl, serviceRoleKey);
 
 export async function POST(req: NextRequest) {
   try {
     const { activityId } = await req.json();
     if (!activityId) {
       return NextResponse.json({ error: "Mangler activityId" }, { status: 400 });
+    }
+
+    const db = getSupabaseServiceRoleClient();
+    if (!db) {
+      return NextResponse.json({ error: "Server mangler Supabase-konfig." }, { status: 500 });
     }
 
     // 1) Slett avhengigheter trygt (ignorer tabeller som ikke finnes i ditt prosjekt)

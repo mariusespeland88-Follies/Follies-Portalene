@@ -10,6 +10,8 @@ export type ActivityLike = {
   name?: string;
   type?: string;
   archived?: boolean;
+  has_guests?: boolean | null;
+  has_attendance?: boolean | null;
   [k: string]: any;
 };
 
@@ -18,6 +20,8 @@ export type Activity = {
   name: string;
   type: string;
   archived?: boolean;
+  has_guests?: boolean | null;
+  has_attendance?: boolean | null;
   [k: string]: any;
 };
 
@@ -25,6 +29,37 @@ export type Activity = {
 export type ActivityType = string;
 
 const LS_KEY = "follies.activities.v1";
+
+function normalizeActivityRecord(row: any): Activity | null {
+  if (!row) return null;
+  const rawId = row.id ?? row.uuid ?? row._id ?? row.slug ?? null;
+  if (!rawId) return null;
+  const normalized: Activity = {
+    ...(row as Record<string, any>),
+    id: String(rawId),
+    name: String(row.name ?? ""),
+    type: String(row.type ?? ""),
+    archived: row.archived ?? false,
+    has_guests:
+      typeof row.has_guests === "boolean" ? row.has_guests : Boolean(row.has_guests),
+    has_attendance:
+      typeof row.has_attendance === "boolean" ? row.has_attendance : Boolean(row.has_attendance),
+  };
+  return normalized;
+}
+
+function upsertLocalActivity(activity: Activity): void {
+  if (!hasWindow()) return;
+  const current = loadAllFromLocalStorage();
+  const idx = current.findIndex((a) => String(a.id) === String(activity.id));
+  if (idx >= 0) {
+    current[idx] = { ...current[idx], ...activity };
+  } else {
+    current.push(activity);
+  }
+  saveAllToLocalStorage(current);
+}
+
 const LS_FALLBACK_KEY = "follies.activities";
 
 function safeJSON<T>(s: string | null): T | null {
@@ -74,8 +109,25 @@ export async function fetchActivities(): Promise<{ data: Activity[] }> {
  */
 export async function fetchActivity(id: string): Promise<Activity | null> {
   const all = loadAllFromLocalStorage();
-  const found = all.find((a) => String(a.id) === String(id)) ?? null;
-  return found;
+  const localHit = all.find((a) => String(a.id) === String(id)) ?? null;
+
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch(`/api/activities/${encodeURIComponent(id)}`);
+      if (res.ok) {
+        const json = await res.json();
+        const fromDb = normalizeActivityRecord(json);
+        if (fromDb) {
+          upsertLocalActivity(fromDb);
+          return fromDb;
+        }
+      }
+    } catch (err) {
+      console.warn('fetchActivity: kunne ikke hente fra API', err);
+    }
+  }
+
+  return localHit;
 }
 
 /**
@@ -94,6 +146,19 @@ export async function saveActivity(a: ActivityLike): Promise<Activity> {
 
   const current = loadAllFromLocalStorage();
 
+  const hasGuestsValue =
+    typeof a.has_guests === "boolean"
+      ? a.has_guests
+      : typeof (a as any).hasGuests === "boolean"
+      ? (a as any).hasGuests
+      : false;
+  const hasAttendanceValue =
+    typeof a.has_attendance === "boolean"
+      ? a.has_attendance
+      : typeof (a as any).hasAttendance === "boolean"
+      ? (a as any).hasAttendance
+      : false;
+
   const idx = current.findIndex((x) => String(x.id) === String(id));
   const next: Activity = {
     ...a,
@@ -101,6 +166,8 @@ export async function saveActivity(a: ActivityLike): Promise<Activity> {
     name: (a.name ?? "").toString(),
     type: (a.type ?? "").toString(),
     archived: a.archived ?? false,
+    has_guests: hasGuestsValue,
+    has_attendance: hasAttendanceValue,
   };
 
   if (idx >= 0) {

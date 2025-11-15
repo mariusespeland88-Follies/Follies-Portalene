@@ -78,6 +78,8 @@ export default function ActivityNewPage() {
     capacity: "",
     start: "",
     end: "",
+    hasGuests: false,
+    hasAttendance: false,
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -87,7 +89,14 @@ export default function ActivityNewPage() {
   const coverRef = useRef<HTMLInputElement | null>(null);
 
   function onChange<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((f) => {
+      const next = { ...f, [key]: value };
+      if (key === "type" && value !== "event") {
+        next.hasGuests = false;
+        next.hasAttendance = false;
+      }
+      return next;
+    });
   }
 
   async function onPickCover() {
@@ -114,11 +123,15 @@ export default function ActivityNewPage() {
       const { data: sess } = await supabase.auth.getSession();
 
       const typeForDb = toDbType(form.type);
+      const hasGuests = form.type === "event" ? form.hasGuests : false;
+      const hasAttendance = form.type === "event" ? form.hasAttendance : false;
 
       const base = {
         name: form.name?.trim() || "Uten navn",
         type: typeForDb,            // <- sender 'forestilling' når UI-valget er "show"
         archived: false,
+        has_guests: hasGuests,
+        has_attendance: hasAttendance,
       };
 
       let dbId: string | null = null;
@@ -128,7 +141,7 @@ export default function ActivityNewPage() {
         const { data, error } = await supabase
           .from("activities")
           .insert(base)
-          .select("id, name, type, archived, created_at")
+          .select("id, name, type, archived, created_at, has_guests, has_attendance")
           .single();
 
         if (error) {
@@ -151,6 +164,8 @@ export default function ActivityNewPage() {
         capacity: form.capacity ? Number(form.capacity) : undefined,
         start: form.start || undefined,
         end: form.end || undefined,
+        has_guests: hasGuests,
+        has_attendance: hasAttendance,
         slug: slugify(base.name || `aktivitet-${String(localId).slice(0,6)}`),
         created_at: new Date().toISOString(),
         archived: false,
@@ -217,6 +232,32 @@ export default function ActivityNewPage() {
               ))}
             </div>
           </div>
+
+          {form.type === "event" && (
+            <div className="md:col-span-2 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+              <h3 className="text-sm font-semibold text-neutral-900">Event-valg</h3>
+              <div className="mt-3 space-y-3 text-sm text-neutral-800">
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={form.hasGuests}
+                    onChange={(e) => onChange("hasGuests", e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                  />
+                  <span>Har gjester (f.eks. familier på Julaften)</span>
+                </label>
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={form.hasAttendance}
+                    onChange={(e) => onChange("hasAttendance", e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                  />
+                  <span>Har innsjekk / oppmøte</span>
+                </label>
+              </div>
+            </div>
+          )}
 
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-neutral-800">Beskrivelse</label>

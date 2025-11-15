@@ -13,7 +13,22 @@ async function sb(path: string, init: RequestInit = {}) {
 }
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const res = await sb(`activity?id=eq.${params.id}&select=*`);
+  const selectFields = [
+    "id",
+    "name",
+    "type",
+    "season",
+    "weekday",
+    "capacity",
+    "description",
+    "archived",
+    "start_date",
+    "end_date",
+    "has_guests",
+    "has_attendance",
+  ].join(",");
+
+  const res = await sb(`activity?id=eq.${params.id}&select=${selectFields}`);
   if (!res.ok) return NextResponse.json({ error: await res.text() }, { status: res.status });
   const data = await res.json();
   return NextResponse.json(data[0] || null);
@@ -21,7 +36,19 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const body = await req.json();
-  const allowed = ['name','season','weekday','capacity','description','archived'];
+  const allowed = [
+    'name',
+    'type',
+    'season',
+    'weekday',
+    'capacity',
+    'description',
+    'archived',
+    'start_date',
+    'end_date',
+    'has_guests',
+    'has_attendance',
+  ];
   const payload: Record<string, any> = {};
   for (const k of allowed) if (k in body) payload[k] = body[k];
 

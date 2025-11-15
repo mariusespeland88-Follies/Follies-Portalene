@@ -1,11 +1,19 @@
 import Link from 'next/link';
-import { supabaseAdmin } from '@/lib/supabase/server';
+import { getSupabaseServiceRoleClient } from '@/lib/supabase/server';
 
 export default async function ProgramsPage() {
-  const { data: programs, error } = await supabaseAdmin
-    .from('program')
-    .select('id,name,season,weekday,capacity')
-    .order('season', { ascending: false });
+  const supabase = getSupabaseServiceRoleClient();
+  let programs: any[] | null = null;
+  let error: { message: string } | null = null;
+
+  if (supabase) {
+    const response = await supabase
+      .from('program')
+      .select('id,name,season,weekday,capacity')
+      .order('season', { ascending: false });
+    programs = response.data as any[] | null;
+    error = response.error;
+  }
 
   const list = programs ?? [];
 
