@@ -5,6 +5,12 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  listMessagesForMember,
+  saveMessage,
+  PortalMessage,
+} from "@/lib/messagesClient";
+
+import {
   Activity,
   FILE_INPUT_CLASS,
   INPUT_CLASS,
@@ -110,11 +116,22 @@ export default function MemberEditPage() {
   const [banner, setBanner] = useState<string | null>(null);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteMsg, setInviteMsg] = useState<string | null>(null);
+  const [messages, setMessages] = useState<PortalMessage[]>([]);
+  const [msgSubject, setMsgSubject] = useState("");
+  const [msgBody, setMsgBody] = useState("");
+  const [msgSending, setMsgSending] = useState(false);
+  const [msgError, setMsgError] = useState<string | null>(null);
+  const [msgInfo, setMsgInfo] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setActivities(readActivitiesNormalized());
   }, []);
+
+  useEffect(() => {
+    if (!id) return;
+    setMessages(listMessagesForMember(String(id)));
+  }, [id]);
 
   useEffect(() => {
     let active = true;
@@ -252,6 +269,57 @@ export default function MemberEditPage() {
   }, [form.first_name, form.last_name]);
 
   const isLoaded = !loading && !error;
+
+  async function handleSendDirectMessage() {
+    const email = form.email?.trim() || "";
+    if (!email) {
+      setMsgError("Medlemmet mangler e-post. Legg inn e-post først.");
+      return;
+    }
+    if (!msgBody.trim()) {
+      setMsgError("Meldingen kan ikke være tom.");
+      return;
+    }
+    setMsgSending(true);
+    setMsgError(null);
+    setMsgInfo(null);
+    try {
+      const saved = saveMessage({
+        scope: "member",
+        memberId: String(id),
+        activityId: null,
+        target: "custom",
+        subject: msgSubject.trim() || `Melding til ${fullName}`,
+        body: msgBody.trim(),
+        createdByEmail: null,
+        createdByName: null,
+      });
+      setMessages((prev) => [saved, ...prev]);
+
+      const res = await fetch("/api/admin/send-member-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memberId: String(id),
+          email,
+          subject: saved.subject,
+          body: saved.body,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json?.error || "Kunne ikke sende e-post.");
+      }
+
+      setMsgSubject("");
+      setMsgBody("");
+      setMsgInfo(`Meldingen er lagret og sendt til ${email}.`);
+    } catch (e: any) {
+      setMsgError(e?.message || "Noe gikk galt ved sending av melding.");
+    } finally {
+      setMsgSending(false);
+    }
+  }
 
   async function sendInvite(email: string) {
     setInviteBusy(true);
@@ -880,6 +948,87 @@ export default function MemberEditPage() {
                 Arkiverte medlemmer skjules fra standardlister, men beholdes i
                 databasen.
               </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-950/70 p-6 shadow-lg shadow-black/40">
+          <h2 className="mb-4 text-xl font-semibold text-red-300">Meldinger til medlem</h2>
+          <div className="grid gap-6 md:grid-cols-[1.4fr,1fr]">
+            {/* Ny melding */}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-semibold text-neutral-300">
+                  Tittel (valgfri)
+                </label>
+                <input
+                  value={msgSubject}
+                  onChange={(e) => setMsgSubject(e.target.value)}
+                  className={INPUT_CLASS}
+                  placeholder='F.eks. "Husk manus" eller "Avlyst øvelse"'
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-neutral-300">
+                  Melding
+                </label>
+                <textarea
+                  rows={4}
+                  value={msgBody}
+                  onChange={(e) => setMsgBody(e.target.value)}
+                  className={`${INPUT_CLASS} min-h-[120px]`}
+                  placeholder="Skriv meldingen du vil sende til medlemmet..."
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-neutral-500">
+                  Meldingen lagres i portalen og sendes som e-post til medlemmets
+                  adresse.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleSendDirectMessage}
+                  disabled={msgSending || !form.email?.trim() || !msgBody.trim()}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow shadow-red-600/40 transition hover:bg-red-500 disabled:opacity-50"
+                >
+                  {msgSending ? "Sender…" : "Send melding"}
+                </button>
+              </div>
+              {msgError && <p className="text-xs text-red-400">{msgError}</p>}
+              {msgInfo && !msgError && (
+                <p className="text-xs text-emerald-400">{msgInfo}</p>
+              )}
+            </div>
+
+            {/* Meldingslogg */}
+            <div className="space-y-2 rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
+              <h3 className="text-sm font-semibold text-neutral-200">Meldingslogg</h3>
+              {messages.length === 0 ? (
+                <p className="text-xs text-neutral-500">
+                  Ingen meldinger er registrert for dette medlemmet ennå.
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-2">
+                  {messages.map((m) => (
+                    <li
+                      key={m.id}
+                      className="rounded-lg border border-neutral-700 bg-neutral-950/60 p-3 text-xs text-neutral-200"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-neutral-100">
+                          {m.subject || "Melding"}
+                        </span>
+                        <span className="text-[10px] text-neutral-500">
+                          {new Date(m.createdAt).toLocaleString("nb-NO")}
+                        </span>
+                      </div>
+                      <p className="mt-1 whitespace-pre-wrap text-xs text-neutral-200">
+                        {m.body}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
         </section>
