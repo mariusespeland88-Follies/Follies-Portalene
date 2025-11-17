@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, use State } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { createClientComponentClient } from "@/lib/supabase/browser";
@@ -267,19 +267,29 @@ export default function MemberProfilePage() {
                 Rediger
               </Link>
 
-              {/* Send melding (mailto) */}
+              {/* Follies Messenger – NY hovedknapp her */}
+              <Link
+                href={`/messages?memberId=${encodeURIComponent(member.id)}`}
+                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white ring-1 ring-white/40 hover:bg-red-700"
+                title="Åpne Follies Messenger med dette medlemmet"
+              >
+                <IconChat />
+                Messenger
+              </Link>
+
+              {/* Mail (tidligere "Send melding" – nå kun e-post) */}
               <a
                 href={hasEmail ? `mailto:${member.email}?subject=Follies` : undefined}
                 onClick={(e) => { if (!hasEmail) e.preventDefault(); }}
                 className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold ring-1 ${
                   hasEmail
-                    ? "bg-red-600 text-white ring-white/40 hover:bg-red-700"
+                    ? "bg-white/15 text-white ring-white/40 hover:bg-white/25"
                     : "bg-white/20 text-white/60 ring-white/20 cursor-not-allowed"
                 }`}
                 title={hasEmail ? `Send e-post til ${member.email}` : "Ingen e-post registrert"}
               >
                 <IconMail />
-                Send melding
+                Mail
               </a>
 
               {/* Ring (tel) */}
@@ -522,6 +532,13 @@ function IconClock() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" className="fill-current" aria-hidden>
       <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 5v6h5v2h-7V7h2z" />
+    </svg>
+  );
+}
+function IconChat() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" className="fill-current" aria-hidden>
+      <path d="M4 4h16a2 2 0 012 2v8a2 2 0 01-2 2h-5.6l-3.2 3.2a1 1 0 01-1.7-.7V16H4a2 2 0 01-2-2V6a2 2 0 012-2zm0 2v8h7v3l2.5-2.5.3-.5H20V6H4z" />
     </svg>
   );
 }
