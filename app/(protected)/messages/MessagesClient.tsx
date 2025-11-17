@@ -45,7 +45,10 @@ function safeJSON<T>(raw: string | null): T | null {
   }
 }
 
-function normalizeMemberId(m: StoredMessage, keyFromObject?: string): string | null {
+function normalizeMemberId(
+  m: StoredMessage,
+  keyFromObject?: string
+): string | null {
   if (m.memberId) return String(m.memberId);
   if (m.member_id) return String(m.member_id);
   if (keyFromObject) return String(keyFromObject);
@@ -112,7 +115,8 @@ function makeThreadSummaries(
 
     const newest = sorted[0];
     const lastBody = (newest.body || "").trim();
-    const preview = lastBody.length > 100 ? lastBody.slice(0, 100) + "…" : lastBody;
+    const preview =
+      lastBody.length > 100 ? lastBody.slice(0, 100) + "…" : lastBody;
 
     result.push({
       memberId,
@@ -127,7 +131,9 @@ function makeThreadSummaries(
     if (!a.lastMessageAt && !b.lastMessageAt) return 0;
     if (!a.lastMessageAt) return 1;
     if (!b.lastMessageAt) return -1;
-    return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+    return (
+      new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
+    );
   });
 }
 
@@ -176,7 +182,7 @@ export default function MessagesClient() {
     setThreads(t);
   }, []);
 
-  // Hent medlemsinfo for alle involverte memberId-er
+  // Hent medlemsinfo for alle involverte memberId-er (med eksisterende meldinger)
   useEffect(() => {
     let active = true;
     (async () => {
@@ -202,13 +208,17 @@ export default function MessagesClient() {
           const id = String((row as any).id);
           const fn = ((row as any).first_name || "").trim();
           const ln = ((row as any).last_name || "").trim();
-          const name = (fn || ln) ? `${fn} ${ln}`.trim() : "Ukjent medlem";
+          const name =
+            fn || ln ? `${fn} ${ln}`.trim() : "Ukjent medlem";
           next[id] = { id, name, email: (row as any).email ?? null };
         }
         setMembers(next);
         setLoading(false);
       } catch (e) {
-        console.error("Uventet feil ved henting av medlemmer til Messenger:", e);
+        console.error(
+          "Uventet feil ved henting av medlemmer til Messenger:",
+          e
+        );
         if (active) setLoading(false);
       }
     })();
@@ -218,11 +228,61 @@ export default function MessagesClient() {
   }, [grouped, supabase]);
 
   const selectedMemberIdFromQuery = searchParams.get("memberId");
+
   const selectedMemberId = useMemo(() => {
     if (selectedMemberIdFromQuery) return selectedMemberIdFromQuery;
     if (threads.length) return threads[0].memberId;
     return null;
   }, [selectedMemberIdFromQuery, threads]);
+
+  // Hvis vi åpner Messenger med memberId i URL, men ingen meldinger finnes ennå:
+  // hent info om dette medlemmet også (navn/e-post).
+  useEffect(() => {
+    if (!selectedMemberId) return;
+    if (members[selectedMemberId]) return;
+
+    let active = true;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("members")
+          .select("id, first_name, last_name, email")
+          .eq("id", selectedMemberId)
+          .maybeSingle();
+
+        if (!active) return;
+        if (error) {
+          console.error(
+            "Feil ved henting av medlem for første samtale i Messenger:",
+            error
+          );
+          return;
+        }
+        if (!data) return;
+
+        const row: any = data;
+        const id = String(row.id);
+        const fn = (row.first_name || "").trim();
+        const ln = (row.last_name || "").trim();
+        const name = fn || ln ? `${fn} ${ln}`.trim() : "Ukjent medlem";
+        const email = row.email ?? null;
+
+        setMembers((prev) => ({
+          ...prev,
+          [id]: { id, name, email },
+        }));
+      } catch (e) {
+        console.error(
+          "Uventet feil ved henting av medlem for første samtale:",
+          e
+        );
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [selectedMemberId, members, supabase]);
 
   const selectedMessages = useMemo(() => {
     if (!selectedMemberId) return [];
@@ -233,12 +293,18 @@ export default function MessagesClient() {
       if (!da && !db) return 0;
       if (!da) return -1;
       if (!db) return 1;
-      return new Date(da).getTime() - new Date(db).getTime();
+      return (
+        new Date(da).getTime() - new Date(db).getTime()
+      );
     });
   }, [grouped, selectedMemberId]);
 
   const selectedMemberInfo = selectedMemberId
-    ? members[selectedMemberId] ?? { id: selectedMemberId, name: "Ukjent medlem", email: null }
+    ? members[selectedMemberId] ?? {
+        id: selectedMemberId,
+        name: "Ukjent medlem",
+        email: null,
+      }
     : null;
 
   async function handleSend() {
@@ -252,7 +318,8 @@ export default function MessagesClient() {
     setSendInfo(null);
     try {
       const subjectToUse =
-        subject.trim() || `Melding til ${selectedMemberInfo?.name ?? "medlem"}`;
+        subject.trim() ||
+        `Melding til ${selectedMemberInfo?.name ?? "medlem"}`;
 
       const saved = saveMessage({
         scope: "member",
@@ -301,7 +368,9 @@ export default function MessagesClient() {
         }
         setSendInfo(`Meldingen er lagret og sendt til ${email}.`);
       } else {
-        setSendInfo("Meldingen er lagret i portalen (ingen e-post registrert).");
+        setSendInfo(
+          "Meldingen er lagret i portalen (ingen e-post registrert)."
+        );
       }
 
       setSubject("");
@@ -327,8 +396,8 @@ export default function MessagesClient() {
     );
   }
 
-  // Ingen tråder ennå
-  if (!threads.length) {
+  // Helt tomt: ingen meldinger og ingen memberId i URL -> ren tom-state
+  if (!threads.length && !selectedMemberIdFromQuery) {
     return (
       <main className="mx-auto max-w-6xl px-4 py-8 text-neutral-900 space-y-4">
         <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">
@@ -342,7 +411,8 @@ export default function MessagesClient() {
           <Link href="/members" className="text-red-600 underline">
             medlemslisten
           </Link>{" "}
-          og bruk knappen <span className="font-semibold">Messenger</span> for å starte en samtale.
+          og bruk knappen <span className="font-semibold">Messenger</span> for å
+          starte en samtale.
         </p>
       </main>
     );
@@ -350,7 +420,7 @@ export default function MessagesClient() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 text-neutral-900">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex items-center justify_between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">
             Follies Messenger
@@ -361,7 +431,7 @@ export default function MessagesClient() {
         </div>
         <Link
           href="/members"
-          className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
+          className="rounded-lg bg_white px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
         >
           Gå til medlemmer
         </Link>
@@ -373,48 +443,58 @@ export default function MessagesClient() {
           <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
             <h2 className="text-sm font-semibold text-neutral-900">Samtaler</h2>
             <span className="rounded-full bg-neutral-900 px-2.5 py-0.5 text-xs font-semibold text-white">
-              {threads.length}
+              {threads.length || (selectedMemberId ? 1 : 0)}
             </span>
           </div>
           <div className="flex-1 overflow-y-auto">
-            {threads.map((t) => {
-              const info =
-                members[t.memberId] ?? {
-                  id: t.memberId,
-                  name: "Ukjent medlem",
-                  email: null,
-                };
-              const active = selectedMemberId === t.memberId;
-              return (
-                <button
-                  key={t.memberId}
-                  onClick={() => handleSelectThread(t.memberId)}
-                  className={`flex w-full items-start gap-3 px-4 py-3 text-left text-sm transition ${
-                    active ? "bg-red-50" : "hover:bg-neutral-50"
-                  }`}
-                >
-                  <div className="mt-0.5 h-8 w-8 flex-shrink-0 overflow-hidden rounded-full bg-neutral-900 text-xs font-semibold text-white flex items-center justify-center">
-                    {initials(info.name)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate font-semibold text-neutral-900">
-                        {info.name}
-                      </p>
-                      <span className="text-[10px] text-neutral-500">
-                        {formatDateTime(t.lastMessageAt)}
-                      </span>
+            {threads.length === 0 && selectedMemberId ? (
+              <div className="px-4 py-3 text-xs text-neutral-600">
+                Du starter en ny samtale med{" "}
+                <span className="font-semibold">
+                  {selectedMemberInfo?.name ?? "medlem"}
+                </span>
+                .
+              </div>
+            ) : (
+              threads.map((t) => {
+                const info =
+                  members[t.memberId] ?? {
+                    id: t.memberId,
+                    name: "Ukjent medlem",
+                    email: null,
+                  };
+                const active = selectedMemberId === t.memberId;
+                return (
+                  <button
+                    key={t.memberId}
+                    onClick={() => handleSelectThread(t.memberId)}
+                    className={`flex w-full items-start gap-3 px-4 py-3 text-left text-sm transition ${
+                      active ? "bg-red-50" : "hover:bg-neutral-50"
+                    }`}
+                  >
+                    <div className="mt-0.5 h-8 w-8 flex-shrink-0 overflow-hidden rounded-full bg-neutral-900 text-xs font-semibold text-white flex items-center justify-center">
+                      {initials(info.name)}
                     </div>
-                    <p className="mt-0.5 line-clamp-2 text-xs text-neutral-600">
-                      {t.lastMessagePreview || "Ingen tekst."}
-                    </p>
-                    <p className="mt-0.5 text-[10px] text-neutral-500">
-                      {t.count} melding{t.count === 1 ? "" : "er"}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate font-semibold text-neutral-900">
+                          {info.name}
+                        </p>
+                        <span className="text-[10px] text-neutral-500">
+                          {formatDateTime(t.lastMessageAt)}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 line-clamp-2 text-xs text-neutral-600">
+                        {t.lastMessagePreview || "Ingen tekst."}
+                      </p>
+                      <p className="mt-0.5 text-[10px] text-neutral-500">
+                        {t.count} melding{t.count === 1 ? "" : "er"}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
         </aside>
 
