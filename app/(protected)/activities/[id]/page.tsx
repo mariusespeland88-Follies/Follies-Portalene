@@ -245,33 +245,119 @@ const ALL_TAB_KEYS: Tab[] = [
   "meldinger",
 ];
 
+// Støtt både norske og engelske/sanne navn fra UI/DB
+const TAB_SYNONYMS: Record<string, Tab> = {
+  // oversikt
+  overview: "oversikt",
+  oversikt: "oversikt",
+
+  // deltakere
+  participants: "deltakere",
+  participant: "deltakere",
+  members: "deltakere",
+  member: "deltakere",
+  deltakere: "deltakere",
+
+  // ledere
+  leaders: "ledere",
+  leader: "ledere",
+  ledere: "ledere",
+
+  // økter
+  sessions: "okter",
+  session: "okter",
+  okter: "okter",
+
+  // filer
+  files: "filer",
+  file: "filer",
+  documents: "filer",
+  docs: "filer",
+  filer: "filer",
+
+  // meldinger
+  messages: "meldinger",
+  message: "meldinger",
+  announcement: "meldinger",
+  announcements: "meldinger",
+  meldinger: "meldinger",
+
+  // gjester
+  guests: "gjester",
+  guest: "gjester",
+  gjester: "gjester",
+
+  // innsjekk
+  attendance: "innsjekk",
+  checkin: "innsjekk",
+  "check-in": "innsjekk",
+  innsjekk: "innsjekk",
+
+  // frivillige
+  volunteers: "frivillige",
+  volunteer: "frivillige",
+  frivillige: "frivillige",
+
+  // oppgaver
+  tasks: "oppgaver",
+  task: "oppgaver",
+  oppgaver: "oppgaver",
+};
+
+const normalizeTabKey = (raw: any): Tab | null => {
+  if (raw == null) return null;
+  const s = String(raw).trim().toLowerCase();
+  if (!s) return null;
+
+  // Direkte match mot våre Tab-keys
+  if ((ALL_TAB_KEYS as string[]).includes(s)) {
+    return s as Tab;
+  }
+
+  // Synonymer (engelsk/norsk mix)
+  return TAB_SYNONYMS[s] ?? null;
+};
+
 function computeEnabledTabs(act: DbActivity | null): Tab[] {
-  const fallbackBase = [
+  const fallbackBase: Tab[] = [
     "oversikt",
     "deltakere",
     "ledere",
     "okter",
     "filer",
     "meldinger",
-  ] as Tab[];
+  ];
 
   if (!act) return fallbackBase;
 
-  const rawConfig = (act as any).tab_config as string[] | null | undefined;
+  const rawConfig = (act as any).tab_config as any;
   const validSet = new Set<Tab>(ALL_TAB_KEYS);
+  const cleaned: Tab[] = [];
 
-  if (Array.isArray(rawConfig) && rawConfig.length) {
-    const cleaned: Tab[] = [];
+  // 1) Hvis tab_config er en liste (["oversikt", "participants", ...])
+  if (Array.isArray(rawConfig)) {
     for (const entry of rawConfig) {
-      const key = String(entry) as Tab;
-      if (validSet.has(key) && !cleaned.includes(key)) {
+      const key = normalizeTabKey(entry);
+      if (key && validSet.has(key) && !cleaned.includes(key)) {
         cleaned.push(key);
       }
     }
-    if (cleaned.length) {
-      if (!cleaned.includes("oversikt")) cleaned.unshift("oversikt");
-      return cleaned;
+  }
+  // 2) Hvis tab_config er et objekt ({ oversikt: true, participants: false, ... })
+  else if (rawConfig && typeof rawConfig === "object") {
+    for (const [rk, val] of Object.entries(rawConfig)) {
+      if (!val) continue;
+      const key = normalizeTabKey(rk);
+      if (key && validSet.has(key) && !cleaned.includes(key)) {
+        cleaned.push(key);
+      }
     }
+  }
+
+  // Hvis vi faktisk fant en konfigurasjon i DB, så bruk den.
+  if (cleaned.length) {
+    if (!cleaned.includes("oversikt")) cleaned.unshift("oversikt");
+    return cleaned;
   }
 
   // Fallback hvis tab_config ikke er satt: bestem ut fra has_*-flagg
