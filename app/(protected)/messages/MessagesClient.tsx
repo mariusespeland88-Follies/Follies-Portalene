@@ -409,8 +409,8 @@ export default function MessagesClient() {
 
   if (loading) {
     return (
-      <main className="mx-auto max-w-7xl px-4 py-10 text-neutral-100">
-        <div className="rounded-3xl border border-red-500/40 bg-neutral-950/90 p-6 text-sm shadow-[0_0_40px_rgba(239,68,68,0.35)]">
+      <main className="mx-auto max-w-7xl px-4 py-10 text-neutral-900">
+        <div className="rounded-3xl border border-rose-200 bg-white p-6 text-sm shadow-lg shadow-rose-100">
           Laster meldinger…
         </div>
       </main>
@@ -420,19 +420,19 @@ export default function MessagesClient() {
   // Helt tomt: ingen meldinger og ingen memberId i URL -> ren tom-state
   if (!threads.length && !selectedMemberIdFromQuery) {
     return (
-      <main className="mx-auto max-w-7xl px-4 py-10 text-neutral-100">
-        <section className="rounded-3xl border border-red-500/40 bg-gradient-to-br from-red-950/40 via-neutral-950 to-neutral-900 p-8 shadow-[0_0_70px_rgba(248,113,113,0.4)]">
-          <h1 className="text-3xl font-semibold tracking-tight text-red-200">
+      <main className="mx-auto max-w-7xl px-4 py-10 text-neutral-900">
+        <section className="rounded-3xl border border-rose-200 bg-gradient-to-b from-rose-50 via-white to-rose-50 p-8 shadow-lg shadow-rose-100">
+          <h1 className="text-3xl font-semibold tracking-tight text-red-600">
             Follies Messenger
           </h1>
-          <p className="mt-2 text-sm text-neutral-200">
+          <p className="mt-2 text-sm text-neutral-700">
             Du har ikke sendt eller lagret noen meldinger ennå.
           </p>
-          <p className="mt-3 text-sm text-neutral-100">
+          <p className="mt-3 text-sm text-neutral-800">
             Gå til{" "}
             <Link
               href="/members"
-              className="font-semibold text-red-200 underline underline-offset-2"
+              className="font-semibold text-red-600 underline underline-offset-2"
             >
               Medlemmer
             </Link>{" "}
@@ -446,46 +446,46 @@ export default function MessagesClient() {
   }
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-100">
+    <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
       {/* Tittelrad */}
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-red-200">
+          <h1 className="text-3xl font-semibold tracking-tight text-red-600">
             Follies Messenger
           </h1>
-          <p className="mt-1 text-sm text-neutral-200">
+          <p className="mt-1 text-sm text-neutral-700">
             Hold kontakt med deltakere og foresatte direkte fra portalen.
           </p>
         </div>
         <Link
           href="/members"
-          className="rounded-xl border border-red-400/70 bg-black px-4 py-2 text-sm font-semibold text-red-100 shadow-[0_0_25px_rgba(248,113,113,0.5)] hover:bg-neutral-900"
+          className="rounded-xl border border-red-500 bg-white px-4 py-2 text-sm font-semibold text-red-600 shadow-sm hover:bg-rose-50"
         >
           Gå til medlemmer
         </Link>
       </div>
 
       {/* Hovedkort */}
-      <section className="rounded-[32px] border border-red-500/40 bg-gradient-to-br from-red-950/40 via-neutral-950 to-neutral-900 p-4 shadow-[0_0_80px_rgba(248,113,113,0.45)]">
+      <section className="rounded-[32px] border border-neutral-200 bg-white p-4 shadow-xl shadow-rose-100">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr),minmax(0,1.4fr)]">
           {/* VENSTRE: Trådliste */}
-          <aside className="flex min-h-[420px] flex-col rounded-2xl border border-red-500/35 bg-black/70 backdrop-blur">
-            <div className="flex items-center justify-between border-b border-red-500/30 px-4 py-3">
+          <aside className="flex min-h-[420px] flex-col rounded-2xl border border-rose-200 bg-rose-50">
+            <div className="flex items-center justify-between border-b border-rose-200 px-4 py-3">
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-xs font-semibold text-white shadow-[0_0_15px_rgba(248,113,113,0.8)]">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-xs font-semibold text-white">
                   ✉
                 </span>
-                <h2 className="text-sm font-semibold text-neutral-50">
+                <h2 className="text-sm font-semibold text-neutral-900">
                   Samtaler
                 </h2>
               </div>
-              <span className="rounded-full bg-neutral-900/80 px-2.5 py-0.5 text-xs font-semibold text-red-100 ring-1 ring-red-500/70">
+              <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-red-600 ring-1 ring-red-200">
                 {threads.length || (selectedMemberId ? 1 : 0)}
               </span>
             </div>
             <div className="flex-1 overflow-y-auto">
               {threads.length === 0 && selectedMemberId ? (
-                <div className="px-4 py-3 text-xs text-neutral-300">
+                <div className="px-4 py-3 text-xs text-neutral-700">
                   Du starter en ny samtale med{" "}
                   <span className="font-semibold">
                     {selectedMemberInfo?.name ?? "medlem"}
@@ -507,26 +507,26 @@ export default function MessagesClient() {
                       onClick={() => handleSelectThread(t.memberId)}
                       className={`flex w-full items-start gap-3 px-4 py-3 text-left text-sm transition ${
                         active
-                          ? "bg-gradient-to-r from-red-900/80 via-red-800/70 to-red-900/80"
-                          : "hover:bg-neutral-900/90"
+                          ? "bg-rose-200 border-l-4 border-red-500"
+                          : "hover:bg-rose-100"
                       }`}
                     >
-                      <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-600 text-xs font-semibold text-white ring-2 ring-red-300/80 shadow-[0_0_18px_rgba(248,113,113,0.9)]">
+                      <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-600 text-xs font-semibold text-white">
                         {initials(info.name)}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="truncate text-[13px] font-semibold text-neutral-50">
+                          <p className="truncate text-[13px] font-semibold text-neutral-900">
                             {info.name}
                           </p>
-                          <span className="text-[10px] text-neutral-300">
+                          <span className="text-[11px] text-neutral-500">
                             {formatDateTime(t.lastMessageAt)}
                           </span>
                         </div>
-                        <p className="mt-0.5 line-clamp-2 text-[11px] text-neutral-200">
+                        <p className="mt-0.5 line-clamp-2 text-[11px] text-neutral-700">
                           {t.lastMessagePreview || "Ingen tekst."}
                         </p>
-                        <p className="mt-1 text-[10px] text-neutral-400">
+                        <p className="mt-1 text-[10px] text-neutral-500">
                           {t.count} melding{t.count === 1 ? "" : "er"}
                         </p>
                       </div>
@@ -538,14 +538,14 @@ export default function MessagesClient() {
           </aside>
 
           {/* HØYRE: Valgt samtale */}
-          <section className="flex min-h-[420px] flex-col rounded-2xl border border-red-500/35 bg-black/70 backdrop-blur">
-            <div className="flex items-center justify-between border-b border-red-500/30 px-4 py-3">
+          <section className="flex min-h-[420px] flex-col rounded-2xl border border-neutral-200 bg-neutral-50">
+            <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
               <div>
-                <h2 className="text-sm font-semibold text-neutral-50">
+                <h2 className="text-sm font-semibold text-neutral-900">
                   {selectedMemberInfo?.name ?? "Velg en samtale"}
                 </h2>
                 {selectedMemberInfo?.email && (
-                  <p className="text-xs text-neutral-200">
+                  <p className="text-xs text-neutral-600">
                     {selectedMemberInfo.email}
                   </p>
                 )}
@@ -553,7 +553,7 @@ export default function MessagesClient() {
               {selectedMemberId && (
                 <Link
                   href={`/members/${encodeURIComponent(selectedMemberId)}`}
-                  className="rounded-xl border border-red-500/70 bg-neutral-950 px-3 py-1.5 text-xs font-semibold text-red-100 shadow-[0_0_18px_rgba(248,113,113,0.7)] hover:bg-neutral-900"
+                  className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-50"
                 >
                   Åpne medlem
                 </Link>
@@ -566,24 +566,24 @@ export default function MessagesClient() {
               className="flex-1 space-y-2 overflow-y-auto px-4 py-3"
             >
               {selectedMessages.length === 0 ? (
-                <p className="text-sm text-neutral-200">
+                <p className="text-sm text-neutral-700">
                   Ingen meldinger registrert i denne samtalen ennå.
                 </p>
               ) : (
                 selectedMessages.map((m) => (
                   <article
                     key={m.id}
-                    className="max-w-xl rounded-2xl border border-neutral-700/70 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-950 px-3.5 py-2.5 text-xs text-neutral-50 shadow-[0_0_22px_rgba(15,23,42,0.9)]"
+                    className="max-w-xl rounded-2xl border border-neutral-200 bg-white px-3.5 py-2.5 text-xs text-neutral-900 shadow-sm"
                   >
                     <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <span className="truncate text-[11px] font-semibold text-red-200">
+                      <span className="truncate text-[11px] font-semibold text-red-600">
                         {m.subject || "Melding"}
                       </span>
-                      <span className="text-[10px] text-neutral-400">
+                      <span className="text-[11px] text-neutral-500">
                         {formatDateTime(normalizeCreatedAt(m))}
                       </span>
                     </div>
-                    <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-neutral-50">
+                    <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-neutral-900">
                       {m.body || ""}
                     </p>
                   </article>
@@ -593,23 +593,23 @@ export default function MessagesClient() {
 
             {/* Ny melding */}
             {selectedMemberId && (
-              <div className="border-t border-red-500/30 bg-neutral-950/95 px-4 py-3">
+              <div className="border-t border-neutral-200 bg-white px-4 py-3">
                 <div className="space-y-2">
                   <input
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
                     placeholder='Tittel (f.eks. "Husk øving") – valgfritt'
-                    className="w-full rounded-lg border border-neutral-700 bg-neutral-900/90 px-3 py-1.5 text-sm text-neutral-50 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400"
+                    className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-900 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400"
                   />
                   <textarea
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
                     rows={3}
                     placeholder="Skriv meldingen du vil sende til medlemmet…"
-                    className="w-full rounded-lg border border-neutral-700 bg-neutral-900/90 px-3 py-1.5 text-sm text-neutral-50 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400"
+                    className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-900 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400"
                   />
                   <div className="flex items-start justify-between gap-3">
-                    <p className="mt-1 text-[11px] text-neutral-300">
+                    <p className="mt-1 text-[11px] text-neutral-600">
                       Meldingen lagres i portalen og forsøkes sendt som e-post
                       hvis medlemmet har en registrert adresse.
                     </p>
@@ -617,20 +617,20 @@ export default function MessagesClient() {
                       type="button"
                       onClick={handleSend}
                       disabled={sending || !body.trim()}
-                      className="rounded-xl bg-gradient-to-r from-red-600 via-red-500 to-rose-500 px-4 py-1.5 text-sm font-semibold text-white shadow-[0_0_25px_rgba(248,113,113,0.9)] hover:from-red-500 hover:via-red-400 hover:to-rose-400 disabled:opacity-60"
+                      className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-red-500 disabled:opacity-60"
                     >
                       {sending ? "Sender…" : "Send melding"}
                     </button>
                   </div>
 
                   {sendError && (
-                    <div className="mt-1 inline-flex items-center gap-2 rounded-lg border border-red-400/70 bg-red-900/40 px-3 py-1 text-[11px] text-red-100">
+                    <div className="mt-1 inline-flex items-center gap-2 rounded-lg border border-red-200 bg-rose-50 px-3 py-1 text-[11px] text-red-700">
                       <span className="text-xs">⚠️</span>
                       <span>{sendError}</span>
                     </div>
                   )}
                   {sendInfo && !sendError && (
-                    <div className="mt-1 inline-flex items-center gap-2 rounded-lg border border-emerald-400/70 bg-emerald-900/30 px-3 py-1 text-[11px] text-emerald-100">
+                    <div className="mt-1 inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] text-emerald-700">
                       <span className="text-xs">✔</span>
                       <span>{sendInfo}</span>
                     </div>
