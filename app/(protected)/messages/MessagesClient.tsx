@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClientComponentClient } from "@/lib/supabase/browser";
@@ -175,6 +175,8 @@ export default function MessagesClient() {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
 
+  const logRef = useRef<HTMLDivElement | null>(null);
+
   // Hent meldinger fra LS
   useEffect(() => {
     const g = loadMessagesGroupedByMember();
@@ -205,13 +207,13 @@ export default function MessagesClient() {
           return;
         }
         const next: Record<string, MemberInfo> = {};
-        for (const row of data || []) {
-          const id = String((row as any).id);
-          const fn = ((row as any).first_name || "").trim();
-          const ln = ((row as any).last_name || "").trim();
+        for (const row of (data || []) as any[]) {
+          const id = String(row.id);
+          const fn = (row.first_name || "").trim();
+          const ln = (row.last_name || "").trim();
           const name =
             fn || ln ? `${fn} ${ln}`.trim() : "Ukjent medlem";
-          next[id] = { id, name, email: (row as any).email ?? null };
+          next[id] = { id, name, email: row.email ?? null };
         }
         setMembers(next);
         setLoading(false);
@@ -305,6 +307,12 @@ export default function MessagesClient() {
         email: null,
       }
     : null;
+
+  // Auto-scroll meldingslogg til bunn når nye meldinger kommer
+  useEffect(() => {
+    if (!logRef.current) return;
+    logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [selectedMessages.length]);
 
   async function handleSend() {
     if (!selectedMemberId) return;
@@ -401,8 +409,8 @@ export default function MessagesClient() {
 
   if (loading) {
     return (
-      <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-100">
-        <div className="rounded-2xl border border-red-600/30 bg-neutral-950/80 p-4 text-sm">
+      <main className="mx-auto max-w-7xl px-4 py-10 text-neutral-100">
+        <div className="rounded-3xl border border-red-500/40 bg-neutral-950/90 p-6 text-sm shadow-[0_0_40px_rgba(239,68,68,0.35)]">
           Laster meldinger…
         </div>
       </main>
@@ -412,19 +420,19 @@ export default function MessagesClient() {
   // Helt tomt: ingen meldinger og ingen memberId i URL -> ren tom-state
   if (!threads.length && !selectedMemberIdFromQuery) {
     return (
-      <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-100 space-y-4">
-        <section className="rounded-3xl border border-red-600/40 bg-neutral-950/80 p-6 shadow-[0_0_50px_rgba(239,68,68,0.3)]">
-          <h1 className="text-2xl font-semibold tracking-tight text-red-300">
+      <main className="mx-auto max-w-7xl px-4 py-10 text-neutral-100">
+        <section className="rounded-3xl border border-red-500/40 bg-gradient-to-br from-red-950/40 via-neutral-950 to-neutral-900 p-8 shadow-[0_0_70px_rgba(248,113,113,0.4)]">
+          <h1 className="text-3xl font-semibold tracking-tight text-red-200">
             Follies Messenger
           </h1>
           <p className="mt-2 text-sm text-neutral-200">
             Du har ikke sendt eller lagret noen meldinger ennå.
           </p>
-          <p className="mt-2 text-sm text-neutral-300">
+          <p className="mt-3 text-sm text-neutral-100">
             Gå til{" "}
             <Link
               href="/members"
-              className="font-semibold text-red-300 underline underline-offset-2"
+              className="font-semibold text-red-200 underline underline-offset-2"
             >
               Medlemmer
             </Link>{" "}
@@ -439,188 +447,38 @@ export default function MessagesClient() {
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-100">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      {/* Tittelrad */}
+      <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-red-300">
+          <h1 className="text-3xl font-semibold tracking-tight text-red-200">
             Follies Messenger
           </h1>
-          <p className="mt-1 text-sm text-neutral-300">
+          <p className="mt-1 text-sm text-neutral-200">
             Hold kontakt med deltakere og foresatte direkte fra portalen.
           </p>
         </div>
         <Link
           href="/members"
-          className="rounded-lg border border-red-500/60 bg-black px-3.5 py-2 text-sm font-semibold text-red-100 shadow shadow-red-900/40 hover:bg-neutral-900"
+          className="rounded-xl border border-red-400/70 bg-black px-4 py-2 text-sm font-semibold text-red-100 shadow-[0_0_25px_rgba(248,113,113,0.5)] hover:bg-neutral-900"
         >
           Gå til medlemmer
         </Link>
       </div>
 
-      <section className="rounded-3xl border border-red-600/40 bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 p-4 shadow-[0_0_70px_rgba(239,68,68,0.35)]">
+      {/* Hovedkort */}
+      <section className="rounded-[32px] border border-red-500/40 bg-gradient-to-br from-red-950/40 via-neutral-950 to-neutral-900 p-4 shadow-[0_0_80px_rgba(248,113,113,0.45)]">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr),minmax(0,1.4fr)]">
           {/* VENSTRE: Trådliste */}
-          <aside className="flex min-h-[420px] flex-col rounded-2xl border border-red-500/30 bg-neutral-950/70">
+          <aside className="flex min-h-[420px] flex-col rounded-2xl border border-red-500/35 bg-black/70 backdrop-blur">
             <div className="flex items-center justify-between border-b border-red-500/30 px-4 py-3">
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-red-600 text-xs font-semibold text-white">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-xs font-semibold text-white shadow-[0_0_15px_rgba(248,113,113,0.8)]">
                   ✉
                 </span>
                 <h2 className="text-sm font-semibold text-neutral-50">
                   Samtaler
                 </h2>
               </div>
-              <span className="rounded-full bg-black/70 px-2.5 py-0.5 text-xs font-semibold text-red-100 ring-1 ring-red-500/60">
+              <span className="rounded-full bg-neutral-900/80 px-2.5 py-0.5 text-xs font-semibold text-red-100 ring-1 ring-red-500/70">
                 {threads.length || (selectedMemberId ? 1 : 0)}
-              </span>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {threads.length === 0 && selectedMemberId ? (
-                <div className="px-4 py-3 text-xs text-neutral-300">
-                  Du starter en ny samtale med{" "}
-                  <span className="font-semibold">
-                    {selectedMemberInfo?.name ?? "medlem"}
-                  </span>
-                  .
-                </div>
-              ) : (
-                threads.map((t) => {
-                  const info =
-                    members[t.memberId] ?? {
-                      id: t.memberId,
-                      name: "Ukjent medlem",
-                      email: null,
-                    };
-                  const active = selectedMemberId === t.memberId;
-                  return (
-                    <button
-                      key={t.memberId}
-                      onClick={() => handleSelectThread(t.memberId)}
-                      className={`flex w-full items-start gap-3 px-4 py-3 text-left text-sm transition ${
-                        active
-                          ? "bg-red-900/50"
-                          : "hover:bg-neutral-900/80"
-                      }`}
-                    >
-                      <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-700 text-xs font-semibold text-white ring-2 ring-red-400/70">
-                        {initials(info.name)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="truncate font-semibold text-neutral-50">
-                            {info.name}
-                          </p>
-                          <span className="text-[10px] text-neutral-400">
-                            {formatDateTime(t.lastMessageAt)}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 line-clamp-2 text-xs text-neutral-300">
-                          {t.lastMessagePreview || "Ingen tekst."}
-                        </p>
-                        <p className="mt-0.5 text-[10px] text-neutral-500">
-                          {t.count} melding{t.count === 1 ? "" : "er"}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </aside>
-
-          {/* HØYRE: Valgt samtale */}
-          <section className="flex min-h-[420px] flex-col rounded-2xl border border-red-500/30 bg-neutral-950/70">
-            <div className="flex items-center justify-between border-b border-red-500/30 px-4 py-3">
-              <div>
-                <h2 className="text-sm font-semibold text-neutral-50">
-                  {selectedMemberInfo?.name ?? "Velg en samtale"}
-                </h2>
-                {selectedMemberInfo?.email && (
-                  <p className="text-xs text-neutral-300">
-                    {selectedMemberInfo.email}
-                  </p>
-                )}
-              </div>
-              {selectedMemberId && (
-                <Link
-                  href={`/members/${encodeURIComponent(selectedMemberId)}`}
-                  className="rounded-lg border border-red-500/60 bg-black px-3 py-1.5 text-xs font-semibold text-red-100 hover:bg-neutral-900"
-                >
-                  Åpne medlem
-                </Link>
-              )}
-            </div>
-
-            {/* Meldingslogg */}
-            <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
-              {selectedMessages.length === 0 ? (
-                <p className="text-sm text-neutral-300">
-                  Ingen meldinger registrert i denne samtalen ennå.
-                </p>
-              ) : (
-                selectedMessages.map((m) => (
-                  <article
-                    key={m.id}
-                    className="max-w-xl rounded-2xl border border-neutral-700 bg-neutral-900/90 px-3.5 py-2.5 text-xs text-neutral-50 shadow-sm"
-                  >
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                      <span className="font-semibold text-red-200">
-                        {m.subject || "Melding"}
-                      </span>
-                      <span className="text-[10px] text-neutral-400">
-                        {formatDateTime(normalizeCreatedAt(m))}
-                      </span>
-                    </div>
-                    <p className="whitespace-pre-wrap text-neutral-50">
-                      {m.body || ""}
-                    </p>
-                  </article>
-                ))
-              )}
-            </div>
-
-            {/* Ny melding */}
-            {selectedMemberId && (
-              <div className="border-t border-red-500/30 bg-neutral-950 px-4 py-3">
-                <div className="space-y-2">
-                  <input
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    placeholder='Tittel (f.eks. "Husk øving") – valgfritt'
-                    className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-50 outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
-                  />
-                  <textarea
-                    value={body}
-                    onChange={(e) => setBody(e.target.value)}
-                    rows={3}
-                    placeholder="Skriv meldingen du vil sende til medlemmet…"
-                    className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-50 outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
-                  />
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-[11px] text-neutral-400">
-                      Meldingen lagres i portalen og forsøkes sendt som e-post
-                      hvis medlemmet har en registrert adresse.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleSend}
-                      disabled={sending || !body.trim()}
-                      className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-semibold text-white shadow shadow-red-800/50 hover:bg-red-500 disabled:opacity-60"
-                    >
-                      {sending ? "Sender…" : "Send melding"}
-                    </button>
-                  </div>
-                  {sendError && (
-                    <p className="text-[11px] text-red-300">{sendError}</p>
-                  )}
-                  {sendInfo && !sendError && (
-                    <p className="text-[11px] text-emerald-300">{sendInfo}</p>
-                  )}
-                </div>
-              </div>
-            )}
-          </section>
-        </div>
-      </section>
-    </main>
-  );
-}
+              </span
