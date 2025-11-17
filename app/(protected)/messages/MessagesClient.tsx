@@ -267,7 +267,8 @@ export default function MessagesClient() {
         const id = String(row.id);
         const fn = (row.first_name || "").trim();
         const ln = (row.last_name || "").trim();
-        const name = fn || ln ? `${fn} ${ln}`.trim() : "Ukjent medlem";
+        const name =
+          fn || ln ? `${fn} ${ln}`.trim() : "Ukjent medlem";
         const email = row.email ?? null;
 
         setMembers((prev) => ({
@@ -424,10 +425,10 @@ export default function MessagesClient() {
     return (
       <main className="mx-auto max-w-7xl px-4 py-10 text-neutral-100">
         <section className="rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-950 to-black p-8 shadow-[0_0_60px_rgba(0,0,0,0.8)]">
-          <h1 className="text-3xl font-semibold tracking-tight text-red-400">
+          <h1 className="text-3xl font-semibold tracking-tight text-red-300">
             Follies Messenger
           </h1>
-          <p className="mt-2 text-sm text-neutral-200">
+          <p className="mt-2 text-sm font-medium text-neutral-200">
             Du har ikke sendt eller lagret noen meldinger ennå.
           </p>
           <p className="mt-3 text-sm text-neutral-200">
@@ -452,10 +453,10 @@ export default function MessagesClient() {
       {/* Tittelrad */}
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-red-400">
+          <h1 className="text-3xl font-semibold tracking-tight text-red-300">
             Follies Messenger
           </h1>
-          <p className="mt-1 text-sm text-neutral-300">
+          <p className="mt-1 text-sm font-medium text-neutral-200">
             Hold kontakt med deltakere og foresatte direkte fra portalen.
           </p>
         </div>
@@ -468,10 +469,10 @@ export default function MessagesClient() {
       </div>
 
       {/* Hovedkort */}
-      <section className="rounded-[28px] border border-neutral-800 bg-gradient-to-br from-neutral-950 via-neutral-950 to-neutral-900 p-4 shadow-[0_0_80px_rgba(0,0,0,0.9)]">
+      <section className="rounded-[28px] border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-800 p-4 shadow-[0_0_80px_rgba(0,0,0,0.9)]">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr),minmax(0,1.4fr)]">
           {/* VENSTRE: Trådliste */}
-          <aside className="flex min-h-[420px] flex-col rounded-2xl border border-neutral-800 bg-neutral-950/90">
+          <aside className="flex min-h-[420px] flex-col rounded-2xl border border-neutral-800 bg-neutral-900/95">
             <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
               <div className="flex items-center gap-2">
                 <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-xs font-semibold text-white">
@@ -487,7 +488,7 @@ export default function MessagesClient() {
             </div>
             <div className="flex-1 overflow-y-auto">
               {threads.length === 0 && selectedMemberId ? (
-                <div className="px-4 py-3 text-sm text-neutral-300">
+                <div className="px-4 py-3 text-sm text-neutral-200">
                   Du starter en ny samtale med{" "}
                   <span className="font-semibold">
                     {selectedMemberInfo?.name ?? "medlem"}
@@ -510,7 +511,7 @@ export default function MessagesClient() {
                       className={`flex w-full items-start gap-3 px-4 py-3 text-left text-sm transition ${
                         active
                           ? "bg-red-900/60"
-                          : "hover:bg-neutral-900/90"
+                          : "hover:bg-neutral-800/90"
                       }`}
                     >
                       <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-600 text-xs font-semibold text-white ring-2 ring-red-300/80">
@@ -525,7 +526,7 @@ export default function MessagesClient() {
                             {formatDateTime(t.lastMessageAt)}
                           </span>
                         </div>
-                        <p className="mt-0.5 line-clamp-2 text-[12px] text-neutral-300">
+                        <p className="mt-0.5 line-clamp-2 text-[12px] text-neutral-200">
                           {t.lastMessagePreview || "Ingen tekst."}
                         </p>
                         <p className="mt-1 text-[10px] text-neutral-500">
@@ -540,7 +541,7 @@ export default function MessagesClient() {
           </aside>
 
           {/* HØYRE: Valgt samtale */}
-          <section className="flex min-h-[420px] flex-col rounded-2xl border border-neutral-800 bg-neutral-950/90">
+          <section className="flex min-h-[420px] flex-col rounded-2xl border border-neutral-800 bg-neutral-900/95">
             <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
               <div>
                 <h2 className="text-sm font-semibold text-neutral-50">
@@ -568,14 +569,14 @@ export default function MessagesClient() {
               className="flex-1 space-y-2 overflow-y-auto px-4 py-3"
             >
               {selectedMessages.length === 0 ? (
-                <p className="text-sm text-neutral-300">
+                <p className="text-sm text-neutral-200">
                   Ingen meldinger registrert i denne samtalen ennå.
                 </p>
               ) : (
                 selectedMessages.map((m) => (
                   <article
                     key={m.id}
-                    className="max-w-xl rounded-2xl border border-neutral-700 bg-neutral-900 px-3.5 py-2.5 text-sm text-neutral-50 shadow-sm"
+                    className="max-w-xl rounded-2xl border border-neutral-700 bg-neutral-850 px-3.5 py-2.5 text-sm text-neutral-50 shadow-sm"
                   >
                     <div className="mb-1.5 flex items-center justify-between gap-2">
                       <span className="truncate text-[13px] font-semibold text-red-300">
@@ -595,23 +596,23 @@ export default function MessagesClient() {
 
             {/* Ny melding */}
             {selectedMemberId && (
-              <div className="border-t border-neutral-800 bg-neutral-950 px-4 py-3">
+              <div className="border-t border-neutral-800 bg-neutral-900 px-4 py-3">
                 <div className="space-y-2">
                   <input
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
                     placeholder='Tittel (f.eks. "Husk øving") – valgfritt'
-                    className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-50 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400"
+                    className="w-full rounded-lg border border-neutral-700 bg-neutral-850 px-3 py-1.5 text-sm text-neutral-50 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400"
                   />
                   <textarea
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
                     rows={3}
                     placeholder="Skriv meldingen du vil sende til medlemmet…"
-                    className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-50 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400"
+                    className="w-full rounded-lg border border-neutral-700 bg-neutral-850 px-3 py-1.5 text-sm text-neutral-50 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400"
                   />
                   <div className="flex items-start justify-between gap-3">
-                    <p className="mt-1 text-[11px] text-neutral-400">
+                    <p className="mt-1 text-[11px] text-neutral-300">
                       Meldingen lagres i portalen og forsøkes sendt som e-post
                       hvis medlemmet har en registrert adresse.
                     </p>
