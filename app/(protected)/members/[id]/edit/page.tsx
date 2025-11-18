@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -88,6 +88,7 @@ function RolePill({
 
 export default function MemberEditPage() {
   const params = useParams();
+  const router = useRouter();
   const supabase = createClientComponentClient();
 
   const id = useMemo(() => {
@@ -234,7 +235,7 @@ export default function MemberEditPage() {
       }
     })();
 
-  return () => {
+    return () => {
       active = false;
     };
   }, [id, supabase]);
@@ -556,6 +557,7 @@ export default function MemberEditPage() {
           </div>
         )}
 
+        {/* Grunninfo + avatar */}
         <section className="rounded-2xl border border-red-600/25 bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 p-6 shadow-lg shadow-red-900/20">
           <div className="grid gap-6 md:grid-cols-3">
             <div className="grid gap-4 md:col-span-2 sm:grid-cols-2">
@@ -670,6 +672,7 @@ export default function MemberEditPage() {
           </div>
         </section>
 
+        {/* Kontaktinfo */}
         <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-950/70 p-6 shadow-lg shadow-black/40">
           <h2 className="mb-4 text-xl font-semibold text-red-300">
             Kontaktinfo
@@ -738,6 +741,7 @@ export default function MemberEditPage() {
           </div>
         </section>
 
+        {/* Foresatt */}
         <section className="mt-8 rounded-2xl border border-red-600/25 bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 p-6 shadow-lg shadow-red-900/20">
           <h2 className="mb-4 text-xl font-semibold text-red-300">
             Foresatt
@@ -782,6 +786,7 @@ export default function MemberEditPage() {
           </div>
         </section>
 
+        {/* Helse */}
         <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-950/70 p-6 shadow-lg shadow-black/40">
           <h2 className="mb-4 text-xl font-semibold text-red-300">Helse</h2>
           <div className="grid gap-5 md:grid-cols-2">
@@ -812,6 +817,7 @@ export default function MemberEditPage() {
           </div>
         </section>
 
+        {/* Aktiviteter */}
         <section className="mt-8 rounded-2xl border border-red-600/25 bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 p-6 shadow-lg shadow-red-900/20">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -846,6 +852,7 @@ export default function MemberEditPage() {
           </div>
         </section>
 
+        {/* Internt + arkiv + slett */}
         <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-950/70 p-6 shadow-lg shadow-black/40">
           <h2 className="mb-4 text-xl font-semibold text-red-300">Internt</h2>
           <div className="grid gap-5 md:grid-cols-[2fr,1fr]">
@@ -880,6 +887,9 @@ export default function MemberEditPage() {
                 Arkiverte medlemmer skjules fra standardlister, men beholdes i
                 databasen.
               </p>
+
+              {/* Slett medlem – farlig område */}
+              <DeleteMemberButton memberId={id} memberName={fullName} />
             </div>
           </div>
         </section>
@@ -981,6 +991,124 @@ function ActivitySection({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ----------------------------- Delete knapp ----------------------------- */
+
+function safeJSON<T>(raw: string | null, fallback: T): T {
+  try {
+    if (!raw) return fallback;
+    const d = JSON.parse(raw);
+    return (d ?? fallback) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+const MEM_V1 = "follies.members.v1";
+const MEM_FB = "follies.members";
+
+function DeleteMemberButton({
+  memberId,
+  memberName,
+}: {
+  memberId: string;
+  memberName?: string;
+}) {
+  const supabase = createClientComponentClient();
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function handleDelete() {
+    if (!memberId) return;
+    const label = (memberName || "").trim() || "dette medlemmet";
+
+    const ok = window.confirm(
+      `Er du sikker på at du vil slette ${label}?\n\n` +
+        "Dette fjerner medlemmet, påmeldinger og meldinger knyttet til medlemmet."
+    );
+    if (!ok) return;
+
+    setBusy(true);
+    setErr(null);
+
+    try {
+      // 1) Slett enrollments
+      try {
+        await supabase.from("enrollments").delete().eq("member_id", memberId);
+      } catch (e) {
+        console.error("Feil ved sletting av enrollments:", e);
+      }
+
+      // 2) Slett meldinger (hvis messages-tabell finnes)
+      try {
+        await supabase.from("messages").delete().eq("member_id", memberId);
+      } catch (e) {
+        console.error("Feil ved sletting av messages:", e);
+      }
+
+      // 3) Slett medlem
+      const { error: delErr } = await supabase
+        .from("members")
+        .delete()
+        .eq("id", memberId);
+
+      if (delErr) {
+        console.error("Feil ved sletting av medlem:", delErr);
+        throw delErr;
+      }
+
+      // 4) Rydd LS (members)
+      if (typeof window !== "undefined") {
+        const keys = [MEM_V1, MEM_FB];
+        for (const key of keys) {
+          const raw = window.localStorage.getItem(key);
+          if (!raw) continue;
+          const list = safeJSON<any[]>(raw, []);
+          if (!Array.isArray(list)) continue;
+          const filtered = list.filter(
+            (m) => String(m.id ?? "") !== String(memberId)
+          );
+          window.localStorage.setItem(key, JSON.stringify(filtered));
+        }
+      }
+
+      router.push("/members");
+      router.refresh();
+    } catch (e: any) {
+      console.error("Uventet feil ved sletting av medlem:", e);
+      setErr(
+        e?.message ||
+          "Noe gikk galt ved sletting av medlem. Sjekk loggen i Supabase."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 border-t border-neutral-700 pt-4">
+      <p className="mb-1 text-sm font-semibold text-red-300">Slett medlem</p>
+      <p className="mb-3 text-xs text-neutral-400">
+        Dette er permanent. Bruk kun hvis medlemmet ikke lenger skal ligge i
+        systemet.
+      </p>
+      <button
+        type="button"
+        onClick={handleDelete}
+        disabled={busy}
+        className="rounded-md border border-red-500 bg-transparent px-4 py-2 text-sm font-semibold text-red-200 hover:bg-red-600/20 disabled:opacity-60"
+      >
+        {busy ? "Sletter…" : "Slett medlem"}
+      </button>
+      {err && (
+        <p className="mt-2 text-xs text-red-300">
+          {err}
+        </p>
+      )}
     </div>
   );
 }
