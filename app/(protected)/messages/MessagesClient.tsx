@@ -59,7 +59,7 @@ function normalizeCreatedAt(m: StoredMessage): string | null {
   return (m.createdAt || m.created_at || null) ?? null;
 }
 
-function loadMessagesGroupedByMember(): Record<string, StoredMessage[]> {
+function loadMessagesGroupedByMemberFromLS(): Record<string, StoredMessage[]> {
   if (typeof window === "undefined") return {};
   const raw = localStorage.getItem(MSG_LS);
   if (!raw) return {};
@@ -177,13 +177,78 @@ export default function MessagesClient() {
 
   const logRef = useRef<HTMLDivElement | null>(null);
 
-  /* --------- load messages from LS --------- */
+  /* --------- load messages: DB-first, LS-fallback --------- */
   useEffect(() => {
-    const g = loadMessagesGroupedByMember();
-    const t = makeThreadSummaries(g);
-    setGrouped(g);
-    setThreads(t);
-  }, []);
+    let active = true;
+
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("messages")
+          .select(
+            "id, member_id, subject, body, created_at, scope, target, activity_id"
+          )
+          .order("created_at", { ascending: true });
+
+        if (!active) return;
+
+        if (error) {
+          console.error("Feil ved henting av meldinger fra DB:", error);
+          const g = loadMessagesGroupedByMemberFromLS();
+          const t = makeThreadSummaries(g);
+          setGrouped(g);
+          setThreads(t);
+          setLoading(false);
+          return;
+        }
+
+        if (data && data.length) {
+          const groupedFromDb: Record<string, StoredMessage[]> = {};
+          for (const row of data as any[]) {
+            const mid = row.member_id ? String(row.member_id) : null;
+            if (!mid) continue;
+            const msg: StoredMessage = {
+              id: String(row.id),
+              memberId: mid,
+              member_id: mid,
+              subject: row.subject ?? undefined,
+              body: row.body ?? "",
+              createdAt: row.created_at ?? undefined,
+              created_at: row.created_at ?? undefined,
+              scope: row.scope ?? undefined,
+              target: row.target ?? undefined,
+              activityId: row.activity_id ?? null,
+              activity_id: row.activity_id ?? null,
+            };
+            if (!groupedFromDb[mid]) groupedFromDb[mid] = [];
+            groupedFromDb[mid].push(msg);
+          }
+          const t = makeThreadSummaries(groupedFromDb);
+          setGrouped(groupedFromDb);
+          setThreads(t);
+          setLoading(false);
+        } else {
+          // DB tom → bruk LS (gammelt system)
+          const g = loadMessagesGroupedByMemberFromLS();
+          const t = makeThreadSummaries(g);
+          setGrouped(g);
+          setThreads(t);
+          setLoading(false);
+        }
+      } catch (e) {
+        console.error("Uventet feil ved henting av meldinger:", e);
+        const g = loadMessagesGroupedByMemberFromLS();
+        const t = makeThreadSummaries(g);
+        setGrouped(g);
+        setThreads(t);
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
 
   /* --------- load member info from Supabase --------- */
   useEffect(() => {
@@ -192,7 +257,6 @@ export default function MessagesClient() {
     (async () => {
       const memberIds = Object.keys(grouped);
       if (!memberIds.length) {
-        setLoading(false);
         return;
       }
 
@@ -205,7 +269,6 @@ export default function MessagesClient() {
         if (!active) return;
         if (error) {
           console.error("Feil ved henting av medlemmer til Messenger:", error);
-          setLoading(false);
           return;
         }
 
@@ -218,10 +281,8 @@ export default function MessagesClient() {
           next[id] = { id, name, email: row.email ?? null };
         }
         setMembers(next);
-        setLoading(false);
       } catch (e) {
         console.error("Uventet feil ved henting av medlemmer til Messenger:", e);
-        if (active) setLoading(false);
       }
     })();
 
@@ -333,6 +394,7 @@ export default function MessagesClient() {
         subject.trim() ||
         `Melding til ${selectedMemberInfo?.name ?? "medlem"}`;
 
+      // 1) Lagre lokalt (LS) via eksisterende helper
       const saved = saveMessage({
         scope: "member",
         memberId: selectedMemberId,
@@ -344,6 +406,7 @@ export default function MessagesClient() {
         createdByName: null,
       });
 
+      // 2) Oppdater React-state (så UI viser meldingen med en gang)
       setGrouped((prev) => {
         const existing = prev[selectedMemberId] || [];
         const nextGrouped = {
@@ -360,6 +423,26 @@ export default function MessagesClient() {
         return nextGrouped;
       });
 
+      // 3) Lagre i Supabase (DB) → slik at andre ser det og fremtidig app kan lese det
+      try {
+        const { error: insertError } = await supabase.from("messages").insert({
+          member_id: selectedMemberId,
+          activity_id: null,
+          scope: "member",
+          target: "custom",
+          subject: subjectToUse,
+          body: body.trim(),
+          created_by_email: null,
+          created_by_name: null,
+        });
+        if (insertError) {
+          console.error("Feil ved lagring av melding i DB:", insertError);
+        }
+      } catch (e) {
+        console.error("Uventet feil ved lagring av melding i DB:", e);
+      }
+
+      // 4) Send e-post også, hvis vi har e-postadresse
       const email = selectedMemberInfo?.email?.trim() || null;
       if (email) {
         const res = await fetch("/api/admin/send-member-email", {
@@ -491,10 +574,10 @@ export default function MessagesClient() {
               {threads.length === 0 && selectedMemberId ? (
                 <div className="px-4 py-3 text-sm text-neutral-700">
                   Du starter en ny samtale med{" "}
-                  <span className="font-semibold">
-                    {selectedMemberInfo?.name ?? "medlem"}
-                  </span>
-                  .
+                    <span className="font-semibold">
+                      {selectedMemberInfo?.name ?? "medlem"}
+                    </span>
+                    .
                 </div>
               ) : (
                 threads.map((t) => {
