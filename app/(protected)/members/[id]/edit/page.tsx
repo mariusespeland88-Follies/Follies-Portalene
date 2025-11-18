@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   FILE_INPUT_CLASS,
-  INPUT_CLASS,
+  // INPUT_CLASS,  // vi bruker egen lys variant her
   MAX_IMAGE_BYTES,
   MemberFormState,
   cleanDate,
@@ -49,6 +49,10 @@ type MemberRow = {
   archived: boolean | null;
   avatar_url: string | null;
 };
+
+const INPUT_LIGHT =
+  "mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500";
+const TEXTAREA_LIGHT = INPUT_LIGHT + " min-h-[120px]";
 
 function normalizeRole(value: string | null | undefined): Role {
   const v = String(value ?? "").toLowerCase();
@@ -498,14 +502,17 @@ export default function MemberEditPage() {
 
   return (
     <main className="mx-auto max-w-6xl bg-neutral-100 px-4 py-8 text-neutral-900">
-      <div className="rounded-3xl border border-neutral-200 bg-white p-8 shadow-sm">
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* TOPPSEKSJON – hvit kort, lik profilens følelsesnivå */}
+      <section className="mb-6 rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-red-600">
               Rediger medlem
             </h1>
-            <p className="mt-1 text-sm text-neutral-700">{fullName}</p>
-            <p className="text-xs text-neutral-500">
+            <p className="mt-1 text-sm font-medium text-neutral-900">
+              {fullName}
+            </p>
+            <p className="text-xs text-neutral-600">
               {emailForDisplay || "Ingen e-post"}
             </p>
           </div>
@@ -537,13 +544,13 @@ export default function MemberEditPage() {
         </div>
 
         {inviteMsg && (
-          <div className="mb-4 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-800">
+          <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-800">
             {inviteMsg}
           </div>
         )}
 
         {(error || banner) && (
-          <div className="mb-6">
+          <div className="mt-4">
             {error && (
               <div className="rounded-2xl border border-red-200 bg-rose-50 p-4 text-sm text-red-800">
                 {error}
@@ -556,7 +563,10 @@ export default function MemberEditPage() {
             )}
           </div>
         )}
+      </section>
 
+      {/* INNHOLD – kort som på profilsiden */}
+      <div className="space-y-6">
         {/* Grunninfo + avatar */}
         <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
           <div className="grid gap-6 md:grid-cols-3">
@@ -570,7 +580,7 @@ export default function MemberEditPage() {
                   onChange={(e) =>
                     setForm((f) => ({ ...f, first_name: e.target.value }))
                   }
-                  className={INPUT_CLASS}
+                  className={INPUT_LIGHT}
                 />
               </div>
               <div>
@@ -582,7 +592,7 @@ export default function MemberEditPage() {
                   onChange={(e) =>
                     setForm((f) => ({ ...f, last_name: e.target.value }))
                   }
-                  className={INPUT_CLASS}
+                  className={INPUT_LIGHT}
                 />
               </div>
               <div>
@@ -595,7 +605,7 @@ export default function MemberEditPage() {
                   onChange={(e) =>
                     setForm((f) => ({ ...f, dob: e.target.value }))
                   }
-                  className={INPUT_CLASS}
+                  className={INPUT_LIGHT}
                 />
               </div>
               <div>
@@ -608,7 +618,7 @@ export default function MemberEditPage() {
                   onChange={(e) =>
                     setForm((f) => ({ ...f, start_date: e.target.value }))
                   }
-                  className={INPUT_CLASS}
+                  className={INPUT_LIGHT}
                 />
               </div>
               <div>
@@ -622,7 +632,7 @@ export default function MemberEditPage() {
                   onChange={(e) =>
                     setForm((f) => ({ ...f, start_year: e.target.value }))
                   }
-                  className={INPUT_CLASS}
+                  className={INPUT_LIGHT}
                 />
               </div>
             </div>
@@ -673,7 +683,7 @@ export default function MemberEditPage() {
         </section>
 
         {/* Kontaktinfo */}
-        <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+        <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-xl font-semibold text-neutral-900">
             Kontaktinfo
           </h2>
@@ -687,7 +697,7 @@ export default function MemberEditPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, email: e.target.value }))
                 }
-                className={INPUT_CLASS}
+                className={INPUT_LIGHT}
               />
             </div>
             <div>
@@ -699,7 +709,7 @@ export default function MemberEditPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, phone: e.target.value }))
                 }
-                className={INPUT_CLASS}
+                className={INPUT_LIGHT}
               />
             </div>
             <div className="md:col-span-2">
@@ -711,7 +721,7 @@ export default function MemberEditPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, address: e.target.value }))
                 }
-                className={INPUT_CLASS}
+                className={INPUT_LIGHT}
               />
             </div>
             <div>
@@ -723,7 +733,7 @@ export default function MemberEditPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, postal_code: e.target.value }))
                 }
-                className={INPUT_CLASS}
+                className={INPUT_LIGHT}
               />
             </div>
             <div>
@@ -735,14 +745,14 @@ export default function MemberEditPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, city: e.target.value }))
                 }
-                className={INPUT_CLASS}
+                className={INPUT_LIGHT}
               />
             </div>
           </div>
         </section>
 
         {/* Foresatt */}
-        <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+        <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-xl font-semibold text-neutral-900">
             Foresatt
           </h2>
@@ -756,7 +766,7 @@ export default function MemberEditPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, guardian_name: e.target.value }))
                 }
-                className={INPUT_CLASS}
+                className={INPUT_LIGHT}
               />
             </div>
             <div>
@@ -768,7 +778,7 @@ export default function MemberEditPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, guardian_phone: e.target.value }))
                 }
-                className={INPUT_CLASS}
+                className={INPUT_LIGHT}
               />
             </div>
             <div>
@@ -780,14 +790,14 @@ export default function MemberEditPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, guardian_email: e.target.value }))
                 }
-                className={INPUT_CLASS}
+                className={INPUT_LIGHT}
               />
             </div>
           </div>
         </section>
 
         {/* Helse */}
-        <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+        <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-xl font-semibold text-neutral-900">
             Helse
           </h2>
@@ -801,7 +811,7 @@ export default function MemberEditPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, allergies: e.target.value }))
                 }
-                className={`${INPUT_CLASS} min-h-[120px]`}
+                className={TEXTAREA_LIGHT}
               />
             </div>
             <div>
@@ -813,14 +823,14 @@ export default function MemberEditPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, medical_info: e.target.value }))
                 }
-                className={`${INPUT_CLASS} min-h-[120px]`}
+                className={TEXTAREA_LIGHT}
               />
             </div>
           </div>
         </section>
 
         {/* Aktiviteter */}
-        <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+        <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-xl font-semibold text-neutral-900">
@@ -855,7 +865,7 @@ export default function MemberEditPage() {
         </section>
 
         {/* Internt + arkiv + slett */}
-        <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+        <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-xl font-semibold text-neutral-900">
             Internt
           </h2>
@@ -872,7 +882,7 @@ export default function MemberEditPage() {
                     internal_notes: e.target.value,
                   }))
                 }
-                className={`${INPUT_CLASS} min-h-[140px]`}
+                className={TEXTAREA_LIGHT + " min-h-[140px]"}
               />
             </div>
             <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
