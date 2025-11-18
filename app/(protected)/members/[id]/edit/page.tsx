@@ -77,8 +77,8 @@ function RolePill({
       onClick={onClick}
       className={
         active
-          ? "rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white shadow shadow-red-600/50"
-          : "rounded-full border border-neutral-700 px-3 py-1 text-xs font-medium text-neutral-300 transition hover:border-red-500/60 hover:text-neutral-100"
+          ? "rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white shadow shadow-red-600/40"
+          : "rounded-full border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 transition hover:border-red-500/60 hover:text-neutral-900"
       }
     >
       {label}
@@ -457,8 +457,8 @@ export default function MemberEditPage() {
 
   if (!id) {
     return (
-      <main className="mx-auto max-w-3xl px-4 py-10 text-neutral-100">
-        <div className="rounded-2xl border border-red-600/40 bg-neutral-950/80 p-6 text-sm text-red-200">
+      <main className="mx-auto max-w-3xl bg-neutral-100 px-4 py-10 text-neutral-900">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-800">
           Mangler medlems-ID.
         </div>
       </main>
@@ -467,8 +467,8 @@ export default function MemberEditPage() {
 
   if (loading) {
     return (
-      <main className="mx-auto max-w-3xl px-4 py-10 text-neutral-100">
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-950/70 p-6 text-sm text-neutral-300">
+      <main className="mx-auto max-w-3xl bg-neutral-100 px-4 py-10 text-neutral-900">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-6 text-sm text-neutral-700">
           Laster medlem…
         </div>
       </main>
@@ -477,14 +477,14 @@ export default function MemberEditPage() {
 
   if (error && !isLoaded) {
     return (
-      <main className="mx-auto max-w-3xl px-4 py-10 text-neutral-100">
-        <div className="rounded-2xl border border-red-700/60 bg-neutral-950/80 p-6">
-          <p className="text-sm font-semibold text-red-300">Feil</p>
-          <p className="mt-2 text-sm text-red-200">{error}</p>
+      <main className="mx-auto max-w-3xl bg-neutral-100 px-4 py-10 text-neutral-900">
+        <div className="rounded-2xl border border-red-300 bg-red-50 p-6">
+          <p className="text-sm font-semibold text-red-700">Feil</p>
+          <p className="mt-2 text-sm text-red-700/90">{error}</p>
           <div className="mt-6 flex gap-3">
             <Link
               href="/members"
-              className="inline-flex items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow shadow-red-600/40 transition hover:bg-red-500"
+              className="inline-flex items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500"
             >
               Til medlemmer
             </Link>
@@ -497,14 +497,14 @@ export default function MemberEditPage() {
   const emailForDisplay = form.email?.trim() || "";
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 text-neutral-100">
-      <div className="rounded-3xl border border-red-600/40 bg-neutral-950/80 p-8 shadow-[0_0_60px_rgba(239,68,68,0.25)] backdrop-blur">
+    <main className="mx-auto max-w-6xl bg-neutral-100 px-4 py-8 text-neutral-900">
+      <div className="rounded-3xl border border-neutral-200 bg-white p-8 shadow-sm">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-red-400">
+            <h1 className="text-3xl font-bold tracking-tight text-red-600">
               Rediger medlem
             </h1>
-            <p className="mt-1 text-sm text-neutral-400">{fullName}</p>
+            <p className="mt-1 text-sm text-neutral-700">{fullName}</p>
             <p className="text-xs text-neutral-500">
               {emailForDisplay || "Ingen e-post"}
             </p>
@@ -512,7 +512,7 @@ export default function MemberEditPage() {
           <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
             <Link
               href={`/members/${encodeURIComponent(id)}`}
-              className="inline-flex items-center justify-center rounded-xl border border-neutral-700 px-4 py-2 text-sm font-semibold text-neutral-200 transition hover:border-red-500/60 hover:text-neutral-100"
+              className="inline-flex items-center justify-center rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 transition hover:bg-neutral-50"
             >
               Vis medlem
             </Link>
@@ -522,14 +522,14 @@ export default function MemberEditPage() {
                 emailForDisplay && sendInvite(emailForDisplay)
               }
               disabled={inviteBusy || !emailForDisplay}
-              className="rounded-lg bg-black px-3.5 py-2 text-sm font-semibold text-white hover:bg-neutral-900 disabled:opacity-50"
+              className="rounded-lg border border-neutral-300 bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 hover:bg-neutral-50 disabled:opacity-50"
             >
               {inviteBusy ? "Sender…" : "Send innloggingslenke"}
             </button>
             <button
               onClick={handleSave}
               disabled={saving}
-              className="inline-flex items-center justify-center rounded-xl bg-red-600 px-5 py-2.5 text-base font-semibold text-white shadow-lg shadow-red-600/30 transition focus:outline-none focus:ring-2 focus:ring-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center justify-center rounded-xl bg-red-600 px-5 py-2.5 text-base font-semibold text-white shadow-sm hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving ? "Lagrer…" : "Lagre endringer"}
             </button>
@@ -537,7 +537,7 @@ export default function MemberEditPage() {
         </div>
 
         {inviteMsg && (
-          <div className="mb-4 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs text-neutral-200">
+          <div className="mb-4 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-800">
             {inviteMsg}
           </div>
         )}
@@ -545,12 +545,12 @@ export default function MemberEditPage() {
         {(error || banner) && (
           <div className="mb-6">
             {error && (
-              <div className="rounded-2xl border border-red-700/60 bg-red-950/60 p-4 text-sm text-red-200">
+              <div className="rounded-2xl border border-red-200 bg-rose-50 p-4 text-sm text-red-800">
                 {error}
               </div>
             )}
             {banner && !error && (
-              <div className="rounded-2xl border border-emerald-600/40 bg-emerald-950/40 p-4 text-sm text-emerald-200">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
                 {banner}
               </div>
             )}
@@ -558,11 +558,11 @@ export default function MemberEditPage() {
         )}
 
         {/* Grunninfo + avatar */}
-        <section className="rounded-2xl border border-red-600/25 bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 p-6 shadow-lg shadow-red-900/20">
+        <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
           <div className="grid gap-6 md:grid-cols-3">
             <div className="grid gap-4 md:col-span-2 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-semibold text-neutral-300">
+                <label className="block text-sm font-semibold text-neutral-700">
                   Fornavn
                 </label>
                 <input
@@ -574,7 +574,7 @@ export default function MemberEditPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-neutral-300">
+                <label className="block text-sm font-semibold text-neutral-700">
                   Etternavn
                 </label>
                 <input
@@ -586,7 +586,7 @@ export default function MemberEditPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-neutral-300">
+                <label className="block text-sm font-semibold text-neutral-700">
                   Fødselsdato
                 </label>
                 <input
@@ -599,7 +599,7 @@ export default function MemberEditPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-neutral-300">
+                <label className="block text-sm font-semibold text-neutral-700">
                   Startdato
                 </label>
                 <input
@@ -612,7 +612,7 @@ export default function MemberEditPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-neutral-300">
+                <label className="block text-sm font-semibold text-neutral-700">
                   Startår
                 </label>
                 <input
@@ -627,7 +627,7 @@ export default function MemberEditPage() {
               </div>
             </div>
             <div className="flex flex-col items-center justify-center gap-3">
-              <div className="h-40 w-40 overflow-hidden rounded-2xl border border-red-600/40 bg-neutral-900 shadow-inner shadow-red-900/30">
+              <div className="h-40 w-40 overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-100">
                 {form.avatar_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -651,7 +651,7 @@ export default function MemberEditPage() {
                 <button
                   type="button"
                   onClick={handleUploadAvatar}
-                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow shadow-red-600/40 transition hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-500"
                 >
                   Velg nytt bilde
                 </button>
@@ -662,7 +662,7 @@ export default function MemberEditPage() {
                       setAvatarFile(null);
                       setForm((f) => ({ ...f, avatar_url: null }));
                     }}
-                    className="text-xs font-medium text-neutral-400 hover:text-neutral-200"
+                    className="text-xs font-medium text-neutral-500 hover:text-neutral-800"
                   >
                     Fjern bilde
                   </button>
@@ -673,13 +673,13 @@ export default function MemberEditPage() {
         </section>
 
         {/* Kontaktinfo */}
-        <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-950/70 p-6 shadow-lg shadow-black/40">
-          <h2 className="mb-4 text-xl font-semibold text-red-300">
+        <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-xl font-semibold text-neutral-900">
             Kontaktinfo
           </h2>
           <div className="grid gap-5 md:grid-cols-2">
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">
+              <label className="block text-sm font-semibold text-neutral-700">
                 E-post
               </label>
               <input
@@ -691,7 +691,7 @@ export default function MemberEditPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">
+              <label className="block text-sm font-semibold text-neutral-700">
                 Telefon
               </label>
               <input
@@ -703,7 +703,7 @@ export default function MemberEditPage() {
               />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-neutral-300">
+              <label className="block text-sm font-semibold text-neutral-700">
                 Adresse
               </label>
               <input
@@ -715,7 +715,7 @@ export default function MemberEditPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">
+              <label className="block text-sm font-semibold text-neutral-700">
                 Postnummer
               </label>
               <input
@@ -727,7 +727,7 @@ export default function MemberEditPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">
+              <label className="block text-sm font-semibold text-neutral-700">
                 Sted
               </label>
               <input
@@ -742,13 +742,13 @@ export default function MemberEditPage() {
         </section>
 
         {/* Foresatt */}
-        <section className="mt-8 rounded-2xl border border-red-600/25 bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 p-6 shadow-lg shadow-red-900/20">
-          <h2 className="mb-4 text-xl font-semibold text-red-300">
+        <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-xl font-semibold text-neutral-900">
             Foresatt
           </h2>
           <div className="grid gap-5 md:grid-cols-3">
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">
+              <label className="block text-sm font-semibold text-neutral-700">
                 Navn
               </label>
               <input
@@ -760,7 +760,7 @@ export default function MemberEditPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">
+              <label className="block text-sm font-semibold text-neutral-700">
                 Telefon
               </label>
               <input
@@ -772,7 +772,7 @@ export default function MemberEditPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">
+              <label className="block text-sm font-semibold text-neutral-700">
                 E-post
               </label>
               <input
@@ -787,11 +787,13 @@ export default function MemberEditPage() {
         </section>
 
         {/* Helse */}
-        <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-950/70 p-6 shadow-lg shadow-black/40">
-          <h2 className="mb-4 text-xl font-semibold text-red-300">Helse</h2>
+        <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-xl font-semibold text-neutral-900">
+            Helse
+          </h2>
           <div className="grid gap-5 md:grid-cols-2">
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">
+              <label className="block text-sm font-semibold text-neutral-700">
                 Allergier
               </label>
               <textarea
@@ -803,7 +805,7 @@ export default function MemberEditPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">
+              <label className="block text-sm font-semibold text-neutral-700">
                 Medisinsk info
               </label>
               <textarea
@@ -818,17 +820,17 @@ export default function MemberEditPage() {
         </section>
 
         {/* Aktiviteter */}
-        <section className="mt-8 rounded-2xl border border-red-600/25 bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 p-6 shadow-lg shadow-red-900/20">
+        <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-red-300">
+              <h2 className="text-xl font-semibold text-neutral-900">
                 Aktiviteter
               </h2>
               <p className="text-xs text-neutral-500">
                 Kryss av og velg rolle for medlemmet i hver aktivitet.
               </p>
             </div>
-            <span className="text-sm font-semibold text-neutral-300">
+            <span className="text-sm font-semibold text-neutral-700">
               {selectedActs.length} valgt
             </span>
           </div>
@@ -853,11 +855,13 @@ export default function MemberEditPage() {
         </section>
 
         {/* Internt + arkiv + slett */}
-        <section className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-950/70 p-6 shadow-lg shadow-black/40">
-          <h2 className="mb-4 text-xl font-semibold text-red-300">Internt</h2>
+        <section className="mt-8 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-xl font-semibold text-neutral-900">
+            Internt
+          </h2>
           <div className="grid gap-5 md:grid-cols-[2fr,1fr]">
             <div>
-              <label className="block text-sm font-semibold text-neutral-300">
+              <label className="block text-sm font-semibold text-neutral-700">
                 Interne notater
               </label>
               <textarea
@@ -871,8 +875,8 @@ export default function MemberEditPage() {
                 className={`${INPUT_CLASS} min-h-[140px]`}
               />
             </div>
-            <div className="flex flex-col gap-4 rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
-              <label className="flex items-center justify-between text-sm font-medium text-neutral-300">
+            <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+              <label className="flex items-center justify-between text-sm font-medium text-neutral-800">
                 Arkiver medlem
                 <input
                   type="checkbox"
@@ -883,7 +887,7 @@ export default function MemberEditPage() {
                   }
                 />
               </label>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-neutral-600">
                 Arkiverte medlemmer skjules fra standardlister, men beholdes i
                 databasen.
               </p>
@@ -894,7 +898,7 @@ export default function MemberEditPage() {
           </div>
         </section>
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -918,10 +922,10 @@ function ActivitySection({
   if (activities.length === 0) {
     return (
       <div>
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
           {title}
         </h3>
-        <p className="mt-2 rounded-xl border border-dashed border-neutral-700/80 bg-neutral-900/60 p-4 text-sm text-neutral-400">
+        <p className="mt-2 rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-4 text-sm text-neutral-600">
           Ingen {title.toLowerCase()} funnet.
         </p>
       </div>
@@ -930,7 +934,7 @@ function ActivitySection({
 
   return (
     <div>
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
         {title}
       </h3>
       <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -945,16 +949,16 @@ function ActivitySection({
               key={aid}
               className={`rounded-2xl border p-4 transition ${
                 selected
-                  ? "border-red-500/60 bg-neutral-900 shadow-lg shadow-red-900/20"
-                  : "border-neutral-700/60 bg-neutral-900/70 hover:border-red-500/40"
+                  ? "border-red-400 bg-red-50"
+                  : "border-neutral-200 bg-white hover:border-red-300"
               }`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-base font-semibold text-neutral-100">
+                  <p className="text-base font-semibold text-neutral-900">
                     {activity.name}
                   </p>
-                  <span className="inline-flex items-center rounded-full bg-red-600/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-300">
+                  <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700">
                     {typeLabel}
                   </span>
                 </div>
@@ -963,8 +967,8 @@ function ActivitySection({
                   onClick={() => onToggle(aid)}
                   className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
                     selected
-                      ? "border-red-500/60 bg-red-600 text-white shadow shadow-red-600/40"
-                      : "border-neutral-700 bg-neutral-900/80 text-neutral-300 hover:border-red-500/40"
+                      ? "border-red-500 bg-red-600 text-white shadow-sm"
+                      : "border-neutral-300 bg-white text-neutral-800 hover:border-red-400"
                   }`}
                 >
                   {selected ? "Valgt" : "Velg"}
@@ -1090,9 +1094,9 @@ function DeleteMemberButton({
   }
 
   return (
-    <div className="mt-4 border-t border-neutral-700 pt-4">
-      <p className="mb-1 text-sm font-semibold text-red-300">Slett medlem</p>
-      <p className="mb-3 text-xs text-neutral-400">
+    <div className="mt-4 border-t border-neutral-300 pt-4">
+      <p className="mb-1 text-sm font-semibold text-red-700">Slett medlem</p>
+      <p className="mb-3 text-xs text-neutral-600">
         Dette er permanent. Bruk kun hvis medlemmet ikke lenger skal ligge i
         systemet.
       </p>
@@ -1100,12 +1104,12 @@ function DeleteMemberButton({
         type="button"
         onClick={handleDelete}
         disabled={busy}
-        className="rounded-md border border-red-500 bg-transparent px-4 py-2 text-sm font-semibold text-red-200 hover:bg-red-600/20 disabled:opacity-60"
+        className="rounded-md border border-red-500 bg-rose-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-rose-100 disabled:opacity-60"
       >
         {busy ? "Sletter…" : "Slett medlem"}
       </button>
       {err && (
-        <p className="mt-2 text-xs text-red-300">
+        <p className="mt-2 text-xs text-red-700">
           {err}
         </p>
       )}
