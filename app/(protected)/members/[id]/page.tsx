@@ -30,6 +30,7 @@ type Member = {
   avatar_url?: string | null;
   archived?: boolean | null;
 };
+
 type Enrollment = {
   id: string;
   activity_id: string;
@@ -158,26 +159,33 @@ export default function MemberProfilePage() {
           type RawEnrollment = {
             id: string;
             activity_id: string;
-            role: "participant" | "leader";
-            activity:
-              | {
-                  id: string;
-                  name: string;
-                  type: string;
-                  archived: boolean;
-                }[]
-              | null;
+            role: string | null;
+            activity: any;
           };
 
           const rows = enr as unknown as RawEnrollment[];
 
-          const normalized: Enrollment[] = rows.map((row) => ({
-            id: row.id,
-            activity_id: row.activity_id,
-            role: row.role,
-            activity:
-              row.activity && row.activity.length > 0 ? row.activity[0] : null,
-          }));
+          const normalized: Enrollment[] = rows.map((row) => {
+            let activity: Enrollment["activity"] = null;
+
+            if (Array.isArray(row.activity)) {
+              activity = row.activity[0] ?? null;
+            } else if (row.activity && typeof row.activity === "object") {
+              activity = row.activity as Enrollment["activity"];
+            }
+
+            const role =
+              (row.role ?? "").toLowerCase() === "leader"
+                ? "leader"
+                : "participant";
+
+            return {
+              id: row.id,
+              activity_id: String(row.activity_id),
+              role,
+              activity,
+            };
+          });
 
           if (alive) {
             setEnrollments(normalized);
@@ -241,11 +249,16 @@ export default function MemberProfilePage() {
   const name = fullNameOf(member);
   const ageLabel = calcAge(member.dob);
   const tenure = calcTenure(member.start_date, member.start_year);
+
+  // Aktiviteter: aktive = ikke arkiverte, uansett om deltaker eller leder
   const activeActs = enrollments.filter(
     (e) => e.activity && !e.activity.archived
   );
   const pastShows = enrollments.filter(
-    (e) => e.activity && e.activity.type === "forestilling" && e.activity.archived
+    (e) =>
+      e.activity &&
+      e.activity.type === "forestilling" &&
+      e.activity.archived
   );
 
   const hasEmail = !!(member.email && String(member.email).trim());
