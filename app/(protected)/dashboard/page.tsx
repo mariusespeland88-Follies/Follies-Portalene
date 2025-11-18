@@ -221,11 +221,11 @@ export default function DashboardPage() {
 
   const [myDbActivities, setMyDbActivities] = React.useState<AnyObj[]>([]);
 
-  // nye flagg for å håndtere "første gang etter login"
+  // nye flagg
   const [identityLoaded, setIdentityLoaded] = React.useState(false);
   const [activitiesLoaded, setActivitiesLoaded] = React.useState(false);
 
-  // LS-init (beholder flow, men markerer når vi er ferdige)
+  // LS-init
   React.useEffect(() => {
     const ms = readMembers();
     const acts = readActivities();
@@ -242,7 +242,7 @@ export default function DashboardPage() {
     setIdentityLoaded(true);
   }, []);
 
-  // Etter at LS er lest: hvis vi fortsatt ikke har e-post, hent den fra Supabase-session
+  // Hvis LS ikke har e-post (rett etter login) → hent fra Supabase-session
   React.useEffect(() => {
     if (!identityLoaded) return;
     if (me.email) return;
@@ -296,10 +296,9 @@ export default function DashboardPage() {
   // Hent mine aktiviteter via server (e-post + navn + kandidater)
   React.useEffect(() => {
     let alive = true;
-
     (async () => {
       const email = (me.email || "").trim();
-      if (!email) return; // ingen e-post => venter
+      if (!email) return;
 
       const displayName =
         (me.member &&
@@ -483,11 +482,9 @@ export default function DashboardPage() {
     writeLS(MESSAGES_KEY, all);
   }
 
-  const routerPush = router.push; // for mindre støy i JSX
-
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* HERO  (DESIGN URØRT) */}
+      {/* HERO – design urørt */}
       <div className="rounded-2xl border bg-gradient-to-r from-black to-red-800 text-white">
         <div className="px-6 py-6 md:py-8">
           <div className="flex items-center justify-between gap-3">
@@ -499,10 +496,9 @@ export default function DashboardPage() {
               <div className="text-white">{email}</div>
             </div>
             <div className="flex items-center gap-2">
-              {/* Knapp som åpner beskjeder */}
               <button
                 onClick={() => setMsgOpen(true)}
-                className="relative inline-flex items-center justify-center rounded-lg bg-white/95 text-black px-3.5 py-2 text-sm font-semibold shadow-sm hover:bg.white focus:outline-none focus:ring-2 focus:ring-red-600"
+                className="relative inline-flex items-center justify-center rounded-lg bg-white/95 text-black px-3.5 py-2 text-sm font-semibold shadow-sm hover:bg-white focus:outline-none focus:ring-2 focus:ring-red-600"
                 aria-label="Åpne beskjeder"
               >
                 <svg
@@ -525,9 +521,9 @@ export default function DashboardPage() {
               {mid ? (
                 <button
                   onClick={() =>
-                    routerPush(`/members/${encodeURIComponent(mid)}`)
+                    router.push(`/members/${encodeURIComponent(mid)}`)
                   }
-                  className="inline-flex items-center justify-center rounded-lg bg.white text-black px-3.5 py-2 text-sm font-semibold shadow-sm hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
+                  className="inline-flex items-center justify-center rounded-lg bg-white text-black px-3.5 py-2 text-sm font-semibold shadow-sm hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
                 >
                   Åpne min profil
                 </button>
@@ -537,16 +533,16 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* GRID */}
+      {/* GRID – design urørt, bare logikk i "Mine aktiviteter"-panelet er justert */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {/* Mine aktiviteter */}
-        <section className="rounded-xl border p-4 bg.white">
+        <section className="rounded-xl border p-4 bg-white">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-black">
               Mine aktiviteter
             </h2>
             <button
-              onClick={() => routerPush("/activities")}
+              onClick={() => router.push("/activities")}
               className="text-sm underline text-gray-700 hover:text-red-600"
             >
               Se alle
@@ -579,11 +575,11 @@ export default function DashboardPage() {
                     </div>
                     <button
                       onClick={() =>
-                        routerPush(
+                        router.push(
                           `/activities/${encodeURIComponent(id)}`
                         )
                       }
-                      className="inline-flex items-center justify-center rounded-lg bg.white px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
+                      className="inline-flex items-center justify-center rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
                     >
                       Åpne
                     </button>
@@ -595,7 +591,7 @@ export default function DashboardPage() {
         </section>
 
         {/* Kalender */}
-        <section className="rounded-xl border p-4 bg.white">
+        <section className="rounded-xl border p-4 bg-white">
           <h2 className="text-lg font-semibold text-black">
             Kalender (30 dager)
           </h2>
@@ -608,9 +604,7 @@ export default function DashboardPage() {
               {upcoming.slice(0, 8).map((e) => (
                 <li key={(e as any).id} className="py-3">
                   <div className="text-sm text-gray-700">
-                    {new Date((e as any)._start).toLocaleString(
-                      "nb-NO"
-                    )}
+                    {new Date((e as any)._start).toLocaleString("nb-NO")}
                   </div>
                   <div className="font-medium text-black">
                     {(e as any).title ||
@@ -621,13 +615,13 @@ export default function DashboardPage() {
                     <div className="mt-2">
                       <button
                         onClick={() =>
-                          routerPush(
+                          router.push(
                             `/activities/${encodeURIComponent(
                               toStr((e as any).activity_id)
                             )}`
                           )
                         }
-                        className="inline-flex items-center justify-center rounded-lg bg.black px-3.5 py-2 text-sm font-semibold text.white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
+                        className="inline-flex items-center justify-center rounded-lg bg-black px-3.5 py-2 text-sm font-semibold text-white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
                       >
                         Gå til aktivitet
                       </button>
@@ -640,7 +634,7 @@ export default function DashboardPage() {
         </section>
 
         {/* Påminnelser */}
-        <section className="rounded-xl border p-4 bg.white">
+        <section className="rounded-xl border p-4 bg-white">
           <div className="flex items_center justify_between">
             <h2 className="text-lg font-semibold text-black">
               Påminnelser
@@ -672,9 +666,7 @@ export default function DashboardPage() {
                   </div>
                   {(r as any).when ? (
                     <div className="text-sm text-gray-700">
-                      {new Date(
-                        (r as any).when
-                      ).toLocaleString("nb-NO")}
+                      {new Date((r as any).when).toLocaleString("nb-NO")}
                     </div>
                   ) : null}
                   {(r as any).note ? (
@@ -690,13 +682,13 @@ export default function DashboardPage() {
       </div>
 
       {/* Hurtighandlinger */}
-      <section className="rounded-xl border p-4 bg.white">
+      <section className="rounded-xl border p-4 bg-white">
         <h2 className="text-lg font-semibold text-black">
           Hurtighandlinger
         </h2>
         <div className="mt-3 flex flex-wrap gap-3">
           <button
-            onClick={() => routerPush("/activities")}
+            onClick={() => router.push("/activities")}
             className="inline-flex items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-600"
           >
             Gå til aktiviteter
@@ -704,8 +696,8 @@ export default function DashboardPage() {
 
           {/* Messenger */}
           <button
-            onClick={() => routerPush("/messages")}
-            className="inline-flex items-center justify-center rounded-lg bg.black px-4 py-2 text-sm font-semibold text.white shadow-sm hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
+            onClick={() => router.push("/messages")}
+            className="inline-flex items-center justify-center rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
           >
             Åpne Messenger
           </button>
@@ -713,11 +705,11 @@ export default function DashboardPage() {
           {mid ? (
             <button
               onClick={() =>
-                routerPush(
+                router.push(
                   `/members/${encodeURIComponent(mid)}`
                 )
               }
-              className="inline-flex items-center justify-center rounded-lg bg.white px-4 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
+              className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
             >
               Åpne min profil
             </button>
@@ -725,14 +717,14 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* ---------- Slide-over: Mine beskjeder ---------- */}
+      {/* ---------- Slide-over: Mine beskjeder (design urørt) ---------- */}
       {msgOpen && (
         <div className="fixed inset-0 z-50">
           <div
-            className="absolute inset-0 bg.black/40"
+            className="absolute inset-0 bg-black/40"
             onClick={() => setMsgOpen(false)}
           />
-          <div className="absolute right-0 top-0 h-full w-full sm:w-[420px] bg.white shadow-2xl ring-1 ring-black/10 flex flex-col">
+          <div className="absolute right-0 top-0 h-full w-full sm:w-[420px] bg-white shadow-2xl ring-1 ring-black/10 flex flex-col">
             <div className="p-4 border-b flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-black">
@@ -752,13 +744,13 @@ export default function DashboardPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={markAllRead}
-                  className="inline-flex items-center justify-center rounded-md bg.black px-3 py-1.5 text-xs font-semibold text.white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
+                  className="inline-flex items-center justify-center rounded-md bg-black px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
                 >
                   Marker alle som lest
                 </button>
                 <button
                   onClick={() => setMsgOpen(false)}
-                  className="inline-flex items-center justify-center rounded-md bg.white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
+                  className="inline-flex items-center justify-center rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
                   aria-label="Lukk"
                 >
                   Lukk
@@ -820,7 +812,7 @@ export default function DashboardPage() {
                                   String((m as any).id)
                                 )
                               }
-                              className="shrink-0 inline-flex items-center justify-center rounded-md bg.white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
+                              className="shrink-0 inline-flex items-center justify-center rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
                             >
                               Marker som lest
                             </button>
@@ -832,13 +824,13 @@ export default function DashboardPage() {
                             <button
                               onClick={() => {
                                 setMsgOpen(false);
-                                routerPush(
+                                router.push(
                                   `/activities/${encodeURIComponent(
                                     toStr(activity)
                                   )}`
                                 );
                               }}
-                              className="inline-flex items-center justify-center rounded-md bg.black px-3.5 py-2 text-sm font-semibold text.white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
+                              className="inline-flex items-center justify-center rounded-md bg-black px-3.5 py-2 text-sm font-semibold text-white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
                             >
                               Gå til aktivitet
                             </button>
