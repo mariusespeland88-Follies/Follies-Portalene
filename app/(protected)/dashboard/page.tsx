@@ -221,11 +221,7 @@ export default function DashboardPage() {
 
   const [myDbActivities, setMyDbActivities] = React.useState<AnyObj[]>([]);
 
-  // nye flagg
-  const [identityLoaded, setIdentityLoaded] = React.useState(false);
-  const [activitiesLoaded, setActivitiesLoaded] = React.useState(false);
-
-  // LS-init
+  // LS-init (beholder eksisterende design/flow)
   React.useEffect(() => {
     const ms = readMembers();
     const acts = readActivities();
@@ -239,39 +235,7 @@ export default function DashboardPage() {
     setReminders(rem);
     setMessages(msgs);
     setMe({ id: ident.id, email: ident.email, member: ident.member });
-    setIdentityLoaded(true);
   }, []);
-
-  // Hvis LS ikke har e-post (rett etter login) → hent fra Supabase-session
-  React.useEffect(() => {
-    if (!identityLoaded) return;
-    if (me.email) return;
-
-    let active = true;
-    (async () => {
-      try {
-        const { data } = await supabase.auth.getSession();
-        const email = data.session?.user?.email;
-        if (!active || !email) return;
-
-        setMe((prev) => ({
-          ...prev,
-          email,
-        }));
-
-        if (typeof window !== "undefined") {
-          writeLS("follies.session.email", email);
-          writeLS("follies.currentEmail", email);
-        }
-      } catch (e) {
-        console.error("Klarte ikke å hente e-post fra session i dashboard:", e);
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [identityLoaded, me.email, supabase]);
 
   // Kandidater fra LS (participants + leder-perms)
   const candidateActivityIds = React.useMemo(() => {
@@ -299,7 +263,6 @@ export default function DashboardPage() {
     (async () => {
       const email = (me.email || "").trim();
       if (!email) return;
-
       const displayName =
         (me.member &&
           (fullName(me.member) ||
@@ -324,17 +287,12 @@ export default function DashboardPage() {
             setMyDbActivities(j.activities);
           }
         }
-      } catch (e) {
-        console.error("Feil ved henting av mine aktiviteter:", e);
-      } finally {
-        if (alive) setActivitiesLoaded(true);
-      }
+      } catch {}
     })();
-
     return () => {
       alive = false;
     };
-  }, [me.email, me.member, candidateActivityIds.join(","), supabase]);
+  }, [me.email, me.member, candidateActivityIds.join(",")]);
 
   // Mine aktiviteter: bruk DB-liste hvis vi har den, ellers LS-fallback
   const myActivities = React.useMemo(() => {
@@ -378,7 +336,7 @@ export default function DashboardPage() {
       .filter(
         (e) =>
           String((e as any).member_id || "") === String(me.id || "")
-      )
+      ) // ← personlig filter
       .filter(
         (e) =>
           (e as any)._start >= now && (e as any)._start <= cutoff
@@ -389,7 +347,7 @@ export default function DashboardPage() {
           ((b as any)._start as Date).getTime()
       );
     return items;
-  }, [me.id, calendar]);
+  }, [me.id, calendar]); // avhenger av me.id + calendar
 
   const myMessages = React.useMemo(() => {
     const base = messages;
@@ -484,7 +442,7 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* HERO – design urørt */}
+      {/* HERO  (BEHOLDT NØYAKTIG SOM FØR) */}
       <div className="rounded-2xl border bg-gradient-to-r from-black to-red-800 text-white">
         <div className="px-6 py-6 md:py-8">
           <div className="flex items-center justify-between gap-3">
@@ -496,6 +454,7 @@ export default function DashboardPage() {
               <div className="text-white">{email}</div>
             </div>
             <div className="flex items-center gap-2">
+              {/* Knapp som åpner beskjeder */}
               <button
                 onClick={() => setMsgOpen(true)}
                 className="relative inline-flex items-center justify-center rounded-lg bg-white/95 text-black px-3.5 py-2 text-sm font-semibold shadow-sm hover:bg-white focus:outline-none focus:ring-2 focus:ring-red-600"
@@ -521,7 +480,9 @@ export default function DashboardPage() {
               {mid ? (
                 <button
                   onClick={() =>
-                    router.push(`/members/${encodeURIComponent(mid)}`)
+                    router.push(
+                      `/members/${encodeURIComponent(mid)}`
+                    )
                   }
                   className="inline-flex items-center justify-center rounded-lg bg-white text-black px-3.5 py-2 text-sm font-semibold shadow-sm hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
                 >
@@ -533,7 +494,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* GRID – design urørt, bare logikk i "Mine aktiviteter"-panelet er justert */}
+      {/* GRID (BEHOLDT SOM FØR) */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {/* Mine aktiviteter */}
         <section className="rounded-xl border p-4 bg-white">
@@ -548,11 +509,7 @@ export default function DashboardPage() {
               Se alle
             </button>
           </div>
-          {!activitiesLoaded && (me.email || me.id) ? (
-            <div className="mt-3 text-gray-700">
-              Laster mine aktiviteter …
-            </div>
-          ) : myActivities.length === 0 ? (
+          {myActivities.length === 0 ? (
             <div className="mt-3 text-gray-700">
               Ingen aktiviteter funnet.
             </div>
@@ -604,7 +561,9 @@ export default function DashboardPage() {
               {upcoming.slice(0, 8).map((e) => (
                 <li key={(e as any).id} className="py-3">
                   <div className="text-sm text-gray-700">
-                    {new Date((e as any)._start).toLocaleString("nb-NO")}
+                    {new Date((e as any)._start).toLocaleString(
+                      "nb-NO"
+                    )}
                   </div>
                   <div className="font-medium text-black">
                     {(e as any).title ||
@@ -666,7 +625,9 @@ export default function DashboardPage() {
                   </div>
                   {(r as any).when ? (
                     <div className="text-sm text-gray-700">
-                      {new Date((r as any).when).toLocaleString("nb-NO")}
+                      {new Date(
+                        (r as any).when
+                      ).toLocaleString("nb-NO")}
                     </div>
                   ) : null}
                   {(r as any).note ? (
@@ -694,7 +655,7 @@ export default function DashboardPage() {
             Gå til aktiviteter
           </button>
 
-          {/* Messenger */}
+          {/* NY: knapp til Follies Messenger */}
           <button
             onClick={() => router.push("/messages")}
             className="inline-flex items-center justify-center rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
@@ -717,7 +678,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* ---------- Slide-over: Mine beskjeder (design urørt) ---------- */}
+      {/* ---------- Slide-over: Mine beskjeder ---------- */}
       {msgOpen && (
         <div className="fixed inset-0 z-50">
           <div
