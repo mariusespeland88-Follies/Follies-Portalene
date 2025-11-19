@@ -237,6 +237,33 @@ export default function DashboardPage() {
     setMe({ id: ident.id, email: ident.email, member: ident.member });
   }, []);
 
+  // NY: Hvis vi ikke fant e-post i LS, hent den fra Supabase-session
+  React.useEffect(() => {
+    if (me.email || me.member) return; // allerede identifisert
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const email = data?.session?.user?.email?.trim() ?? "";
+        if (!alive || !email) return;
+
+        // Speil til LS slik resten av appen forventer
+        writeLS("follies.session.email", email);
+        writeLS("follies.currentEmail", email);
+
+        setMe((prev) => ({
+          ...prev,
+          email,
+        }));
+      } catch {
+        // ignorer feil – da faller vi tilbake til ren LS-logikk
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [me.email, me.member, supabase]);
+
   // Kandidater fra LS (participants + leder-perms)
   const candidateActivityIds = React.useMemo(() => {
     const acts = readActivities();
