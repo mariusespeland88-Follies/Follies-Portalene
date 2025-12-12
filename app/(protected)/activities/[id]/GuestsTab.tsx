@@ -30,10 +30,15 @@ export type Guest = {
   present_marked_at: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+
+  // API-en din returnerer children allerede
   children: GuestChild[];
+
+  // Dersom API-en din returnerer persons/total (noen har dette)
+  persons?: number | null;
 };
 
-type SortKey = "name" | "phone" | "children";
+type SortKey = "name" | "phone" | "email" | "norwegian" | "children";
 
 type GuestFormState = {
   firstName: string;
@@ -57,6 +62,13 @@ type ChildFormState = {
 
 function formatName(g: Guest) {
   return `${g.first_name} ${g.last_name}`.trim();
+}
+
+function safePhoneLabel(phone: string | null | undefined) {
+  const p = String(phone ?? "").trim();
+  if (!p) return "Mangler";
+  if (p.toUpperCase().startsWith("MISSING-")) return "Mangler";
+  return p;
 }
 
 const genderLabel = (value: string | null | undefined) => {
@@ -102,9 +114,6 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
 
   const [childForm, setChildForm] = useState<ChildFormState | null>(null);
 
-  // Åpne/lukk per gjest
-  const [openIds, setOpenIds] = useState<Record<string, boolean>>({});
-
   const fetchGuests = useCallback(async () => {
     if (!activityId) return;
     setLoading(true);
@@ -135,8 +144,9 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
     const filtered = guests.filter((guest) => {
       if (!term) return true;
       const name = formatName(guest).toLowerCase();
-      const phone = (guest.phone || "").toLowerCase();
-      return name.includes(term) || phone.includes(term);
+      const phone = safePhoneLabel(guest.phone).toLowerCase();
+      const email = (guest.email || "").toLowerCase();
+      return name.includes(term) || phone.includes(term) || email.includes(term);
     });
 
     const valueForSort = (guest: Guest) => {
@@ -144,7 +154,11 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
         case "name":
           return formatName(guest).toLowerCase();
         case "phone":
-          return (guest.phone || "").toLowerCase();
+          return safePhoneLabel(guest.phone).toLowerCase();
+        case "email":
+          return (guest.email || "").toLowerCase();
+        case "norwegian":
+          return guest.is_norwegian === null ? -1 : guest.is_norwegian ? 1 : 0;
         case "children":
           return guest.children?.length ?? 0;
         default:
@@ -231,7 +245,9 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
         body,
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || "Kunne ikke lagre gjest");
+      if (!res.ok) {
+        throw new Error(data?.error || "Kunne ikke lagre gjest");
+      }
       closeForm();
       await fetchGuests();
     } catch (e: any) {
@@ -248,7 +264,9 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
         method: "DELETE",
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || "Kunne ikke slette gjest");
+      if (!res.ok) {
+        throw new Error(data?.error || "Kunne ikke slette gjest");
+      }
       await fetchGuests();
     } catch (e: any) {
       alert(e?.message || "Kunne ikke slette gjesten.");
@@ -278,9 +296,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
     const ageValue = childForm.age.trim();
     const ageNumber = ageValue === "" ? null : Number(ageValue);
     if (ageNumber !== null && Number.isNaN(ageNumber)) {
-      setChildForm((prev) =>
-        prev ? { ...prev, error: "Alder må være et tall" } : prev
-      );
+      setChildForm((prev) => (prev ? { ...prev, error: "Alder må være et tall" } : prev));
       return;
     }
 
@@ -292,29 +308,21 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
     };
 
     try {
-      setChildForm((prev) =>
-        prev ? { ...prev, saving: true, error: null } : prev
-      );
+      setChildForm((prev) => (prev ? { ...prev, saving: true, error: null } : prev));
       if (childForm.child) {
-        const res = await fetch(
-          `/api/activity-guest-children/${childForm.child.id}`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          }
-        );
+        const res = await fetch(`/api/activity-guest-children/${childForm.child.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new Error(data?.error || "Kunne ikke lagre barn");
       } else {
-        const res = await fetch(
-          `/api/activity-guests/${childForm.guestId}/children`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          }
-        );
+        const res = await fetch(`/api/activity-guests/${childForm.guestId}/children`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new Error(data?.error || "Kunne ikke legge til barn");
       }
@@ -322,9 +330,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
       await fetchGuests();
     } catch (e: any) {
       setChildForm((prev) =>
-        prev
-          ? { ...prev, saving: false, error: e?.message || "Kunne ikke lagre" }
-          : prev
+        prev ? { ...prev, saving: false, error: e?.message || "Kunne ikke lagre" } : prev
       );
     }
   };
@@ -343,13 +349,11 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
     }
   };
 
-  const toggleOpen = (id: string) =>
-    setOpenIds((prev) => ({ ...prev, [id]: !prev[id] }));
-
-  const displayPhone = (phone: string) => {
-    if (!phone) return "—";
-    if (phone.startsWith("MISSING-")) return "Mangler";
-    return phone;
+  const personsFor = (g: Guest) => {
+    // Hvis API sender persons, bruk den. Hvis ikke: 1 voksen + antall barn.
+    const v = typeof g.persons === "number" ? g.persons : null;
+    if (v != null && !Number.isNaN(v)) return v;
+    return 1 + (g.children?.length ?? 0);
   };
 
   return (
@@ -361,8 +365,8 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Søk på navn eller telefon"
-            className="w-56 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-red-600"
+            placeholder="Søk på navn, telefon eller e-post"
+            className="w-72 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-red-600"
           />
           <button
             onClick={openNewForm}
@@ -386,15 +390,15 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
               Lukk
             </button>
           </div>
+
           {formError && <p className="mt-2 text-sm text-red-600">{formError}</p>}
+
           <div className="mt-3 grid gap-4 md:grid-cols-2">
             <label className="text-sm text-neutral-800">
               Fornavn
               <input
                 value={formState.firstName}
-                onChange={(e) =>
-                  setFormState((prev) => ({ ...prev, firstName: e.target.value }))
-                }
+                onChange={(e) => setFormState((prev) => ({ ...prev, firstName: e.target.value }))}
                 className={INPUT_CLASSES}
               />
             </label>
@@ -402,9 +406,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
               Etternavn
               <input
                 value={formState.lastName}
-                onChange={(e) =>
-                  setFormState((prev) => ({ ...prev, lastName: e.target.value }))
-                }
+                onChange={(e) => setFormState((prev) => ({ ...prev, lastName: e.target.value }))}
                 className={INPUT_CLASSES}
               />
             </label>
@@ -412,9 +414,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
               Telefon
               <input
                 value={formState.phone}
-                onChange={(e) =>
-                  setFormState((prev) => ({ ...prev, phone: e.target.value }))
-                }
+                onChange={(e) => setFormState((prev) => ({ ...prev, phone: e.target.value }))}
                 className={INPUT_CLASSES}
               />
             </label>
@@ -422,40 +422,34 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
               E-post (valgfri)
               <input
                 value={formState.email}
-                onChange={(e) =>
-                  setFormState((prev) => ({ ...prev, email: e.target.value }))
-                }
+                onChange={(e) => setFormState((prev) => ({ ...prev, email: e.target.value }))}
                 className={INPUT_CLASSES}
               />
             </label>
+
             <label className="text-sm text-neutral-800 md:col-span-2">
               <span className="mb-1 block">Nasjonalitet</span>
               <select
                 value={formState.isNorwegian ? "true" : "false"}
-                onChange={(e) =>
-                  setFormState((prev) => ({
-                    ...prev,
-                    isNorwegian: e.target.value === "true",
-                  }))
-                }
+                onChange={(e) => setFormState((prev) => ({ ...prev, isNorwegian: e.target.value === "true" }))}
                 className={INPUT_CLASSES}
               >
                 <option value="true">Norge</option>
                 <option value="false">Annen nasjonalitet</option>
               </select>
             </label>
+
             <label className="text-sm text-neutral-800 md:col-span-2">
-              Notater (valgfritt)
+              Notater
               <textarea
                 rows={3}
                 value={formState.notes}
-                onChange={(e) =>
-                  setFormState((prev) => ({ ...prev, notes: e.target.value }))
-                }
+                onChange={(e) => setFormState((prev) => ({ ...prev, notes: e.target.value }))}
                 className={TEXTAREA_CLASSES}
               />
             </label>
           </div>
+
           <div className="mt-4 flex items-center gap-2">
             <button
               onClick={submitForm}
@@ -496,6 +490,9 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                 <th className="cursor-pointer px-3 py-2" onClick={() => toggleSort("phone")}>
                   Telefon
                 </th>
+                <th className="cursor-pointer px-3 py-2" onClick={() => toggleSort("email")}>
+                  E-post
+                </th>
                 <th className="cursor-pointer px-3 py-2" onClick={() => toggleSort("children")}>
                   Barn
                 </th>
@@ -503,30 +500,42 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                 <th className="px-3 py-2 text-right">Handlinger</th>
               </tr>
             </thead>
+
             <tbody className="divide-y divide-neutral-200">
               {filteredAndSorted.map((guest) => {
-                const childCount = guest.children?.length ?? 0;
-                const personsMin = 1 + childCount; // minst 1 voksen + barn
-                const isOpen = Boolean(openIds[guest.id]);
-
+                const phoneLabel = safePhoneLabel(guest.phone);
+                const phoneMissing = phoneLabel === "Mangler";
                 return (
                   <Fragment key={guest.id}>
                     <tr className="align-top text-sm text-neutral-900">
-                      <td className="px-3 py-3 font-medium text-neutral-900">
-                        {formatName(guest)}
+                      <td className="px-3 py-3 font-medium text-neutral-900">{formatName(guest)}</td>
+
+                      <td className="px-3 py-3">
+                        {phoneMissing ? (
+                          <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                            Mangler
+                          </span>
+                        ) : (
+                          <span className="text-neutral-700">{phoneLabel}</span>
+                        )}
                       </td>
+
                       <td className="px-3 py-3 text-neutral-700">
-                        {displayPhone(guest.phone)}
+                        {guest.email ? guest.email : <span className="text-neutral-500">—</span>}
                       </td>
-                      <td className="px-3 py-3 text-neutral-700">{childCount}</td>
-                      <td className="px-3 py-3 text-neutral-700">{personsMin}</td>
+
+                      <td className="px-3 py-3 text-neutral-700">{guest.children?.length ?? 0}</td>
+
+                      <td className="px-3 py-3 text-neutral-700">{personsFor(guest)}</td>
+
                       <td className="px-3 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <button
-                            onClick={() => toggleOpen(guest.id)}
+                            onClick={() => openChildForm(guest)}
                             className="rounded-lg px-2.5 py-1 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-900 hover:text-white"
+                            title="Åpne (barn)"
                           >
-                            {isOpen ? "Lukk" : "Åpne"}
+                            Åpne
                           </button>
                           <button
                             onClick={() => openEditForm(guest)}
@@ -544,158 +553,151 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                       </td>
                     </tr>
 
-                    {isOpen && (
-                      <tr>
-                        <td colSpan={5} className="px-3 pb-4">
-                          <div className="rounded-xl bg-neutral-50 p-4">
-                            <div className="flex items-center justify-between">
-                              <h4 className="text-sm font-semibold text-neutral-900">
-                                Barn ({childCount})
-                              </h4>
-                              <button
-                                onClick={() => openChildForm(guest)}
-                                className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
-                              >
-                                Legg til barn
-                              </button>
-                            </div>
+                    {/* Barn-liste under raden */}
+                    <tr>
+                      <td colSpan={6} className="px-3 pb-4">
+                        <div className="rounded-xl bg-neutral-50 p-4">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-semibold text-neutral-900">Barn</h4>
+                            <button
+                              onClick={() => openChildForm(guest)}
+                              className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
+                            >
+                              Legg til barn
+                            </button>
+                          </div>
 
-                            {guest.children?.length ? (
-                              <div className="mt-3 space-y-3">
-                                {guest.children.map((child) => (
-                                  <div
-                                    key={child.id}
-                                    className="rounded-lg border border-neutral-200 bg-white px-3 py-2"
-                                  >
-                                    <div className="flex flex-wrap items-center justify-between gap-3">
-                                      <div>
-                                        <div className="text-sm font-medium text-neutral-900">
-                                          {childSummary(child)}
-                                        </div>
-                                        <div className="text-xs text-neutral-600">
-                                          {genderLabel(child.gender)}
-                                          {child.notes ? ` · ${child.notes}` : ""}
-                                        </div>
+                          {guest.children?.length ? (
+                            <div className="mt-3 space-y-3">
+                              {guest.children.map((child) => (
+                                <div
+                                  key={child.id}
+                                  className="rounded-lg border border-neutral-200 bg-white px-3 py-2"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                      <div className="text-sm font-medium text-neutral-900">
+                                        {childSummary(child)}
                                       </div>
-                                      <div className="flex gap-2">
-                                        <button
-                                          onClick={() => openChildForm(guest, child)}
-                                          className="rounded-lg px-2.5 py-1 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-900 hover:text-white"
-                                        >
-                                          Rediger
-                                        </button>
-                                        <button
-                                          onClick={() => removeChild(child)}
-                                          className="rounded-lg px-2.5 py-1 text-xs font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50"
-                                        >
-                                          Slett
-                                        </button>
+                                      <div className="text-xs text-neutral-600">
+                                        {genderLabel(child.gender)}
+                                        {child.notes ? ` · ${child.notes}` : ""}
                                       </div>
                                     </div>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => openChildForm(guest, child)}
+                                        className="rounded-lg px-2.5 py-1 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-900 hover:text-white"
+                                      >
+                                        Rediger
+                                      </button>
+                                      <button
+                                        onClick={() => removeChild(child)}
+                                        className="rounded-lg px-2.5 py-1 text-xs font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50"
+                                      >
+                                        Slett
+                                      </button>
+                                    </div>
                                   </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="mt-3 text-sm text-neutral-700">
-                                Ingen barn registrert.
-                              </p>
-                            )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-3 text-sm text-neutral-700">Ingen barn registrert.</p>
+                          )}
 
-                            {childForm?.guestId === guest.id && (
-                              <div className="mt-4 rounded-lg border border-dashed border-neutral-300 bg-white p-4">
-                                <div className="flex items-center justify-between">
-                                  <h5 className="text-sm font-semibold text-neutral-900">
-                                    {childForm.child ? "Rediger barn" : "Nytt barn"}
-                                  </h5>
-                                  <button
-                                    onClick={closeChildForm}
-                                    className="text-xs font-medium text-neutral-600 hover:text-neutral-900"
-                                  >
-                                    Lukk
-                                  </button>
-                                </div>
-                                {childForm.error && (
-                                  <p className="mt-2 text-xs text-red-600">{childForm.error}</p>
-                                )}
-                                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                                  <label className="text-xs text-neutral-700">
-                                    Navn (valgfritt)
-                                    <input
-                                      value={childForm.firstName}
-                                      onChange={(e) =>
-                                        setChildForm((prev) =>
-                                          prev ? { ...prev, firstName: e.target.value } : prev
-                                        )
-                                      }
-                                      className={INPUT_CLASSES}
-                                    />
-                                  </label>
-                                  <label className="text-xs text-neutral-700">
-                                    Alder
-                                    <input
-                                      value={childForm.age}
-                                      onChange={(e) =>
-                                        setChildForm((prev) =>
-                                          prev ? { ...prev, age: e.target.value } : prev
-                                        )
-                                      }
-                                      className={INPUT_CLASSES}
-                                      type="number"
-                                      min={0}
-                                    />
-                                  </label>
-                                  <label className="text-xs text-neutral-700">
-                                    Kjønn
-                                    <select
-                                      value={childForm.gender}
-                                      onChange={(e) =>
-                                        setChildForm((prev) =>
-                                          prev ? { ...prev, gender: e.target.value } : prev
-                                        )
-                                      }
-                                      className={INPUT_CLASSES}
-                                    >
-                                      <option value="">Velg</option>
-                                      <option value="male">Gutt</option>
-                                      <option value="female">Jente</option>
-                                      <option value="other">Annet / ønsker ikke å oppgi</option>
-                                    </select>
-                                  </label>
-                                  <label className="text-xs text-neutral-700 md:col-span-2">
-                                    Notater
-                                    <textarea
-                                      rows={2}
-                                      value={childForm.notes}
-                                      onChange={(e) =>
-                                        setChildForm((prev) =>
-                                          prev ? { ...prev, notes: e.target.value } : prev
-                                        )
-                                      }
-                                      className={TEXTAREA_CLASSES}
-                                    />
-                                  </label>
-                                </div>
-                                <div className="mt-3 flex items-center gap-2">
-                                  <button
-                                    onClick={submitChildForm}
-                                    disabled={childForm.saving}
-                                    className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60"
-                                  >
-                                    {childForm.saving ? "Lagrer…" : "Lagre"}
-                                  </button>
-                                  <button
-                                    onClick={closeChildForm}
-                                    className="rounded-lg px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-900 hover:text-white"
-                                  >
-                                    Avbryt
-                                  </button>
-                                </div>
+                          {childForm?.guestId === guest.id && (
+                            <div className="mt-4 rounded-lg border border-dashed border-neutral-300 bg-white p-4">
+                              <div className="flex items-center justify-between">
+                                <h5 className="text-sm font-semibold text-neutral-900">
+                                  {childForm.child ? "Rediger barn" : "Nytt barn"}
+                                </h5>
+                                <button
+                                  onClick={closeChildForm}
+                                  className="text-xs font-medium text-neutral-600 hover:text-neutral-900"
+                                >
+                                  Lukk
+                                </button>
                               </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
+
+                              {childForm.error && (
+                                <p className="mt-2 text-xs text-red-600">{childForm.error}</p>
+                              )}
+
+                              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                <label className="text-xs text-neutral-700">
+                                  Navn (valgfritt)
+                                  <input
+                                    value={childForm.firstName}
+                                    onChange={(e) =>
+                                      setChildForm((prev) => (prev ? { ...prev, firstName: e.target.value } : prev))
+                                    }
+                                    className={INPUT_CLASSES}
+                                  />
+                                </label>
+
+                                <label className="text-xs text-neutral-700">
+                                  Alder
+                                  <input
+                                    value={childForm.age}
+                                    onChange={(e) =>
+                                      setChildForm((prev) => (prev ? { ...prev, age: e.target.value } : prev))
+                                    }
+                                    className={INPUT_CLASSES}
+                                    type="number"
+                                    min={0}
+                                  />
+                                </label>
+
+                                <label className="text-xs text-neutral-700">
+                                  Kjønn
+                                  <select
+                                    value={childForm.gender}
+                                    onChange={(e) =>
+                                      setChildForm((prev) => (prev ? { ...prev, gender: e.target.value } : prev))
+                                    }
+                                    className={INPUT_CLASSES}
+                                  >
+                                    <option value="">Velg</option>
+                                    <option value="male">Gutt</option>
+                                    <option value="female">Jente</option>
+                                    <option value="other">Annet / ønsker ikke å oppgi</option>
+                                  </select>
+                                </label>
+
+                                <label className="text-xs text-neutral-700 md:col-span-2">
+                                  Notater
+                                  <textarea
+                                    rows={2}
+                                    value={childForm.notes}
+                                    onChange={(e) =>
+                                      setChildForm((prev) => (prev ? { ...prev, notes: e.target.value } : prev))
+                                    }
+                                    className={TEXTAREA_CLASSES}
+                                  />
+                                </label>
+                              </div>
+
+                              <div className="mt-3 flex items-center gap-2">
+                                <button
+                                  onClick={submitChildForm}
+                                  disabled={childForm.saving}
+                                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                                >
+                                  {childForm.saving ? "Lagrer…" : "Lagre"}
+                                </button>
+                                <button
+                                  onClick={closeChildForm}
+                                  className="rounded-lg px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-900 hover:text-white"
+                                >
+                                  Avbryt
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
                   </Fragment>
                 );
               })}
