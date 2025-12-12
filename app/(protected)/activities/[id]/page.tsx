@@ -247,58 +247,48 @@ const ALL_TAB_KEYS: Tab[] = [
 
 // Støtt både norske og engelske/sanne navn fra UI/DB
 const TAB_SYNONYMS: Record<string, Tab> = {
-  // oversikt
   overview: "oversikt",
   oversikt: "oversikt",
 
-  // deltakere
   participants: "deltakere",
   participant: "deltakere",
   members: "deltakere",
   member: "deltakere",
   deltakere: "deltakere",
 
-  // ledere
   leaders: "ledere",
   leader: "ledere",
   ledere: "ledere",
 
-  // økter
   sessions: "okter",
   session: "okter",
   okter: "okter",
 
-  // filer
   files: "filer",
   file: "filer",
   documents: "filer",
   docs: "filer",
   filer: "filer",
 
-  // meldinger
   messages: "meldinger",
   message: "meldinger",
   announcement: "meldinger",
   announcements: "meldinger",
   meldinger: "meldinger",
 
-  // gjester
   guests: "gjester",
   guest: "gjester",
   gjester: "gjester",
 
-  // innsjekk
   attendance: "innsjekk",
   checkin: "innsjekk",
   "check-in": "innsjekk",
   innsjekk: "innsjekk",
 
-  // frivillige
   volunteers: "frivillige",
   volunteer: "frivillige",
   frivillige: "frivillige",
 
-  // oppgaver
   tasks: "oppgaver",
   task: "oppgaver",
   oppgaver: "oppgaver",
@@ -309,12 +299,10 @@ const normalizeTabKey = (raw: any): Tab | null => {
   const s = String(raw).trim().toLowerCase();
   if (!s) return null;
 
-  // Direkte match mot våre Tab-keys
   if ((ALL_TAB_KEYS as string[]).includes(s)) {
     return s as Tab;
   }
 
-  // Synonymer (engelsk/norsk mix)
   return TAB_SYNONYMS[s] ?? null;
 };
 
@@ -334,7 +322,6 @@ function computeEnabledTabs(act: DbActivity | null): Tab[] {
   const validSet = new Set<Tab>(ALL_TAB_KEYS);
   const cleaned: Tab[] = [];
 
-  // 1) Hvis tab_config er en liste (["oversikt", "participants", ...])
   if (Array.isArray(rawConfig)) {
     for (const entry of rawConfig) {
       const key = normalizeTabKey(entry);
@@ -342,9 +329,7 @@ function computeEnabledTabs(act: DbActivity | null): Tab[] {
         cleaned.push(key);
       }
     }
-  }
-  // 2) Hvis tab_config er et objekt ({ oversikt: true, participants: false, ... })
-  else if (rawConfig && typeof rawConfig === "object") {
+  } else if (rawConfig && typeof rawConfig === "object") {
     for (const [rk, val] of Object.entries(rawConfig)) {
       if (!val) continue;
       const key = normalizeTabKey(rk);
@@ -354,13 +339,11 @@ function computeEnabledTabs(act: DbActivity | null): Tab[] {
     }
   }
 
-  // Hvis vi faktisk fant en konfigurasjon i DB, så bruk den.
   if (cleaned.length) {
     if (!cleaned.includes("oversikt")) cleaned.unshift("oversikt");
     return cleaned;
   }
 
-  // Fallback hvis tab_config ikke er satt: bestem ut fra has_*-flagg
   const tabs = [...fallbackBase];
 
   if ((act as any).has_guests) tabs.push("gjester");
@@ -416,7 +399,6 @@ export default function ActivityDetailPage() {
     [act]
   );
 
-  // Oppdater enablede faner når aktiviteten endrer seg
   useEffect(() => {
     const next = computeEnabledTabs(act);
     setEnabledTabs(next);
@@ -425,7 +407,6 @@ export default function ActivityDetailPage() {
     }
   }, [act, tab]);
 
-  // Hvis aktiverte features endres, og vi står på en fane som ikke lenger finnes, hopp til oversikt
   useEffect(() => {
     if (tab === "gjester" && !showGuestsTab) setTab("oversikt");
     if (tab === "innsjekk" && !showAttendanceTab) setTab("oversikt");
@@ -699,173 +680,163 @@ export default function ActivityDetailPage() {
       </div>
 
       {/* Innhold */}
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        {/* Venstre */}
-        <section className="space-y-6 lg:col-span-2">
-          {tab === "oversikt" && (
-            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold">Oversikt</h2>
-              <p className="mt-2 text-[15px] text-neutral-800">
-                {(act as any).description
-                  ? (act as any).description
-                  : "Ingen beskrivelse."}
-              </p>
-            </div>
-          )}
-
-          {tab === "deltakere" && (
-            <PeoplePanel
-              title="Deltakere"
-              people={participants}
-              emphasize={false}
-              variant="participants"
-              busyId={busyId}
-              onPromote={async (mid) => await setRole(mid, "leader")}
-            />
-          )}
-
-          {tab === "ledere" && (
-            <PeoplePanel
-              title="Ledere"
-              people={leaders}
-              emphasize
-              variant="leaders"
-              busyId={busyId}
-              onDemote={async (mid) => await setRole(mid, "participant")}
-            />
-          )}
-
-          {tab === "frivillige" && showVolunteersTab && (
-            effectiveActivityDbId ? (
-              <VolunteersTab activityId={effectiveActivityDbId} />
-            ) : (
-              <MissingActivityDbIdNotice title="Frivillige" />
-            )
-          )}
-
-          {tab === "okter" && (
-            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-neutral-900">
-                  Økter
-                </h2>
-                <Link
-                  href={`/activities/${encodeURIComponent(
-                    preferredRouteId
-                  )}/sessions/new`}
-                  className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700"
-                >
-                  Lag ny økt
-                </Link>
-              </div>
-
-              {sessions.length === 0 ? (
-                <p className="mt-3 text-neutral-700">Ingen økter enda.</p>
-              ) : (
-                <ul className="mt-4 divide-y divide-neutral-200">
-                  {sessions.map((s) => (
-                    <li
-                      key={s.id}
-                      className="flex items-center justify-between gap-3 py-3"
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate font-medium text-neutral-900">
-                          {s.title}
-                        </div>
-                        <div className="text-sm text-neutral-600">
-                          {new Date(s.start).toLocaleString("nb-NO")} –{" "}
-                          {new Date(s.end).toLocaleTimeString("nb-NO")}
-                          {s.location ? <> · Sted: {s.location}</> : null}
-                        </div>
-                      </div>
-                      <Link
-                        href={`/sessions/${encodeURIComponent(String(s.id))}`}
-                        className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
-                      >
-                        Åpne økt
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-
-          {tab === "gjester" && showGuestsTab && (
+      {tab === "gjester" ? (
+        // ✅ Full bredde på Gjester (ingen høyre info-boks)
+        <div className="mt-6">
+          {showGuestsTab ? (
             effectiveActivityDbId ? (
               <GuestsTab activityId={effectiveActivityDbId} />
             ) : (
               <MissingActivityDbIdNotice title="Gjester" />
             )
+          ) : (
+            <MissingActivityDbIdNotice title="Gjester" />
           )}
+        </div>
+      ) : (
+        <div className="mt-6 grid gap-6 lg:grid-cols-3">
+          {/* Venstre */}
+          <section className="space-y-6 lg:col-span-2">
+            {tab === "oversikt" && (
+              <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
+                <h2 className="text-lg font-semibold">Oversikt</h2>
+                <p className="mt-2 text-[15px] text-neutral-800">
+                  {(act as any).description
+                    ? (act as any).description
+                    : "Ingen beskrivelse."}
+                </p>
+              </div>
+            )}
 
-          {tab === "innsjekk" && showAttendanceTab && (
-            effectiveActivityDbId ? (
-              <AttendanceTab
-                activityId={effectiveActivityDbId}
-                activityName={act.name}
+            {tab === "deltakere" && (
+              <PeoplePanel
+                title="Deltakere"
+                people={participants}
+                emphasize={false}
+                variant="participants"
+                busyId={busyId}
+                onPromote={async (mid) => await setRole(mid, "leader")}
               />
-            ) : (
-              <MissingActivityDbIdNotice title="Innsjekk" />
-            )
-          )}
+            )}
 
-          {tab === "oppgaver" && showTasksTab && (
-            effectiveActivityDbId ? (
-              <TasksTab activityId={effectiveActivityDbId} />
-            ) : (
-              <MissingActivityDbIdNotice title="Oppgaver" />
-            )
-          )}
+            {tab === "ledere" && (
+              <PeoplePanel
+                title="Ledere"
+                people={leaders}
+                emphasize
+                variant="leaders"
+                busyId={busyId}
+                onDemote={async (mid) => await setRole(mid, "participant")}
+              />
+            )}
 
-          {tab === "filer" && (
-            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm text-neutral-700">
-              Her kan vi senere legge opplasting/visning av filer
-              (Bilder/Tekst/Musikk/Annet).
+            {tab === "frivillige" && showVolunteersTab && (
+              effectiveActivityDbId ? (
+                <VolunteersTab activityId={effectiveActivityDbId} />
+              ) : (
+                <MissingActivityDbIdNotice title="Frivillige" />
+              )
+            )}
+
+            {tab === "okter" && (
+              <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-neutral-900">Økter</h2>
+                  <Link
+                    href={`/activities/${encodeURIComponent(preferredRouteId)}/sessions/new`}
+                    className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                  >
+                    Lag ny økt
+                  </Link>
+                </div>
+
+                {sessions.length === 0 ? (
+                  <p className="mt-3 text-neutral-700">Ingen økter enda.</p>
+                ) : (
+                  <ul className="mt-4 divide-y divide-neutral-200">
+                    {sessions.map((s) => (
+                      <li
+                        key={s.id}
+                        className="flex items-center justify-between gap-3 py-3"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-neutral-900">
+                            {s.title}
+                          </div>
+                          <div className="text-sm text-neutral-600">
+                            {new Date(s.start).toLocaleString("nb-NO")} –{" "}
+                            {new Date(s.end).toLocaleTimeString("nb-NO")}
+                            {s.location ? <> · Sted: {s.location}</> : null}
+                          </div>
+                        </div>
+                        <Link
+                          href={`/sessions/${encodeURIComponent(String(s.id))}`}
+                          className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
+                        >
+                          Åpne økt
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {tab === "innsjekk" && showAttendanceTab && (
+              effectiveActivityDbId ? (
+                <AttendanceTab activityId={effectiveActivityDbId} activityName={act.name} />
+              ) : (
+                <MissingActivityDbIdNotice title="Innsjekk" />
+              )
+            )}
+
+            {tab === "oppgaver" && showTasksTab && (
+              effectiveActivityDbId ? (
+                <TasksTab activityId={effectiveActivityDbId} />
+              ) : (
+                <MissingActivityDbIdNotice title="Oppgaver" />
+              )
+            )}
+
+            {tab === "filer" && (
+              <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm text-neutral-700">
+                Her kan vi senere legge opplasting/visning av filer (Bilder/Tekst/Musikk/Annet).
+              </div>
+            )}
+
+            {tab === "meldinger" && (
+              <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm text-neutral-700">
+                Her kan vi senere legge kunngjøringer/meldinger til deltakere/ledere.
+              </div>
+            )}
+          </section>
+
+          {/* Høyre – Info-kort */}
+          <aside className="space-y-6">
+            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
+              <h3 className="text-sm font-semibold text-neutral-900">Info</h3>
+              <dl className="mt-3 space-y-2 text-sm text-neutral-700">
+                <div className="flex justify-between gap-4">
+                  <dt>Type</dt>
+                  <dd className="font-medium">{labelForType((act as any)?.type)}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt>Status</dt>
+                  <dd className="font-medium">{(act as any)?.archived ? "Arkivert" : "Aktiv"}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt>Start</dt>
+                  <dd className="font-medium">{(act as any)?.start_date || "—"}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt>Slutt</dt>
+                  <dd className="font-medium">{(act as any)?.end_date || "—"}</dd>
+                </div>
+              </dl>
             </div>
-          )}
-
-          {tab === "meldinger" && (
-            <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm text-neutral-700">
-              Her kan vi senere legge kunngjøringer/meldinger til
-              deltakere/ledere.
-            </div>
-          )}
-        </section>
-
-        {/* Høyre – Info-kort */}
-        <aside className="space-y-6">
-          <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
-            <h3 className="text-sm font-semibold text-neutral-900">Info</h3>
-            <dl className="mt-3 space-y-2 text-sm text-neutral-700">
-              <div className="flex justify-between gap-4">
-                <dt>Type</dt>
-                <dd className="font-medium">
-                  {labelForType((act as any)?.type)}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt>Status</dt>
-                <dd className="font-medium">
-                  {(act as any)?.archived ? "Arkivert" : "Aktiv"}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt>Start</dt>
-                <dd className="font-medium">
-                  {(act as any)?.start_date || "—"}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt>Slutt</dt>
-                <dd className="font-medium">
-                  {(act as any)?.end_date || "—"}
-                </dd>
-              </div>
-            </dl>
-          </div>
-        </aside>
-      </div>
+          </aside>
+        </div>
+      )}
     </main>
   );
 }
@@ -877,9 +848,8 @@ function MissingActivityDbIdNotice({ title }: { title: string }) {
     <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
       <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
       <p className="mt-2 text-sm text-neutral-700">
-        Denne funksjonen krever at aktiviteten er koblet til Supabase med en
-        gyldig ID. Ta kontakt med en administrator for å synkronisere
-        aktiviteten dersom du forventer å se data her.
+        Denne funksjonen krever at aktiviteten er koblet til Supabase med en gyldig ID.
+        Ta kontakt med en administrator for å synkronisere aktiviteten dersom du forventer å se data her.
       </p>
     </div>
   );
@@ -929,15 +899,9 @@ function PeoplePanel({
                 className="flex items-center justify-between gap-3 py-3"
               >
                 <div>
-                  <p className="text-[15px] font-medium text-neutral-900">
-                    {name}
-                  </p>
+                  <p className="text-[15px] font-medium text-neutral-900">{name}</p>
                   <p className="text-xs text-neutral-700">
-                    {email ? (
-                      <span>{email}</span>
-                    ) : (
-                      <span className="text-neutral-500">Ingen e-post</span>
-                    )}
+                    {email ? <span>{email}</span> : <span className="text-neutral-500">Ingen e-post</span>}
                     {phone ? <span> · {phone}</span> : null}
                   </p>
                 </div>
