@@ -33,7 +33,7 @@ export type Guest = {
   children: GuestChild[];
 };
 
-type SortKey = "name" | "phone" | "norwegian" | "children";
+type SortKey = "name" | "phone" | "children";
 
 type GuestFormState = {
   firstName: string;
@@ -102,7 +102,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
 
   const [childForm, setChildForm] = useState<ChildFormState | null>(null);
 
-  // ✅ Åpne/lukk per gjest (accordion)
+  // Åpne/lukk per gjest
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({});
 
   const fetchGuests = useCallback(async () => {
@@ -145,8 +145,6 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
           return formatName(guest).toLowerCase();
         case "phone":
           return (guest.phone || "").toLowerCase();
-        case "norwegian":
-          return guest.is_norwegian === null ? -1 : guest.is_norwegian ? 1 : 0;
         case "children":
           return guest.children?.length ?? 0;
         default:
@@ -294,7 +292,9 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
     };
 
     try {
-      setChildForm((prev) => (prev ? { ...prev, saving: true, error: null } : prev));
+      setChildForm((prev) =>
+        prev ? { ...prev, saving: true, error: null } : prev
+      );
       if (childForm.child) {
         const res = await fetch(
           `/api/activity-guest-children/${childForm.child.id}`,
@@ -322,7 +322,9 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
       await fetchGuests();
     } catch (e: any) {
       setChildForm((prev) =>
-        prev ? { ...prev, saving: false, error: e?.message || "Kunne ikke lagre" } : prev
+        prev
+          ? { ...prev, saving: false, error: e?.message || "Kunne ikke lagre" }
+          : prev
       );
     }
   };
@@ -516,12 +518,8 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                       <td className="px-3 py-3 text-neutral-700">
                         {displayPhone(guest.phone)}
                       </td>
-                      <td className="px-3 py-3 text-neutral-700">
-                        {childCount}
-                      </td>
-                      <td className="px-3 py-3 text-neutral-700">
-                        {personsMin}
-                      </td>
+                      <td className="px-3 py-3 text-neutral-700">{childCount}</td>
+                      <td className="px-3 py-3 text-neutral-700">{personsMin}</td>
                       <td className="px-3 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <button
