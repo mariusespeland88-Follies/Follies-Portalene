@@ -72,7 +72,6 @@ function extractPhoneFromName(full: string): { cleanName: string; phone: string 
   const raw = String(full || "").trim();
   if (!raw) return { cleanName: "", phone: null };
 
-  // Finn siste “token” som ser ut som telefon (7-15 siffer)
   const parts = raw.split(/\s+/);
   if (parts.length <= 1) return { cleanName: raw, phone: null };
 
@@ -82,7 +81,6 @@ function extractPhoneFromName(full: string): { cleanName: string; phone: string 
   if (/^\+?\d{7,15}$/.test(digits)) {
     return { cleanName: parts.slice(0, -1).join(" "), phone: digits };
   }
-
   return { cleanName: raw, phone: null };
 }
 
@@ -93,20 +91,18 @@ function normalizeGuestForDisplay(g: Guest) {
   const baseName = `${fn} ${ln}`.trim();
   const extracted = extractPhoneFromName(baseName);
 
-  // Hvis phone i DB er tom / “MISSING-…” / “Mangler”, men navn slutter med nummer → bruk det for visning
   const phoneRaw = String(g.phone || "").trim();
   const phoneClean = phoneDigits(phoneRaw);
 
   const phoneLooksMissing =
-    !phoneClean ||
-    /^mangler$/i.test(phoneRaw) ||
-    /^missing-/i.test(phoneRaw);
+    !phoneClean || /^mangler$/i.test(phoneRaw) || /^missing-/i.test(phoneRaw);
 
   const displayPhone = phoneLooksMissing
-    ? (extracted.phone ? extracted.phone : "")
+    ? extracted.phone
+      ? extracted.phone
+      : ""
     : phoneClean;
 
-  // Hvis vi hentet telefon ut av navnet: vis navnet uten telefon
   const displayName = extracted.phone ? extracted.cleanName : baseName;
 
   return {
@@ -114,6 +110,17 @@ function normalizeGuestForDisplay(g: Guest) {
     displayPhone: displayPhone || "",
     displayEmail: (g.email || "").trim(),
   };
+}
+
+function personsCount(guest: Guest) {
+  const kids = guest.children?.length ?? 0;
+  return 1 + kids;
+}
+
+function sortDateValue(guest: Guest) {
+  const a = guest.updated_at || guest.created_at || "";
+  const t = Date.parse(a);
+  return Number.isNaN(t) ? 0 : t;
 }
 
 const genderLabel = (value: string | null | undefined) => {
@@ -134,18 +141,86 @@ const childSummary = (child: GuestChild) => {
   return `${name} (${age})`;
 };
 
-function shortNote(note: string | null | undefined) {
-  const s = String(note ?? "").trim();
-  if (!s) return "";
-  const oneLine = s.replace(/\s+/g, " ").trim();
-  if (oneLine.length <= 70) return oneLine;
-  return oneLine.slice(0, 70).trim() + "…";
+/* ------------------ Duplikat-gruppering ------------------ */
+/**
+ * Vi grupperer på “fingerprint” (navn + telefon + e-post) slik at:
+ * - samme gjest som er blitt lagret dobbelt i DB ikke vises to ganger
+ * - du kan slette/rydde alle i gruppen hvis du vil
+ */
+type GuestGroup = {
+  key: string;
+  primary: Guest;      // den vi viser i tabellen
+  allIds: string[];    // alle ids i gruppen (for “slett alle”)
+  count: number;       // hvor mange som ble slått sammen
+};
+
+function fingerprint(guest: Guest) {
+  const n = normalizeGuestForDisplay(guest);
+  const name = n.displayName.toLowerCase().trim();
+  const phone = (n.displayPhone || "").toLowerCase().trim();
+  const email = (n.displayEmail || "").toLowerCase().trim();
+  return `${name}||${phone}||${email}`;
 }
 
-function personsCount(guest: Guest) {
-  // “1 registrering per kontaktperson” → personer = 1 voksen + antall barn
-  const kids = guest.children?.length ?? 0;
-  return 1 + kids;
+function mergeChildrenUnique(items: GuestChild[]) {
+  const map = new Map<string, GuestChild>();
+  for (const c of items || []) {
+    const id = String(c?.id || "");
+    if (!id) continue;
+    map.set(id, c);
+  }
+  return Array.from(map.values());
+}
+
+function buildGroups(rawGuests: Guest[]): GuestGroup[] {
+  const groups = new Map<string, Guest[]>();
+
+  for (const g of rawGuests || []) {
+    const k = fingerprint(g);
+    const list = groups.get(k) || [];
+    list.push(g);
+    groups.set(k, list);
+  }
+
+  const out: GuestGroup[] = [];
+
+  for (const [k, list] of groups.entries()) {
+    // velg primary: den som er “nyest” (updated/created), fall back første
+    const sorted = [...list].sort((a, b) => sortDateValue(b) - sortDateValue(a));
+    const primaryBase = sorted[0] || list[0];
+
+    // merge children fra alle i gruppen
+    const mergedChildren = mergeChildrenUnique(
+      list.flatMap((x) => Array.isArray(x.children) ? x.children : [])
+    );
+
+    // velg “best” felter: hvis primary mangler e-post/telefon, ta fra andre
+    const pick = (field: "email" | "phone" | "notes") => {
+      const firstNonEmpty =
+        sorted.find((x) => String((x as any)[field] || "").trim()) ||
+        primaryBase;
+      return (firstNonEmpty as any)[field];
+    };
+
+    const primary: Guest = {
+      ...primaryBase,
+      email: pick("email") ?? primaryBase.email,
+      phone: pick("phone") ?? primaryBase.phone,
+      notes: pick("notes") ?? primaryBase.notes,
+      children: mergedChildren,
+    };
+
+    const allIds = Array.from(new Set(list.map((x) => String(x.id)).filter(Boolean)));
+
+    out.push({
+      key: k,
+      primary,
+      allIds,
+      count: allIds.length,
+    });
+  }
+
+  return out;
 }
 
 /* -------------------------------- Component -------------------------------- */
@@ -159,10 +234,10 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
-  const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
+  const [editingGroup, setEditingGroup] = useState<GuestGroup | null>(null);
   const [formState, setFormState] = useState<GuestFormState>(defaultGuestForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSaving, setFormSaving] = useState(false);
@@ -194,19 +269,22 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
     fetchGuests();
   }, [fetchGuests]);
 
+  const groups = useMemo(() => buildGroups(guests), [guests]);
+
   const filteredAndSorted = useMemo(() => {
     const term = search.trim().toLowerCase();
 
-    const filtered = guests.filter((guest) => {
+    const filtered = groups.filter((g) => {
       if (!term) return true;
-      const n = normalizeGuestForDisplay(guest);
+      const n = normalizeGuestForDisplay(g.primary);
       const name = n.displayName.toLowerCase();
       const phone = (n.displayPhone || "").toLowerCase();
       const email = (n.displayEmail || "").toLowerCase();
       return name.includes(term) || phone.includes(term) || email.includes(term);
     });
 
-    const valueForSort = (guest: Guest) => {
+    const valueForSort = (grp: GuestGroup) => {
+      const guest = grp.primary;
       const n = normalizeGuestForDisplay(guest);
       switch (sortKey) {
         case "name":
@@ -233,7 +311,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
     });
 
     return sorted;
-  }, [guests, search, sortDir, sortKey]);
+  }, [groups, search, sortDir, sortKey]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((p) => (p === "asc" ? "desc" : "asc"));
@@ -245,13 +323,14 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
 
   const openNewForm = () => {
     setFormState(defaultGuestForm());
-    setEditingGuest(null);
+    setEditingGroup(null);
     setFormError(null);
     setFormOpen(true);
   };
 
-  const openEditForm = (guest: Guest) => {
-    setEditingGuest(guest);
+  const openEditForm = (group: GuestGroup) => {
+    const guest = group.primary;
+    setEditingGroup(group);
     setFormState({
       firstName: guest.first_name,
       lastName: guest.last_name,
@@ -266,7 +345,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
 
   const closeForm = () => {
     setFormOpen(false);
-    setEditingGuest(null);
+    setEditingGroup(null);
     setFormError(null);
   };
 
@@ -288,21 +367,26 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
     try {
       setFormSaving(true);
       setFormError(null);
-      const url = editingGuest
-        ? `/api/activity-guests/${editingGuest.id}`
-        : `/api/activity-guests`;
-      const method = editingGuest ? "PATCH" : "POST";
-      const body = editingGuest
-        ? JSON.stringify(payload)
-        : JSON.stringify({ ...payload, activityId });
 
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body,
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || "Kunne ikke lagre gjest");
+      if (editingGroup) {
+        // Rediger bare primary (trygt). Duplikater håndteres separat (rydde ved slett).
+        const res = await fetch(`/api/activity-guests/${editingGroup.primary.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || "Kunne ikke lagre gjest");
+      } else {
+        const res = await fetch(`/api/activity-guests`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, activityId }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || "Kunne ikke lagre gjest");
+      }
+
       closeForm();
       await fetchGuests();
     } catch (e: any) {
@@ -312,24 +396,32 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
     }
   };
 
-  const removeGuest = async (guest: Guest) => {
-    const n = normalizeGuestForDisplay(guest);
-    if (!confirm(`Slette ${n.displayName}?`)) return;
+  const removeGroup = async (group: GuestGroup) => {
+    const n = normalizeGuestForDisplay(group.primary);
+    const hasDupes = group.allIds.length > 1;
+
+    const msg = hasDupes
+      ? `Denne gjesten ser ut til å finnes ${group.allIds.length} ganger.\n\nVil du slette ALLE?`
+      : `Slette ${n.displayName}?`;
+
+    if (!confirm(msg)) return;
+
     try {
-      const res = await fetch(`/api/activity-guests/${guest.id}`, {
-        method: "DELETE",
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || "Kunne ikke slette gjest");
+      // Slett alle ids i gruppen (så blir det faktisk ryddig, ikke bare skjult)
+      for (const id of group.allIds) {
+        const res = await fetch(`/api/activity-guests/${id}`, { method: "DELETE" });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || `Kunne ikke slette (id: ${id})`);
+      }
       await fetchGuests();
     } catch (e: any) {
-      alert(e?.message || "Kunne ikke slette gjesten.");
+      alert(e?.message || "Kunne ikke slette gjesten(e).");
     }
   };
 
-  const openChildForm = (guest: Guest, child?: GuestChild | null) => {
+  const openChildForm = (group: GuestGroup, child?: GuestChild | null) => {
     setChildForm({
-      guestId: guest.id,
+      guestId: group.primary.id,
       child: child ?? null,
       firstName: child?.first_name || "",
       age:
@@ -347,12 +439,11 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
 
   const submitChildForm = async () => {
     if (!childForm) return;
+
     const ageValue = childForm.age.trim();
     const ageNumber = ageValue === "" ? null : Number(ageValue);
     if (ageNumber !== null && Number.isNaN(ageNumber)) {
-      setChildForm((prev) =>
-        prev ? { ...prev, error: "Alder må være et tall" } : prev
-      );
+      setChildForm((prev) => (prev ? { ...prev, error: "Alder må være et tall" } : prev));
       return;
     }
 
@@ -364,30 +455,22 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
     };
 
     try {
-      setChildForm((prev) =>
-        prev ? { ...prev, saving: true, error: null } : prev
-      );
+      setChildForm((prev) => (prev ? { ...prev, saving: true, error: null } : prev));
 
       if (childForm.child) {
-        const res = await fetch(
-          `/api/activity-guest-children/${childForm.child.id}`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          }
-        );
+        const res = await fetch(`/api/activity-guest-children/${childForm.child.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new Error(data?.error || "Kunne ikke lagre barn");
       } else {
-        const res = await fetch(
-          `/api/activity-guests/${childForm.guestId}/children`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          }
-        );
+        const res = await fetch(`/api/activity-guests/${childForm.guestId}/children`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new Error(data?.error || "Kunne ikke legge til barn");
       }
@@ -396,13 +479,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
       await fetchGuests();
     } catch (e: any) {
       setChildForm((prev) =>
-        prev
-          ? {
-              ...prev,
-              saving: false,
-              error: e?.message || "Kunne ikke lagre",
-            }
-          : prev
+        prev ? { ...prev, saving: false, error: e?.message || "Kunne ikke lagre" } : prev
       );
     }
   };
@@ -410,9 +487,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
   const removeChild = async (child: GuestChild) => {
     if (!confirm("Slette barnet?")) return;
     try {
-      const res = await fetch(`/api/activity-guest-children/${child.id}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(`/api/activity-guest-children/${child.id}`, { method: "DELETE" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || "Kunne ikke slette barn");
       await fetchGuests();
@@ -421,17 +496,30 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
     }
   };
 
+  const duplicateCount = useMemo(() => {
+    const hidden = groups.reduce((sum, g) => sum + Math.max(0, g.count - 1), 0);
+    return hidden;
+  }, [groups]);
+
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-neutral-900">Gjester</h2>
+        <div>
+          <h2 className="text-lg font-semibold text-neutral-900">Gjester</h2>
+          {duplicateCount > 0 ? (
+            <p className="mt-1 text-xs text-neutral-600">
+              Skjulte duplikater: <span className="font-semibold">{duplicateCount}</span> (du kan slette alle fra “Slett”)
+            </p>
+          ) : null}
+        </div>
+
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Søk på navn, telefon eller e-post"
-            className="w-64 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-red-600"
+            className="w-72 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-red-600"
           />
           <button
             onClick={openNewForm}
@@ -446,24 +534,21 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
         <div className="mt-4 rounded-xl border border-dashed border-red-200 bg-red-50/40 p-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-neutral-900">
-              {editingGuest ? "Rediger gjest" : "Ny gjest"}
+              {editingGroup ? "Rediger gjest" : "Ny gjest"}
             </h3>
-            <button
-              onClick={closeForm}
-              className="text-sm font-medium text-neutral-600 hover:text-neutral-900"
-            >
+            <button onClick={closeForm} className="text-sm font-medium text-neutral-600 hover:text-neutral-900">
               Lukk
             </button>
           </div>
+
           {formError && <p className="mt-2 text-sm text-red-600">{formError}</p>}
+
           <div className="mt-3 grid gap-4 md:grid-cols-2">
             <label className="text-sm text-neutral-800">
               Fornavn
               <input
                 value={formState.firstName}
-                onChange={(e) =>
-                  setFormState((p) => ({ ...p, firstName: e.target.value }))
-                }
+                onChange={(e) => setFormState((p) => ({ ...p, firstName: e.target.value }))}
                 className={INPUT_CLASSES}
               />
             </label>
@@ -471,9 +556,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
               Etternavn
               <input
                 value={formState.lastName}
-                onChange={(e) =>
-                  setFormState((p) => ({ ...p, lastName: e.target.value }))
-                }
+                onChange={(e) => setFormState((p) => ({ ...p, lastName: e.target.value }))}
                 className={INPUT_CLASSES}
               />
             </label>
@@ -481,9 +564,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
               Telefon
               <input
                 value={formState.phone}
-                onChange={(e) =>
-                  setFormState((p) => ({ ...p, phone: e.target.value }))
-                }
+                onChange={(e) => setFormState((p) => ({ ...p, phone: e.target.value }))}
                 className={INPUT_CLASSES}
               />
             </label>
@@ -491,9 +572,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
               E-post (valgfri)
               <input
                 value={formState.email}
-                onChange={(e) =>
-                  setFormState((p) => ({ ...p, email: e.target.value }))
-                }
+                onChange={(e) => setFormState((p) => ({ ...p, email: e.target.value }))}
                 className={INPUT_CLASSES}
               />
             </label>
@@ -501,12 +580,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
               <span className="mb-1 block">Nasjonalitet</span>
               <select
                 value={formState.isNorwegian ? "true" : "false"}
-                onChange={(e) =>
-                  setFormState((p) => ({
-                    ...p,
-                    isNorwegian: e.target.value === "true",
-                  }))
-                }
+                onChange={(e) => setFormState((p) => ({ ...p, isNorwegian: e.target.value === "true" }))}
                 className={INPUT_CLASSES}
               >
                 <option value="true">Norge</option>
@@ -514,17 +588,16 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
               </select>
             </label>
             <label className="text-sm text-neutral-800 md:col-span-2">
-              Notater
+              Notater (vises kun når du åpner raden)
               <textarea
                 rows={3}
                 value={formState.notes}
-                onChange={(e) =>
-                  setFormState((p) => ({ ...p, notes: e.target.value }))
-                }
+                onChange={(e) => setFormState((p) => ({ ...p, notes: e.target.value }))}
                 className={TEXTAREA_CLASSES}
               />
             </label>
           </div>
+
           <div className="mt-4 flex items-center gap-2">
             <button
               onClick={submitForm}
@@ -580,48 +653,48 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
             </thead>
 
             <tbody className="divide-y divide-neutral-200">
-              {filteredAndSorted.map((guest) => {
+              {filteredAndSorted.map((group) => {
+                const guest = group.primary;
                 const n = normalizeGuestForDisplay(guest);
-                const isExpanded = expandedId === guest.id;
+                const isExpanded = expandedKey === group.key;
+
+                const notesHasContent = Boolean(String(guest.notes || "").trim());
+                const hasDupes = group.allIds.length > 1;
+
                 return (
-                  <Fragment key={guest.id}>
+                  <Fragment key={group.key}>
                     <tr className="align-top text-sm text-neutral-900">
                       <td className="px-3 py-3 font-medium text-neutral-900">
-                        {n.displayName}
+                        <div className="flex items-center gap-2">
+                          <span>{n.displayName}</span>
+                          {hasDupes ? (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+                              Duplikat ×{group.allIds.length}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
-                      <td className="px-3 py-3 text-neutral-700">
-                        {n.displayPhone ? n.displayPhone : "—"}
-                      </td>
-                      <td className="px-3 py-3 text-neutral-700">
-                        {n.displayEmail ? n.displayEmail : "—"}
-                      </td>
-                      <td className="px-3 py-3 text-neutral-700">
-                        {guest.children?.length ?? 0}
-                      </td>
-                      <td className="px-3 py-3 text-neutral-700">
-                        {personsCount(guest)}
-                      </td>
-                      <td className="px-3 py-3 text-neutral-700">
-                        {shortNote(guest.notes) || "—"}
-                      </td>
+                      <td className="px-3 py-3 text-neutral-700">{n.displayPhone ? n.displayPhone : "—"}</td>
+                      <td className="px-3 py-3 text-neutral-700">{n.displayEmail ? n.displayEmail : "—"}</td>
+                      <td className="px-3 py-3 text-neutral-700">{guest.children?.length ?? 0}</td>
+                      <td className="px-3 py-3 text-neutral-700">{personsCount(guest)}</td>
+                      <td className="px-3 py-3 text-neutral-700">{notesHasContent ? "Ja" : "—"}</td>
                       <td className="px-3 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <button
-                            onClick={() =>
-                              setExpandedId((p) => (p === guest.id ? null : guest.id))
-                            }
+                            onClick={() => setExpandedKey((p) => (p === group.key ? null : group.key))}
                             className="rounded-lg px-2.5 py-1 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-900 hover:text-white"
                           >
                             {isExpanded ? "Lukk" : "Åpne"}
                           </button>
                           <button
-                            onClick={() => openEditForm(guest)}
+                            onClick={() => openEditForm(group)}
                             className="rounded-lg px-2.5 py-1 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-900 hover:text-white"
                           >
                             Rediger
                           </button>
                           <button
-                            onClick={() => removeGuest(guest)}
+                            onClick={() => removeGroup(group)}
                             className="rounded-lg px-2.5 py-1 text-xs font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50"
                           >
                             Slett
@@ -634,12 +707,17 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                       <tr>
                         <td colSpan={7} className="px-3 pb-4">
                           <div className="rounded-xl bg-neutral-50 p-4">
-                            <div className="flex items-center justify-between">
-                              <h4 className="text-sm font-semibold text-neutral-900">
-                                Barn
-                              </h4>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div>
+                                <h4 className="text-sm font-semibold text-neutral-900">Detaljer</h4>
+                                {hasDupes ? (
+                                  <p className="mt-1 text-xs text-neutral-600">
+                                    Denne raden representerer {group.allIds.length} like gjester. “Slett” sletter alle.
+                                  </p>
+                                ) : null}
+                              </div>
                               <button
-                                onClick={() => openChildForm(guest)}
+                                onClick={() => openChildForm(group)}
                                 className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
                               >
                                 Legg til barn
@@ -649,10 +727,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                             {guest.children?.length ? (
                               <div className="mt-3 space-y-3">
                                 {guest.children.map((child) => (
-                                  <div
-                                    key={child.id}
-                                    className="rounded-lg border border-neutral-200 bg-white px-3 py-2"
-                                  >
+                                  <div key={child.id} className="rounded-lg border border-neutral-200 bg-white px-3 py-2">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                       <div>
                                         <div className="text-sm font-medium text-neutral-900">
@@ -665,7 +740,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                                       </div>
                                       <div className="flex gap-2">
                                         <button
-                                          onClick={() => openChildForm(guest, child)}
+                                          onClick={() => openChildForm(group, child)}
                                           className="rounded-lg px-2.5 py-1 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-900 hover:text-white"
                                         >
                                           Rediger
@@ -682,16 +757,12 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                                 ))}
                               </div>
                             ) : (
-                              <p className="mt-3 text-sm text-neutral-700">
-                                Ingen barn registrert.
-                              </p>
+                              <p className="mt-3 text-sm text-neutral-700">Ingen barn registrert.</p>
                             )}
 
-                            {guest.notes ? (
+                            {String(guest.notes || "").trim() ? (
                               <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-3">
-                                <div className="text-xs font-semibold text-neutral-700">
-                                  Fullt notat
-                                </div>
+                                <div className="text-xs font-semibold text-neutral-700">Notat</div>
                                 <div className="mt-1 whitespace-pre-wrap text-sm text-neutral-800">
                                   {guest.notes}
                                 </div>
@@ -713,9 +784,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                                 </div>
 
                                 {childForm.error && (
-                                  <p className="mt-2 text-xs text-red-600">
-                                    {childForm.error}
-                                  </p>
+                                  <p className="mt-2 text-xs text-red-600">{childForm.error}</p>
                                 )}
 
                                 <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -731,6 +800,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                                       className={INPUT_CLASSES}
                                     />
                                   </label>
+
                                   <label className="text-xs text-neutral-700">
                                     Alder
                                     <input
@@ -745,6 +815,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                                       min={0}
                                     />
                                   </label>
+
                                   <label className="text-xs text-neutral-700">
                                     Kjønn
                                     <select
@@ -762,6 +833,7 @@ export default function GuestsTab({ activityId }: { activityId: string }) {
                                       <option value="other">Annet / ønsker ikke å oppgi</option>
                                     </select>
                                   </label>
+
                                   <label className="text-xs text-neutral-700 md:col-span-2">
                                     Notater
                                     <textarea
