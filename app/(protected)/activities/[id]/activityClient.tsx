@@ -3,7 +3,7 @@
 /**
  * Klientside for aktivitetsdetaljer.
  * - Vinrød/lilla hero
- * - Faner (Oversikt, Deltakere, Ledere, Økter, ...)
+ * - Faner (styres nå av activity.tab_config (DB) + fallback)
  * - "Legg meg til som leder" (LS + Supabase e-post → medlemmer)
  * - DB-first + LS-fallback for deltakere/ledere
  * - Økter speiles til follies.calendar.v1
@@ -22,10 +22,21 @@ import {
 } from "../../../../lib/activitiesClient";
 import { getLeaders, getParticipants } from "../../../../lib/enrollmentsClient";
 
+import GuestsTab from "./GuestsTab";
+
 /* ----------------------------- Typer & constants ---------------------------- */
 
 type AnyObj = Record<string, any>;
-type Tab = "oversikt" | "deltakere" | "ledere" | "okter" | "filer" | "meldinger";
+
+type Tab =
+  | "oversikt"
+  | "deltakere"
+  | "ledere"
+  | "okter"
+  | "gjester"
+  | "filer"
+  | "meldinger";
+
 type Visuals = { coverUrl: string | null; accent: string | null };
 type LSEnroll = { leaders: string[]; participants: string[] };
 
@@ -38,7 +49,11 @@ const ENR_LS = "follies.enrollments.v1";
 /* ------------------------------ Hjelpefunksjoner ---------------------------- */
 
 const safeJSON = <T,>(s: string | null): T | null => {
-  try { return s ? (JSON.parse(s) as T) : null; } catch { return null; }
+  try {
+    return s ? (JSON.parse(s) as T) : null;
+  } catch {
+    return null;
+  }
 };
 
 const labelForType = (t?: string | null) => {
@@ -60,19 +75,30 @@ const typeClass = (t?: string | null) => {
 };
 
 const gradientFor = (accent?: string | null, t?: string | null) => {
-  if (accent) return `linear-gradient(90deg, ${accent} 0%, ${accent}CC 50%, ${accent}99 100%)`;
+  if (accent)
+    return `linear-gradient(90deg, ${accent} 0%, ${accent}CC 50%, ${accent}99 100%)`;
   const lbl = labelForType(t);
-  if (lbl === "Forestilling") return "linear-gradient(90deg,#6d28d9 0%,#a21caf 50%,#d946ef 100%)";
-  if (lbl === "Event") return "linear-gradient(90deg,#7f1d1d 0%,#991b1b 50%,#b91c1c 100%)";
+  if (lbl === "Forestilling")
+    return "linear-gradient(90deg,#6d28d9 0%,#a21caf 50%,#d946ef 100%)";
+  if (lbl === "Event")
+    return "linear-gradient(90deg,#7f1d1d 0%,#991b1b 50%,#b91c1c 100%)";
   return "linear-gradient(90deg,#7f1d1d 0%,#b91c1c 50%,#dc2626 100%)";
 };
 
 const initials = (name?: string) =>
-  ((name ?? "").trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("")) || "A";
+  ((name ?? "")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("")) || "A";
 
 function uniquePeople(list: AnyObj[], keyFn: (m: AnyObj) => string) {
   const map = new Map<string, AnyObj>();
-  for (const m of list) { const k = keyFn(m); if (k) map.set(k, m); }
+  for (const m of list) {
+    const k = keyFn(m);
+    if (k) map.set(k, m);
+  }
   return Array.from(map.values());
 }
 
@@ -80,20 +106,35 @@ function uniquePeople(list: AnyObj[], keyFn: (m: AnyObj) => string) {
 function readMembersAll(): AnyObj[] {
   const v1 = safeJSON<any[]>(localStorage.getItem(LS_MEM_V1)) ?? [];
   const old = safeJSON<any[]>(localStorage.getItem(LS_MEM_OLD)) ?? [];
-  const keyOf = (m: any) => String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id ?? "");
+  const keyOf = (m: any) =>
+    String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id ?? "");
   const map = new Map<string, AnyObj>();
   for (const m of [...old, ...v1]) map.set(keyOf(m), m);
   return Array.from(map.values());
 }
 function memberById(id: string, all: AnyObj[]): AnyObj | null {
-  return all.find((m) => String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id ?? "") === String(id)) || null;
+  return (
+    all.find(
+      (m) =>
+        String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id ?? "") === String(id)
+    ) || null
+  );
 }
-function memberIdByEmail(email: string | null | undefined, all: AnyObj[]): string | null {
+function memberIdByEmail(
+  email: string | null | undefined,
+  all: AnyObj[]
+): string | null {
   if (!email) return null;
   const e = email.toLowerCase();
   const hit =
     all.find((m) => {
-      const cand = m.email || m.contact_email || m.mail || m.epost || m.primary_email || null;
+      const cand =
+        m.email ||
+        m.contact_email ||
+        m.mail ||
+        m.epost ||
+        m.primary_email ||
+        null;
       return cand && String(cand).toLowerCase() === e;
     }) || null;
   if (!hit) return null;
@@ -103,27 +144,53 @@ function memberIdByEmail(email: string | null | undefined, all: AnyObj[]): strin
 /* Activity visuals (LS) */
 function pickImageFlexible(a: any): string | null {
   return (
-    a?.coverUrl || a?.cover_url || a?.cover || a?.image_url || a?.image || a?.bannerUrl || a?.banner_url ||
-    a?.thumb || a?.thumbnail || a?.avatar || a?.logo || a?.icon || a?.media?.cover || a?.media?.image ||
-    a?.image?.url || a?.cover?.url || a?.assets?.cover || a?.assets?.image || null
+    a?.coverUrl ||
+    a?.cover_url ||
+    a?.cover ||
+    a?.image_url ||
+    a?.image ||
+    a?.bannerUrl ||
+    a?.banner_url ||
+    a?.thumb ||
+    a?.thumbnail ||
+    a?.avatar ||
+    a?.logo ||
+    a?.icon ||
+    a?.media?.cover ||
+    a?.media?.image ||
+    a?.image?.url ||
+    a?.cover?.url ||
+    a?.assets?.cover ||
+    a?.assets?.image ||
+    null
   );
 }
 function pickAccentFlexible(a: any): string | null {
-  const v = a?.accent || a?.accentColor || a?.color || a?.themeColor || a?.primary_color || a?.style?.accent || null;
+  const v =
+    a?.accent ||
+    a?.accentColor ||
+    a?.color ||
+    a?.themeColor ||
+    a?.primary_color ||
+    a?.style?.accent ||
+    null;
   return v ? String(v) : null;
 }
 function visualsFromLocalStorage(activityId: string): Visuals {
   const v1 = safeJSON<any[]>(localStorage.getItem(LS_ACT_V1)) ?? [];
   const old = safeJSON<any[]>(localStorage.getItem(LS_ACT_OLD)) ?? [];
   const all = [...old, ...v1];
-  const hit = all.find((a) => String(a?.id ?? a?.uuid ?? a?._id) === String(activityId));
+  const hit = all.find(
+    (a) => String(a?.id ?? a?.uuid ?? a?._id) === String(activityId)
+  );
   if (!hit) return { coverUrl: null, accent: null };
   return { coverUrl: pickImageFlexible(hit), accent: pickAccentFlexible(hit) };
 }
 
 /* Enrollments (LS) */
 function loadEnrollmentsLS(activityId: string): LSEnroll {
-  const all = safeJSON<Record<string, LSEnroll>>(localStorage.getItem(ENR_LS)) ?? {};
+  const all =
+    safeJSON<Record<string, LSEnroll>>(localStorage.getItem(ENR_LS)) ?? {};
   const cur = all[activityId] ?? { leaders: [], participants: [] };
   return {
     leaders: Array.from(new Set(cur.leaders.map(String))),
@@ -131,24 +198,124 @@ function loadEnrollmentsLS(activityId: string): LSEnroll {
   };
 }
 function saveEnrollmentsLS(activityId: string, data: LSEnroll) {
-  const all = safeJSON<Record<string, LSEnroll>>(localStorage.getItem(ENR_LS)) ?? {};
+  const all =
+    safeJSON<Record<string, LSEnroll>>(localStorage.getItem(ENR_LS)) ?? {};
   all[activityId] = {
     leaders: Array.from(new Set(data.leaders.map(String))),
     participants: Array.from(new Set(data.participants.map(String))),
   };
   localStorage.setItem(ENR_LS, JSON.stringify(all));
 }
-function addEnrollmentLS(activityId: string, memberId: string, role: "leader" | "participant") {
+function addEnrollmentLS(
+  activityId: string,
+  memberId: string,
+  role: "leader" | "participant"
+) {
   const cur = loadEnrollmentsLS(activityId);
-  if (role === "leader") cur.leaders = Array.from(new Set([...cur.leaders, String(memberId)]));
-  else cur.participants = Array.from(new Set([...cur.participants, String(memberId)]));
+  if (role === "leader")
+    cur.leaders = Array.from(new Set([...cur.leaders, String(memberId)]));
+  else
+    cur.participants = Array.from(
+      new Set([...cur.participants, String(memberId)])
+    );
   saveEnrollmentsLS(activityId, cur);
   return cur;
 }
 
+/* -------------------- Faner fra DB (tab_config) -------------------- */
+
+const ALL_TABS: Tab[] = [
+  "oversikt",
+  "deltakere",
+  "ledere",
+  "okter",
+  "gjester",
+  "filer",
+  "meldinger",
+];
+
+const TAB_SYNONYMS: Record<string, Tab> = {
+  overview: "oversikt",
+  oversikt: "oversikt",
+
+  participants: "deltakere",
+  participant: "deltakere",
+  members: "deltakere",
+  deltakere: "deltakere",
+
+  leaders: "ledere",
+  leader: "ledere",
+  ledere: "ledere",
+
+  sessions: "okter",
+  okter: "okter",
+
+  guests: "gjester",
+  guest: "gjester",
+  gjester: "gjester",
+
+  files: "filer",
+  filer: "filer",
+
+  messages: "meldinger",
+  meldinger: "meldinger",
+};
+
+function normalizeTabKey(raw: any): Tab | null {
+  if (raw == null) return null;
+  const s = String(raw).trim().toLowerCase();
+  if (!s) return null;
+  if ((ALL_TABS as string[]).includes(s)) return s as Tab;
+  return TAB_SYNONYMS[s] ?? null;
+}
+
+function computeEnabledTabs(act: DbActivity | null): Tab[] {
+  const fallback: Tab[] = [
+    "oversikt",
+    "deltakere",
+    "ledere",
+    "okter",
+    "filer",
+    "meldinger",
+  ];
+  if (!act) return fallback;
+
+  const raw = (act as any).tab_config;
+
+  const cleaned: Tab[] = [];
+  const valid = new Set<Tab>(ALL_TABS);
+
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      const k = normalizeTabKey(entry);
+      if (k && valid.has(k) && !cleaned.includes(k)) cleaned.push(k);
+    }
+  } else if (raw && typeof raw === "object") {
+    for (const [rk, val] of Object.entries(raw)) {
+      if (!val) continue;
+      const k = normalizeTabKey(rk);
+      if (k && valid.has(k) && !cleaned.includes(k)) cleaned.push(k);
+    }
+  }
+
+  if (cleaned.length) {
+    if (!cleaned.includes("oversikt")) cleaned.unshift("oversikt");
+    return cleaned;
+  }
+
+  // fallback + “has_guests” hvis dere bruker det feltet
+  const tabs = [...fallback];
+  if ((act as any).has_guests) {
+    if (!tabs.includes("gjester")) tabs.splice(4, 0, "gjester"); // før filer/meldinger
+  }
+  return tabs;
+}
+
 /* ------------------------ SessionsPanel – dynamisk klient ------------------- */
 
-const SessionsPanel = dynamic(() => import("./SessionsPanel.client"), { ssr: false });
+const SessionsPanel = dynamic(() => import("./SessionsPanel.client"), {
+  ssr: false,
+});
 
 /* --------------------------------- Komponent -------------------------------- */
 
@@ -157,10 +324,12 @@ export default function ActivityClient() {
   const router = useRouter();
   const supabase = createClientComponentClient();
 
-  // NB: ingen tidlig return før hooks er definert
-  const id = Array.isArray(params?.id) ? params.id[0] : (params?.id as string | undefined);
+  const id = Array.isArray(params?.id)
+    ? params.id[0]
+    : (params?.id as string | undefined);
 
   const [tab, setTab] = useState<Tab>("oversikt");
+  const [enabledTabs, setEnabledTabs] = useState<Tab[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -175,12 +344,15 @@ export default function ActivityClient() {
 
   const [meMemberId, setMeMemberId] = useState<string | null>(null);
   const [meError, setMeError] = useState<string | null>(null);
-  const [enrLS, setEnrLS] = useState<LSEnroll>({ leaders: [], participants: [] });
+  const [enrLS, setEnrLS] = useState<LSEnroll>({
+    leaders: [],
+    participants: [],
+  });
 
-  // Monteringsvakt (eliminer SSR/HMR-diff): ikke strengt nødvendig her,
-  // men gjør render-path identisk hver gang i dev.
   const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -210,6 +382,10 @@ export default function ActivityClient() {
         setAct(a);
         setVis(visualsFromLocalStorage(String(id)));
 
+        const tabs = computeEnabledTabs(a);
+        setEnabledTabs(tabs);
+        if (!tabs.includes(tab)) setTab("oversikt");
+
         // Medlemmer (LS)
         const allMembers = readMembersAll();
         setMembersAll(allMembers);
@@ -220,24 +396,37 @@ export default function ActivityClient() {
 
         // Deltakere/ledere (DB-first) + LS-union
         try {
-          const [pDB, lDB] = await Promise.all([getParticipants(String(id)), getLeaders(String(id))]);
+          const [pDB, lDB] = await Promise.all([
+            getParticipants(String(id)),
+            getLeaders(String(id)),
+          ]);
 
-          const byId = (m: any) => String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id ?? "");
+          const byId = (m: any) =>
+            String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id ?? "");
           const fromLS = (ids: string[]) =>
-            ids.map((mid) => memberById(String(mid), allMembers)).filter(Boolean) as AnyObj[];
+            ids
+              .map((mid) => memberById(String(mid), allMembers))
+              .filter(Boolean) as AnyObj[];
 
-          setParticipants(uniquePeople([...(pDB || []), ...fromLS(eLS.participants)], byId));
-          setLeaders(uniquePeople([...(lDB || []), ...fromLS(eLS.leaders)], byId));
+          setParticipants(
+            uniquePeople([...(pDB || []), ...fromLS(eLS.participants)], byId)
+          );
+          setLeaders(
+            uniquePeople([...(lDB || []), ...fromLS(eLS.leaders)], byId)
+          );
         } catch {
           const fromLS = (ids: string[]) =>
-            ids.map((mid) => memberById(String(mid), allMembers)).filter(Boolean) as AnyObj[];
+            ids
+              .map((mid) => memberById(String(mid), allMembers))
+              .filter(Boolean) as AnyObj[];
           setParticipants(fromLS(eLS.participants));
           setLeaders(fromLS(eLS.leaders));
         }
 
         // Sessions (LS)
         const SESS_LS = "follies.activitySessions.v1";
-        const allSess = safeJSON<Record<string, any[]>>(localStorage.getItem(SESS_LS)) ?? {};
+        const allSess =
+          safeJSON<Record<string, any[]>>(localStorage.getItem(SESS_LS)) ?? {};
         setSessions(allSess[String(id)] ?? []);
 
         // Meg selv (Supabase → e-post → medlem)
@@ -245,8 +434,15 @@ export default function ActivityClient() {
           const { data } = await supabase.auth.getUser();
           const email = data?.user?.email ?? null;
           const myId = memberIdByEmail(email, allMembers);
-          if (myId) { setMeMemberId(myId); setMeError(null); }
-          else { setMeMemberId(null); setMeError("Fant ingen medlem med din e-post. Opprett/lenk medlem først."); }
+          if (myId) {
+            setMeMemberId(myId);
+            setMeError(null);
+          } else {
+            setMeMemberId(null);
+            setMeError(
+              "Fant ingen medlem med din e-post. Opprett/lenk medlem først."
+            );
+          }
         } catch {
           // ikke kritisk
         }
@@ -260,20 +456,23 @@ export default function ActivityClient() {
         }
       }
     })();
-    return () => { alive = false; };
-  }, [id]); // bevisst ikke supabase i deps
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   const typeLabel = useMemo(() => labelForType((act as any)?.type), [act]);
 
   const enrolledIds: string[] = useMemo(() => {
     const idsFromPeople = [
-      ...leaders.map((m) =>
-        String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id ?? "")
-      ),
-      ...participants.map((m) =>
-        String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id ?? "")
-      ),
-    ].filter(Boolean);
+      ...leaders
+        .map((m) => String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id ?? ""))
+        .filter(Boolean),
+      ...participants
+        .map((m) => String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id ?? ""))
+        .filter(Boolean),
+    ];
     const all = new Set<string>([
       ...idsFromPeople,
       ...enrLS.leaders.map(String),
@@ -282,35 +481,64 @@ export default function ActivityClient() {
     return Array.from(all);
   }, [leaders, participants, enrLS]);
 
-  if (!mounted) return null;                // ⬅️ sørger for ren CSR-path i dev
-  if (loading) return <main className="px-4 py-6 text-neutral-900">Laster…</main>;
+  if (!mounted) return null;
+  if (loading)
+    return <main className="px-4 py-6 text-neutral-900">Laster…</main>;
   if (err) {
     return (
       <main className="px-4 py-6 text-neutral-900">
         <div className="text-red-600 mb-3 font-semibold">Feil</div>
         <div className="text-red-700 text-sm mb-4">{err}</div>
-        <button onClick={() => router.push("/activities")} className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-white text-sm font-semibold">
+        <button
+          onClick={() => router.push("/activities")}
+          className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-white text-sm font-semibold"
+        >
           Tilbake til aktiviteter
         </button>
       </main>
     );
   }
-  if (!act) return <main className="px-4 py-6 text-neutral-900">Finner ikke aktiviteten.</main>;
+  if (!act)
+    return (
+      <main className="px-4 py-6 text-neutral-900">Finner ikke aktiviteten.</main>
+    );
 
-  /* HERO */
   const gradient = gradientFor(vis.accent, (act as any)?.type);
   const avatar = vis.coverUrl || null;
   const initialsText = initials(act.name);
 
   const onAddMeAsLeader = () => {
-    if (!meMemberId) { alert(meError || "Kunne ikke finne ditt medlem i medlemslisten."); return; }
+    if (!meMemberId) {
+      alert(meError || "Kunne ikke finne ditt medlem i medlemslisten.");
+      return;
+    }
     const updated = addEnrollmentLS(String(act.id), meMemberId, "leader");
     setEnrLS(updated);
     const meObj = memberById(meMemberId, membersAll);
-    if (meObj && !leaders.some((m) => String(m.id ?? m._id) === String(meMemberId))) {
+    if (
+      meObj &&
+      !leaders.some((m) => String(m.id ?? m._id) === String(meMemberId))
+    ) {
       setLeaders((prev) => [...prev, meObj]);
     }
   };
+
+  /* HERO */
+  const typeLbl = typeLabel;
+
+  // Bygg tabliste basert på enabledTabs (DB)
+  const tabDefs: [Tab, string][] = [];
+  if (enabledTabs.includes("oversikt")) tabDefs.push(["oversikt", "Oversikt"]);
+  if (enabledTabs.includes("deltakere"))
+    tabDefs.push(["deltakere", `Deltakere (${participants.length})`]);
+  if (enabledTabs.includes("ledere"))
+    tabDefs.push(["ledere", `Ledere (${leaders.length})`]);
+  if (enabledTabs.includes("okter")) tabDefs.push(["okter", "Økter"]);
+  if (enabledTabs.includes("gjester")) tabDefs.push(["gjester", "Gjester"]);
+  if (enabledTabs.includes("filer")) tabDefs.push(["filer", "Filer"]);
+  if (enabledTabs.includes("meldinger")) tabDefs.push(["meldinger", "Meldinger"]);
+
+  const isWideTab = tab === "gjester"; // full bredde for gjester (ingen høyre-kort)
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
@@ -322,34 +550,56 @@ export default function ActivityClient() {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
             <div className="relative h-16 w-16 overflow-hidden rounded-2xl ring-1 ring-white/60 bg-white/10 backdrop-blur-[1px] flex items-center justify-center text-xl font-semibold text-white">
-              {avatar ? (
+              {avatar && imgOk ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={avatar} alt="" className="h-full w-full object-cover" onError={() => setImgOk(false)} />
+                <img
+                  src={avatar}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  onError={() => setImgOk(false)}
+                />
               ) : (
                 <span>{initialsText}</span>
               )}
             </div>
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-semibold tracking-tight text-white">{act.name}</h1>
-                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${typeClass((act as any)?.type)} ring-1 ring-white/40`}>
-                  {typeLabel}
+                <h1 className="text-3xl font-semibold tracking-tight text-white">
+                  {act.name}
+                </h1>
+                <span
+                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${typeClass(
+                    (act as any)?.type
+                  )} ring-1 ring-white/40`}
+                >
+                  {typeLbl}
                 </span>
               </div>
               <p className="mt-1 text-sm text-white/90">
-                {act.start_date ? `Start: ${act.start_date}` : "Start: —"} · {act.end_date ? `Slutt: ${act.end_date}` : "Slutt: —"}
+                {act.start_date ? `Start: ${act.start_date}` : "Start: —"} ·{" "}
+                {act.end_date ? `Slutt: ${act.end_date}` : "Slutt: —"}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <Link href="/activities" className="rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold text-white ring-1 ring-white/40 hover:bg-white/25">
+            <Link
+              href="/activities"
+              className="rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold text-white ring-1 ring-white/40 hover:bg-white/25"
+            >
               Til oversikt
             </Link>
-            <button onClick={() => router.push(`/activities/${act.id}/edit`)} className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 hover:bg-white/90">
+            <button
+              onClick={() => router.push(`/activities/${act.id}/edit`)}
+              className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 hover:bg-white/90"
+            >
               Rediger
             </button>
-            <button onClick={onAddMeAsLeader} className="rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold text-white ring-1 ring-white/40 hover:bg-white/25" title={meError || undefined}>
+            <button
+              onClick={onAddMeAsLeader}
+              className="rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold text-white ring-1 ring-white/40 hover:bg-white/25"
+              title={meError || undefined}
+            >
               Legg meg til som leder
             </button>
           </div>
@@ -358,14 +608,7 @@ export default function ActivityClient() {
 
       {/* Faner */}
       <div className="mt-6 flex gap-6 border-b border-neutral-200">
-        {([
-          ["oversikt", "Oversikt"],
-          ["deltakere", `Deltakere (${participants.length})`],
-          ["ledere", `Ledere (${leaders.length})`],
-          ["okter", "Økter"],
-          ["filer", "Filer"],
-          ["meldinger", "Meldinger"],
-        ] as [Tab, string][]).map(([key, label]) => (
+        {tabDefs.map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -381,16 +624,20 @@ export default function ActivityClient() {
       </div>
 
       {/* Innhold */}
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <section className="lg:col-span-2 space-y-6">
+      <div className={`mt-6 grid gap-6 ${isWideTab ? "" : "lg:grid-cols-3"}`}>
+        <section className={`${isWideTab ? "" : "lg:col-span-2"} space-y-6`}>
           {tab === "oversikt" && (
             <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
               <h2 className="text-lg font-semibold">Oversikt</h2>
-              <p className="mt-2 text-[15px] text-neutral-800">{act.description ? act.description : "Ingen beskrivelse."}</p>
+              <p className="mt-2 text-[15px] text-neutral-800">
+                {act.description ? act.description : "Ingen beskrivelse."}
+              </p>
             </div>
           )}
 
-          {tab === "deltakere" && <PeoplePanel title="Deltakere" people={participants} />}
+          {tab === "deltakere" && (
+            <PeoplePanel title="Deltakere" people={participants} />
+          )}
           {tab === "ledere" && <PeoplePanel title="Ledere" people={leaders} />}
 
           {tab === "okter" && (
@@ -405,30 +652,54 @@ export default function ActivityClient() {
             />
           )}
 
+          {tab === "gjester" && <GuestsTab activityId={String(act.id)} />}
+
           {tab === "filer" && (
             <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm text-neutral-700">
-              Her kan vi senere legge opplasting/visning av filer (Bilder/Tekst/Musikk/Annet).
+              Her kan vi senere legge opplasting/visning av filer
+              (Bilder/Tekst/Musikk/Annet).
             </div>
           )}
 
           {tab === "meldinger" && (
             <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm text-neutral-700">
-              Her kan vi senere legge kunngjøringer/meldinger til deltakere/ledere.
+              Her kan vi senere legge kunngjøringer/meldinger til
+              deltakere/ledere.
             </div>
           )}
         </section>
 
-        <aside className="space-y-6">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-            <h3 className="text-sm font-semibold text-neutral-900">Info</h3>
-            <dl className="mt-3 text-sm text-neutral-700 space-y-2">
-              <div className="flex justify-between gap-4"><dt>Type</dt><dd className="font-medium">{typeLabel}</dd></div>
-              <div className="flex justify-between gap-4"><dt>Status</dt><dd className="font-medium">{(act as any)?.archived ? "Arkivert" : "Aktiv"}</dd></div>
-              <div className="flex justify-between gap-4"><dt>Start</dt><dd className="font-medium">{(act as any)?.start_date || "—"}</dd></div>
-              <div className="flex justify-between gap-4"><dt>Slutt</dt><dd className="font-medium">{(act as any)?.end_date || "—"}</dd></div>
-            </dl>
-          </div>
-        </aside>
+        {!isWideTab ? (
+          <aside className="space-y-6">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+              <h3 className="text-sm font-semibold text-neutral-900">Info</h3>
+              <dl className="mt-3 text-sm text-neutral-700 space-y-2">
+                <div className="flex justify-between gap-4">
+                  <dt>Type</dt>
+                  <dd className="font-medium">{typeLbl}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt>Status</dt>
+                  <dd className="font-medium">
+                    {(act as any)?.archived ? "Arkivert" : "Aktiv"}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt>Start</dt>
+                  <dd className="font-medium">
+                    {(act as any)?.start_date || "—"}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt>Slutt</dt>
+                  <dd className="font-medium">
+                    {(act as any)?.end_date || "—"}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          </aside>
+        ) : null}
       </div>
     </main>
   );
@@ -452,24 +723,42 @@ function PeoplePanel({ title, people }: { title: string; people: AnyObj[] }) {
           {people.map((m) => {
             const mid = String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id);
             const name =
-              `${m.first_name || m.fornavn || ""} ${m.last_name || m.etternavn || ""}`.trim() ||
-              m.name || "Uten navn";
+              `${m.first_name || m.fornavn || ""} ${
+                m.last_name || m.etternavn || ""
+              }`.trim() ||
+              m.name ||
+              "Uten navn";
             const email = m.email || m.contact_email || null;
             const phone = m.phone || m.mobile || m.telephone || null;
             return (
-              <li key={mid} className="flex items-center justify-between gap-3 py-3">
+              <li
+                key={mid}
+                className="flex items-center justify-between gap-3 py-3"
+              >
                 <div>
-                  <p className="text-[15px] font-medium text-neutral-900">{name}</p>
+                  <p className="text-[15px] font-medium text-neutral-900">
+                    {name}
+                  </p>
                   <p className="text-xs text-neutral-700">
-                    {email ? <span>{email}</span> : <span className="text-neutral-500">Ingen e-post</span>}
+                    {email ? (
+                      <span>{email}</span>
+                    ) : (
+                      <span className="text-neutral-500">Ingen e-post</span>
+                    )}
                     {phone ? <span> · {phone}</span> : null}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Link href={`/members/${mid}`} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100">
+                  <Link
+                    href={`/members/${mid}`}
+                    className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
+                  >
                     Åpne
                   </Link>
-                  <Link href={`/members/${mid}/edit`} className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700">
+                  <Link
+                    href={`/members/${mid}/edit`}
+                    className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"
+                  >
                     Rediger
                   </Link>
                 </div>
