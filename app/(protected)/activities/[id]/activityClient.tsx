@@ -662,10 +662,7 @@ export default function ActivityClient() {
           )}
 
           {tab === "meldinger" && (
-            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm text-neutral-700">
-              Her kan vi senere legge kunngjøringer/meldinger til
-              deltakere/ledere.
-            </div>
+            <MessagesPanel activityId={String(act.id)} />
           )}
         </section>
 
@@ -767,6 +764,164 @@ function PeoplePanel({ title, people }: { title: string; people: AnyObj[] }) {
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+function MessagesPanel({ activityId }: { activityId: string }) {
+  const [target, setTarget] = useState<
+    "participants" | "leaders" | "volunteers" | "guests" | "all-members"
+  >("participants");
+  const [channel, setChannel] = useState<"both" | "messenger" | "email">(
+    "both"
+  );
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [info, setInfo] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInfo(null);
+    setError(null);
+    setSending(true);
+    try {
+      const res = await fetch(`/api/activities/${activityId}/broadcast`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target, channel, subject, body }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || "Kunne ikke sende meldingen.");
+      }
+      setInfo(
+        `Sendt: ${json?.emailCount || 0} e-post(er), ${
+          json?.messengerCount || 0
+        } messenger-melding(er).`
+      );
+      setSubject("");
+      setBody("");
+    } catch (err: any) {
+      setError(err?.message || "Noe gikk galt ved sending.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const isGuestTarget = target === "guests";
+  const isVolunteerTarget = target === "volunteers";
+  const messengerAllowed = !(isGuestTarget || isVolunteerTarget);
+
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm text-neutral-800">
+      <h2 className="text-lg font-semibold text-neutral-900">Send melding</h2>
+      <p className="mt-1 text-sm text-neutral-700">
+        Send e-post til gjester/frivillige, eller porter meldingen til Messenger
+        for deltakere/ledere. E-post krever SMTP-oppsett på serveren.
+      </p>
+
+      <form onSubmit={onSubmit} className="mt-4 space-y-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="flex flex-col gap-1 text-sm font-medium text-neutral-800">
+            Mottakere
+            <select
+              value={target}
+              onChange={(e) =>
+                setTarget(
+                  e.target.value as
+                    | "participants"
+                    | "leaders"
+                    | "volunteers"
+                    | "guests"
+                    | "all-members"
+                )
+              }
+              className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600"
+            >
+              <option value="participants">Deltakere/medlemmer</option>
+              <option value="leaders">Ledere</option>
+              <option value="volunteers">Frivillige</option>
+              <option value="guests">Gjester</option>
+              <option value="all-members">Alle (ledere, deltakere, frivillige)</option>
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-sm font-medium text-neutral-800">
+            Kanal
+            <select
+              value={channel}
+              onChange={(e) =>
+                setChannel(e.target.value as "both" | "messenger" | "email")
+              }
+              className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600"
+            >
+              <option value="both" disabled={isGuestTarget || isVolunteerTarget}>
+                Messenger + e-post (medlemmer)
+              </option>
+              <option value="messenger" disabled={!messengerAllowed}>
+                Kun Messenger (medlemmer/ledere)
+              </option>
+              <option value="email">
+                Kun e-post {isGuestTarget ? "(gjester)" : ""}
+              </option>
+            </select>
+            {(isGuestTarget || isVolunteerTarget) && (
+              <span className="text-xs text-neutral-600">
+                Gjester/frivillige støtter bare e-post.
+              </span>
+            )}
+          </label>
+        </div>
+
+        <label className="flex flex-col gap-1 text-sm font-medium text-neutral-800">
+          Emne
+          <input
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            required
+            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600"
+            placeholder="Emne for meldingen"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm font-medium text-neutral-800">
+          Melding
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            required
+            rows={6}
+            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600"
+            placeholder="Skriv meldingen som skal sendes"
+          />
+        </label>
+
+        {error ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            {error}
+          </div>
+        ) : null}
+        {info ? (
+          <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+            {info}
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="submit"
+            disabled={sending}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+          >
+            {sending ? "Sender…" : "Send melding"}
+          </button>
+          <span className="text-xs text-neutral-600">
+            Meldinger til medlemmer/ledere lagres også i Messenger.
+          </span>
+        </div>
+      </form>
     </div>
   );
 }

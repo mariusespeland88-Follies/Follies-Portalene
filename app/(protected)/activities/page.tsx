@@ -23,6 +23,7 @@ const LS_ACT_V1 = "follies.activities.v1";
 const LS_ACT_OLD = "follies.activities";
 const LS_FILES = "follies.activityFiles.v1";
 const LS_COVERS = "follies.activityCovers.v1"; // { [activityId]: { dataUrl, mime, updated_at } }
+const BUCKET = "activity-media";
 
 const safeJSON = <T,>(s: string | null): T | null => { try { return s ? (JSON.parse(s) as T) : null; } catch { return null; } };
 
@@ -205,6 +206,50 @@ export default function ActivitiesPage() {
     return () => window.removeEventListener("storage", onStorage);
   }, [refreshFromStorage]);
 
+  const makeCoverUrl = useCallback(
+    async (path: string | null, cacheBust: number) => {
+      if (!path) return null;
+      const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      let url = pub?.publicUrl || null;
+      try {
+        const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(path, 60 * 60);
+        if (signed?.signedUrl) url = signed.signedUrl;
+      } catch {
+        // ignore and fall back to public URL
+      }
+      return url ? `${url}${url.includes("?") ? "&" : "?"}v=${cacheBust}` : null;
+    },
+    [supabase]
+  );
+
+  const fetchCoverUrls = useCallback(
+    async (ids: string[]) => {
+      const map = new Map<string, string | null>();
+      if (!ids.length) return map;
+      const cacheBust = Date.now();
+
+      const { data, error } = await supabase
+        .from("activity_details")
+        .select("activity_id, cover_image_path")
+        .in("activity_id", ids);
+      if (error) throw error;
+
+      const rows = Array.isArray(data) ? data : [];
+      await Promise.all(
+        rows.map(async (row: any) => {
+          const activityId = String(row?.activity_id ?? "");
+          const path = (row as any)?.cover_image_path as string | null;
+          if (!activityId || !path) return;
+          const url = await makeCoverUrl(path, cacheBust);
+          if (url) map.set(activityId, url);
+        })
+      );
+
+      return map;
+    },
+    [makeCoverUrl, supabase]
+  );
+
   const loadFromSupabase = useCallback(async () => {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -218,9 +263,13 @@ export default function ActivitiesPage() {
       if (error) throw error;
 
       const rows = Array.isArray(data) ? data : [];
+      const ids = rows.map((row) => activityIdKey(row as AnyObj, ""));
+      const coverMap = await fetchCoverUrls(ids.filter(Boolean));
+
       const normalizedRows = rows.map((row, idx) => ({
         ...row,
         id: activityIdKey(row as AnyObj, `db-${idx}`),
+        cover_url: coverMap.get(activityIdKey(row as AnyObj, "")) ?? null,
       }));
 
       const merged = mergeActivityRecords(normalizedRows, readActivityStore());
@@ -229,7 +278,7 @@ export default function ActivitiesPage() {
     } catch {
       // behold lokal data hvis Supabase ikke svarer
     }
-  }, [supabase]);
+  }, [fetchCoverUrls, supabase]);
 
   useEffect(() => {
     loadFromSupabase();
