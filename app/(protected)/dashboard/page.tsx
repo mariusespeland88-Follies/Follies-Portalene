@@ -56,6 +56,34 @@ function idAliases(o: AnyObj): string[] {
 function matchesId(o: AnyObj, id: string): boolean {
   return idAliases(o).some((x) => x === id);
 }
+function firstUrlLike(v: any): string | null {
+  if (!v) return null;
+  if (typeof v === "string") return v;
+  if (Array.isArray(v)) {
+    for (const it of v) {
+      const u = firstUrlLike(
+        (it as any)?.url ||
+          (it as any)?.src ||
+          (it as any)?.image ||
+          (it as any)?.href ||
+          it
+      );
+      if (u) return u;
+    }
+  } else if (typeof v === "object") {
+    return (
+      (v as any).url ||
+      (v as any).src ||
+      (v as any).image ||
+      (v as any).href ||
+      firstUrlLike((v as any).file) ||
+      firstUrlLike((v as any).cover) ||
+      firstUrlLike((v as any).photo) ||
+      null
+    );
+  }
+  return null;
+}
 
 function fullName(m: AnyObj): string {
   const fn = pick(m, ["first_name", "firstName", "fornavn"], "");
@@ -155,6 +183,30 @@ function isUserInActivity(a: AnyObj, me: { id?: string; email?: string }) {
     }
   }
   return false;
+}
+function activityCoverUrl(a: AnyObj): string | null {
+  const direct = pick(
+    a,
+    [
+      "cover_url",
+      "coverUrl",
+      "cover",
+      "image_url",
+      "imageUrl",
+      "image",
+      "banner",
+      "poster",
+      "thumbnail",
+      "thumb",
+      "picture",
+      "photo",
+      "hero",
+      "img",
+    ],
+    null
+  );
+  const url = firstUrlLike(direct);
+  return url ? String(url) : null;
 }
 
 /* ---------- leder-tilganger fra perms (LS) ---------- */
@@ -544,17 +596,35 @@ export default function DashboardPage() {
             <ul className="mt-3 divide-y">
               {myActivities.slice(0, 6).map((a) => {
                 const id = activityId(a);
+                const cover = activityCoverUrl(a);
+                const title = activityTitle(a);
                 return (
                   <li
                     key={id}
                     className="py-3 flex items-center justify-between gap-3"
                   >
-                    <div className="min-w-0">
-                      <div className="text-sm text-gray-700">
-                        {activityTypeLabel(a)}
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="h-14 w-20 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 shadow-sm">
+                        {cover ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={cover}
+                            alt="Forsidebilde"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xs font-semibold uppercase text-neutral-500">
+                            {title.slice(0, 2) || "—"}
+                          </div>
+                        )}
                       </div>
-                      <div className="font-medium text-black truncate">
-                        {activityTitle(a)}
+                      <div className="min-w-0">
+                        <div className="text-sm text-gray-700">
+                          {activityTypeLabel(a)}
+                        </div>
+                        <div className="font-medium text-black truncate">
+                          {title}
+                        </div>
                       </div>
                     </div>
                     <button
