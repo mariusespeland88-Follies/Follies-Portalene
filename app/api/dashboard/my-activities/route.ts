@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
+const BUCKET = "activity-media";
 
 // Mapper kun felter som finnes i din schema
-function mapActs(rows: any[] | null | undefined) {
+function mapActs(rows: any[] | null | undefined, covers?: Map<string, string | null>) {
   return (rows ?? []).map((a: any) => ({
-    id: String(a.id),
+    id: String(a.id ?? ""),
     name: a.name ?? `Aktivitet ${a.id}`,
     type: a.type ?? "offer",
     archived: !!a.archived,
@@ -14,7 +15,48 @@ function mapActs(rows: any[] | null | undefined) {
     has_attendance: !!a.has_attendance,
     has_volunteers: !!a.has_volunteers,
     has_tasks: !!a.has_tasks,
+    cover_url: covers?.get(String(a.id ?? "")) ?? null,
   }));
+}
+
+type SupabaseServerClient = NonNullable<ReturnType<typeof getSupabaseServiceRoleClient>>;
+
+async function fetchCoverUrls(db: SupabaseServerClient, ids: string[]) {
+  const map = new Map<string, string | null>();
+  if (!ids.length) return map;
+
+  const { data, error } = await db
+    .from("activity_details")
+    .select("activity_id, cover_image_path")
+    .in("activity_id", ids);
+  if (error) throw error;
+
+  const rows = Array.isArray(data) ? data : [];
+  const cacheBust = Date.now();
+
+  await Promise.all(
+    rows.map(async (row) => {
+      const activityId = String((row as any)?.activity_id ?? "");
+      const path = (row as any)?.cover_image_path as string | null;
+      if (!activityId || !path) return;
+
+      const { data: pub } = db.storage.from(BUCKET).getPublicUrl(path);
+      let url: string | null = pub?.publicUrl || null;
+
+      try {
+        const { data: signed } = await db.storage.from(BUCKET).createSignedUrl(path, 60 * 60);
+        if (signed?.signedUrl) url = signed.signedUrl;
+      } catch {
+        // ignorér signeringsfeil – fall tilbake til publicUrl hvis den finnes
+      }
+
+      if (url) {
+        map.set(activityId, `${url}${url.includes("?") ? "&" : "?"}v=${cacheBust}`);
+      }
+    })
+  );
+
+  return map;
 }
 
 export async function GET(req: NextRequest) {
@@ -96,6 +138,8 @@ export async function GET(req: NextRequest) {
           .in("id", ids);
         if (actErr) throw actErr;
 
+        const coverMap = await fetchCoverUrls(db, ids);
+
         // Dedup & svar
         const seen = new Set<string>();
         const uniq = (acts ?? []).filter((a: any) => {
@@ -104,7 +148,7 @@ export async function GET(req: NextRequest) {
           seen.add(id);
           return true;
         });
-        return NextResponse.json({ ok: true, activities: mapActs(uniq) });
+        return NextResponse.json({ ok: true, activities: mapActs(uniq, coverMap) });
       }
     }
 
@@ -117,7 +161,8 @@ export async function GET(req: NextRequest) {
         )
         .in("id", candidateIds);
       if (error) throw error;
-      return NextResponse.json({ ok: true, activities: mapActs(acts) });
+      const coverMap = await fetchCoverUrls(db, candidateIds);
+      return NextResponse.json({ ok: true, activities: mapActs(acts, coverMap) });
     }
 
     return NextResponse.json({ ok: true, activities: [] });
