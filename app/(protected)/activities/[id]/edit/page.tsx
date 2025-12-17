@@ -5,11 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Cropper, { Area } from "react-easy-crop";
 import { createClientComponentClient } from "@/lib/supabase/browser";
-import {
-  fetchActivity,
-  saveActivity,
-  ActivityType,
-} from "@/lib/activitiesClient";
+import { fetchActivity, saveActivity, ActivityType } from "@/lib/activitiesClient";
 import { hardDeleteActivity } from "@/lib/client/hardDeleteActivity";
 
 type ActivityTab =
@@ -70,6 +66,30 @@ function shortFromText(s: string, max = 140) {
   return t.slice(0, max - 1).trimEnd() + "…";
 }
 
+/* ---------- gallery helpers ---------- */
+function isImageFileName(name: string): boolean {
+  const n = String(name ?? "").toLowerCase();
+  return (
+    n.endsWith(".jpg") ||
+    n.endsWith(".jpeg") ||
+    n.endsWith(".png") ||
+    n.endsWith(".webp") ||
+    n.endsWith(".gif") ||
+    n.endsWith(".heic")
+  );
+}
+function sanitizeFileName(name: string): string {
+  const base = String(name ?? "image.jpg").trim();
+  return base.replace(/[^a-z0-9.\-_]/gi, "_");
+}
+function makeUid(): string {
+  // Browser-safe unique-ish id
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const c: any = typeof crypto !== "undefined" ? crypto : null;
+  if (c?.randomUUID) return c.randomUUID();
+  return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
 /* ---------- crop helpers ---------- */
 function createImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -125,7 +145,7 @@ export default function ActivityEditPage() {
 
   const [tabs, setTabs] = useState<ActivityTab[]>(DEFAULT_TABS_BASE);
 
-  // App/publikum-felt (activity_details)
+  // App/publikum (activity_details)
   const [appPublished, setAppPublished] = useState(false);
   const [shortDescription, setShortDescription] = useState("");
   const [ticketUrl, setTicketUrl] = useState("");
@@ -133,452 +153,530 @@ export default function ActivityEditPage() {
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
 
-  // Crop UI
+  // Cropper state
   const [cropOpen, setCropOpen] = useState(false);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
-  const [cropXY, setCropXY] = useState({ x: 0, y: 0 });
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
+  // NEW: Gallery state (activity-media/gallery/<id>/...)
+  const [gallery, setGallery] = useState<{ name: string; path: string; url: string }[]>([]);
+  const [galleryLoading, setGalleryLoading] = useState(false);
+  const [galleryUploading, setGalleryUploading] = useState(false);
+
   const BUCKET = "activity-media";
 
-  const makeCoverUrl = async (path: string | null) => {
-    if (!path) {
-      setCoverUrl(null);
-      return;
-    }
-
-    // 1) Prøv public URL (rask)
-    const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
-    const publicUrl = pub?.publicUrl ? `${pub.publicUrl}?v=${Date.now()}` : null;
-
-    // 2) Fallback: signed URL (hjelper hvis public/lesing er kranglete)
-    try {
-      const { data: signed, error } = await supabase.storage
-        .from(BUCKET)
-        .createSignedUrl(path, 60 * 60);
-      if (!error && signed?.signedUrl) {
-        setCoverUrl(`${signed.signedUrl}&v=${Date.now()}`);
-        return;
-      }
-    } catch {
-      // ignore
-    }
-
-    setCoverUrl(publicUrl);
+  const makePublicUrl = (path: string) => {
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+    const u = data?.publicUrl ?? null;
+    return u ? `${u}?v=${Date.now()}` : null;
   };
 
-  const loadActivityDetails = async (activityId: string) => {
+  const refreshGallery = async () => {
     if (!looksLikeDbId) return;
+    setGalleryLoading(true);
+    try {
+      const prefix = `gallery/${rawId}`;
+      const { data, error } = await supabase.storage.from(BUCKET).list(prefix, { limit: 200 });
+      if (error) throw error;
 
-    const { data, error } = await supabase
-      .from("activity_details")
-      .select("is_published, short_description, ticket_url, cover_image_path")
-      .eq("activity_id", activityId)
-      .maybeSingle();
+      const items =
+        (data ?? [])
+          .filter((f) => f?.name && isImageFileName(f.name))
+          .map((f) => {
+            const path = `${prefix}/${f.name}`;
+            const url = makePublicUrl(path);
+            return url ? { name: f.name, path, url } : null;
+          })
+          .filter(Boolean) as { name: string; path: string; url: string }[];
 
-    if (error) {
-      console.warn("Kunne ikke hente activity_details:", error.message);
-      return;
-    }
-
-    if (data) {
-      setAppPublished(Boolean((data as any).is_published));
-      setShortDescription(String((data as any).short_description ?? ""));
-      setTicketUrl(String((data as any).ticket_url ?? ""));
-      const p = ((data as any).cover_image_path as string | null) ?? null;
-      setCoverPath(p);
-      await makeCoverUrl(p);
-    } else {
-      setCoverPath(null);
-      setCoverUrl(null);
-      setAppPublished(false);
-      setTicketUrl("");
-      setShortDescription("");
+      items.sort((a, b) => a.name.localeCompare(b.name));
+      setGallery(items);
+    } catch (e: any) {
+      setErr(e?.message || "Kunne ikke hente galleri-bilder.");
+    } finally {
+      setGalleryLoading(false);
     }
   };
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const act = await fetchActivity(rawId);
-        if (act) {
-          setName(act.name ?? "");
-          setDescription((act as any).description ?? "");
+  const uploadGalleryFiles = async (files: FileList) => {
+    if (!looksLikeDbId) {
+      alert("Denne aktiviteten har ikke en DB-id. Da kan vi ikke lagre galleri i appen.");
+      return;
+    }
+    if (!files || files.length === 0) return;
 
-          const uiType = normalizeTypeForUi((act as any).type);
-          setType(uiType);
+    setGalleryUploading(true);
+    setErr(null);
 
-          setStartDate((act as any).start_date ?? "");
-          setEndDate((act as any).end_date ?? "");
+    try {
+      for (const file of Array.from(files)) {
+        if (!file.type.startsWith("image/")) continue;
+        const safe = sanitizeFileName(file.name);
+        const ext = safe.includes(".") ? safe.split(".").pop() : "jpg";
+        const key = makeUid();
+        const path = `gallery/${rawId}/${Date.now()}_${key}.${ext}`;
 
-          const g = Boolean((act as any)?.has_guests);
-          const a = Boolean((act as any)?.has_attendance);
-          const v = Boolean((act as any)?.has_volunteers);
-          const t = Boolean((act as any)?.has_tasks);
+        const { error } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, file, { upsert: false, contentType: file.type, cacheControl: "3600" });
 
-          const rawTabs = (act as any).tab_config as
-            | string[]
-            | null
-            | undefined;
-          const validSet = new Set<ActivityTab>(ALL_TABS.map((x) => x.key));
-
-          let initialTabs: ActivityTab[] = [];
-
-          if (Array.isArray(rawTabs) && rawTabs.length) {
-            for (const entry of rawTabs) {
-              const key = String(entry) as ActivityTab;
-              if (validSet.has(key) && !initialTabs.includes(key)) {
-                initialTabs.push(key);
-              }
-            }
-          } else {
-            initialTabs = [...DEFAULT_TABS_BASE];
-            if (g) initialTabs.push("gjester");
-            if (a) initialTabs.push("innsjekk");
-            if (v) initialTabs.push("frivillige");
-            if (t) initialTabs.push("oppgaver");
-          }
-
-          setTabs(ensureOversikt(initialTabs));
-        }
-
-        await loadActivityDetails(rawId);
-      } finally {
-        setLoading(false);
+        if (error) throw error;
       }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawId]);
+
+      await refreshGallery();
+      alert("Galleri-bilder lastet opp ✅");
+    } catch (e: any) {
+      setErr(e?.message || "Kunne ikke laste opp galleri-bilder.");
+    } finally {
+      setGalleryUploading(false);
+    }
+  };
+
+  const deleteGalleryImage = async (path: string) => {
+    if (!confirm("Slette dette bildet fra galleriet?")) return;
+    setGalleryUploading(true);
+    setErr(null);
+
+    try {
+      const { error } = await supabase.storage.from(BUCKET).remove([path]);
+      if (error) throw error;
+      await refreshGallery();
+    } catch (e: any) {
+      setErr(e?.message || "Kunne ikke slette bildet.");
+    } finally {
+      setGalleryUploading(false);
+    }
+  };
 
   const uploadCoverBlobToFixedPath = async (blob: Blob) => {
-    if (!looksLikeDbId) {
-      alert("Dette må først lagres i databasen (DB-id) før vi kan laste opp bilde.");
-      return;
-    }
-
-    setErr(null);
+    if (!looksLikeDbId) throw new Error("Mangler DB-id for cover upload.");
     setUploadingCover(true);
-    try {
-      const path = `covers/${rawId}/cover.jpg`;
 
+    try {
+      const storagePath = `covers/${rawId}/cover.jpg`;
       const { error: upErr } = await supabase.storage
         .from(BUCKET)
-        .upload(path, blob, {
-          upsert: true,
-          contentType: "image/jpeg",
-          cacheControl: "3600",
-        });
-
+        .upload(storagePath, blob, { upsert: true, contentType: "image/jpeg", cacheControl: "3600" });
       if (upErr) throw upErr;
 
-      setCoverPath(path);
-      await makeCoverUrl(path);
-
-      const { error: dbErr } = await supabase.from("activity_details").upsert(
-        {
-          activity_id: rawId,
-          cover_image_path: path,
-          description: description ?? "",
-          short_description: shortDescription || shortFromText(description ?? ""),
-          ticket_url: ticketUrl || null,
-          is_published: appPublished,
-        },
-        { onConflict: "activity_id" }
-      );
-
-      if (dbErr) throw dbErr;
-    } catch (e: any) {
-      setErr(e?.message || "Kunne ikke laste opp bilde.");
+      setCoverPath(storagePath);
+      setCoverUrl(makePublicUrl(storagePath));
     } finally {
       setUploadingCover(false);
     }
   };
 
+  const loadActivityDetails = async () => {
+    if (!looksLikeDbId) return;
+
+    const { data, error } = await supabase
+      .from("activity_details")
+      .select("is_published, short_description, ticket_url, cover_image_path")
+      .eq("activity_id", rawId)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+      setAppPublished(Boolean((data as any).is_published));
+      setShortDescription(String((data as any).short_description ?? ""));
+      setTicketUrl(String((data as any).ticket_url ?? ""));
+      const cp = (data as any).cover_image_path ? String((data as any).cover_image_path) : null;
+      setCoverPath(cp);
+      setCoverUrl(cp ? makePublicUrl(cp) : null);
+    }
+  };
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      setLoading(true);
+      setErr(null);
+      try {
+        const act = await fetchActivity(rawId);
+        if (!alive) return;
+
+        if (!act) {
+          setErr("Fant ikke aktiviteten.");
+          setLoading(false);
+          return;
+        }
+
+        setName(String((act as any).name ?? ""));
+        setDescription(String((act as any).description ?? ""));
+        setType(normalizeTypeForUi((act as any).type));
+        setStartDate(String((act as any).start_date ?? ""));
+        setEndDate(String((act as any).end_date ?? ""));
+
+        // Tabs: prøv å lese tab_config fra activity; ellers bygg fra has_*
+        const rawTabs = (act as any).tab_config as any;
+        const validSet = new Set<ActivityTab>(ALL_TABS.map((x) => x.key));
+        let initialTabs: ActivityTab[] = [];
+
+        if (Array.isArray(rawTabs)) {
+          initialTabs = rawTabs
+            .map((t) => String(t))
+            .filter((t) => validSet.has(t as ActivityTab)) as ActivityTab[];
+        }
+
+        if (!initialTabs.length) {
+          initialTabs = [...DEFAULT_TABS_BASE];
+          if ((act as any).has_guests) initialTabs.push("gjester");
+          if ((act as any).has_attendance) initialTabs.push("innsjekk");
+          if ((act as any).has_volunteers) initialTabs.push("frivillige");
+          if ((act as any).has_tasks) initialTabs.push("oppgaver");
+        }
+
+        setTabs(ensureOversikt(initialTabs));
+
+        // App/publikum data (activity_details)
+        try {
+          await loadActivityDetails();
+        } catch (e: any) {
+          // Ikke stopp hele siden – bare vis feil hvis nødvendig
+          console.warn("loadActivityDetails error:", e);
+        }
+
+        // NEW: galleri for app
+        try {
+          await refreshGallery();
+        } catch (e: any) {
+          console.warn("refreshGallery error:", e);
+        }
+      } catch (e: any) {
+        if (!alive) return;
+        setErr(e?.message || "Noe gikk galt.");
+      } finally {
+        if (!alive) return;
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawId]);
+
   const openCropper = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setErr("Velg et bilde.");
+      return;
+    }
     const url = URL.createObjectURL(file);
     setPendingFile(file);
     setCropSrc(url);
-    setCropXY({ x: 0, y: 0 });
+    setCrop({ x: 0, y: 0 });
     setZoom(1);
     setCroppedAreaPixels(null);
     setCropOpen(true);
   };
 
-  const closeCropper = () => {
-    if (cropSrc) URL.revokeObjectURL(cropSrc);
+  const uploadOriginalNoCrop = async () => {
+    if (!pendingFile) return;
+    if (!looksLikeDbId) return;
+
     setCropOpen(false);
-    setCropSrc(null);
-    setPendingFile(null);
-    setCroppedAreaPixels(null);
-    setZoom(1);
-    setCropXY({ x: 0, y: 0 });
+    setErr(null);
+
+    try {
+      // Vi lagrer original som cover.jpg også, for enkelhet i appen
+      const { error: upErr } = await supabase.storage
+        .from(BUCKET)
+        .upload(`covers/${rawId}/cover.jpg`, pendingFile, {
+          upsert: true,
+          contentType: pendingFile.type,
+          cacheControl: "3600",
+        });
+      if (upErr) throw upErr;
+
+      const storagePath = `covers/${rawId}/cover.jpg`;
+      setCoverPath(storagePath);
+      setCoverUrl(makePublicUrl(storagePath));
+      alert("Forsidebilde lastet opp ✅");
+    } catch (e: any) {
+      setErr(e?.message || "Kunne ikke laste opp forsidebilde.");
+    } finally {
+      try {
+        if (cropSrc) URL.revokeObjectURL(cropSrc);
+      } catch {}
+      setCropSrc(null);
+      setPendingFile(null);
+    }
   };
 
   const applyCropAndUpload = async () => {
-    if (!cropSrc || !croppedAreaPixels) {
-      setErr("Velg utsnitt først (dra/zoom), så trykk Bruk utsnitt.");
-      return;
-    }
+    if (!cropSrc || !croppedAreaPixels) return;
+    if (!looksLikeDbId) return;
+
+    setCropOpen(false);
+    setErr(null);
+
     try {
       const blob = await cropToBlob(cropSrc, croppedAreaPixels);
       await uploadCoverBlobToFixedPath(blob);
-      closeCropper();
+      alert("Forsidebilde (beskjært) lastet opp ✅");
     } catch (e: any) {
-      setErr(e?.message || "Kunne ikke beskjære og laste opp.");
-    }
-  };
-
-  const uploadOriginalNoCrop = async () => {
-    if (!pendingFile) return;
-    try {
-      // last opp original som-is (men vi lagrer den fortsatt som cover.jpg for enkelhet)
-      await uploadCoverBlobToFixedPath(pendingFile);
-      closeCropper();
-    } catch (e: any) {
-      setErr(e?.message || "Kunne ikke laste opp original.");
+      setErr(e?.message || "Kunne ikke beskjære/lagre bilde.");
+    } finally {
+      try {
+        URL.revokeObjectURL(cropSrc);
+      } catch {}
+      setCropSrc(null);
+      setPendingFile(null);
     }
   };
 
   const clearCover = async () => {
+    if (!looksLikeDbId) return;
+    if (!confirm("Fjerne forsidebildet fra appen?")) return;
+
     setErr(null);
     setCoverPath(null);
     setCoverUrl(null);
 
-    if (!looksLikeDbId) return;
-
-    const { error } = await supabase.from("activity_details").upsert(
-      {
-        activity_id: rawId,
-        cover_image_path: null,
-        description: description ?? "",
-        short_description: shortDescription || shortFromText(description ?? ""),
-        ticket_url: ticketUrl || null,
-        is_published: appPublished,
-      },
-      { onConflict: "activity_id" }
-    );
-
-    if (error) setErr(error.message);
+    try {
+      const { error } = await supabase
+        .from("activity_details")
+        .upsert(
+          {
+            activity_id: rawId,
+            cover_image_path: null,
+          },
+          { onConflict: "activity_id" }
+        );
+      if (error) throw error;
+    } catch (e: any) {
+      setErr(e?.message || "Kunne ikke fjerne forsidebilde.");
+    }
   };
 
-  const onSave = async (e?: any) => {
-    e?.preventDefault?.();
-    setErr(null);
+  const onSave = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setSaving(true);
+    setErr(null);
+
     try {
+      const act = await fetchActivity(rawId);
+      if (!act) throw new Error("Fant ikke aktiviteten.");
+
       const cleanedTabs = ensureOversikt(tabs);
 
+      // Booleans styres av faner
       const hasGuests = cleanedTabs.includes("gjester");
       const hasAttendance = cleanedTabs.includes("innsjekk");
       const hasVolunteers = cleanedTabs.includes("frivillige");
       const hasTasks = cleanedTabs.includes("oppgaver");
 
-      const payload = {
-        name,
-        description,
+      const payload: Partial<ActivityType> & Record<string, any> = {
+        ...(act as any),
+        id: rawId,
+        name: name.trim(),
+        description: description,
         type,
         start_date: startDate || null,
         end_date: endDate || null,
+        tab_config: cleanedTabs,
         has_guests: hasGuests,
         has_attendance: hasAttendance,
         has_volunteers: hasVolunteers,
         has_tasks: hasTasks,
-        tab_config: cleanedTabs,
       };
 
-      if (rawId && looksLikeDbId) {
-        const response = await fetch(`/api/activities/${rawId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const json = await response.json().catch(() => null);
-        if (!response.ok && response.status !== 404) {
-          throw new Error(json?.error || "Klarte ikke å lagre i databasen.");
-        }
-      }
-
-      await saveActivity({
-        id: rawId,
-        ...payload,
+      // Oppdater i DB via API
+      const res = await fetch(`/api/activities/${encodeURIComponent(rawId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
-
-      if (looksLikeDbId) {
-        const { error: detailsErr } = await supabase
-          .from("activity_details")
-          .upsert(
-            {
-              activity_id: rawId,
-              description: description ?? "",
-              short_description: shortDescription || shortFromText(description ?? ""),
-              ticket_url: ticketUrl || null,
-              cover_image_path: coverPath,
-              is_published: appPublished,
-            },
-            { onConflict: "activity_id" }
-          );
-
-        if (detailsErr) {
-          throw new Error(detailsErr.message || "Klarte ikke å lagre app-detaljer.");
-        }
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || "Kunne ikke lagre.");
       }
 
-      router.push(`/activities/${rawId}`);
+      // Oppdater local store også (for portal UI)
+      saveActivity(payload as any);
+
+      // Oppdater app/publikum info i activity_details
+      if (looksLikeDbId) {
+        const { error: dbErr } = await supabase.from("activity_details").upsert(
+          {
+            activity_id: rawId,
+            is_published: appPublished,
+            short_description: shortDescription?.trim()
+              ? shortDescription.trim()
+              : shortFromText(description, 140),
+            ticket_url: ticketUrl?.trim() ? ticketUrl.trim() : null,
+            cover_image_path: coverPath,
+          },
+          { onConflict: "activity_id" }
+        );
+        if (dbErr) throw dbErr;
+      }
+
+      alert("Lagret ✅");
+      router.push(`/activities/${encodeURIComponent(rawId)}`);
     } catch (e: any) {
-      setErr(e?.message || "Klarte ikke å lagre.");
+      setErr(e?.message || "Kunne ikke lagre.");
     } finally {
       setSaving(false);
     }
   };
 
   const onDelete = async () => {
-    if (!rawId) return;
-    if (!confirm("Er du sikker på at du vil slette denne aktiviteten permanent?")) return;
-    setErr(null);
+    if (!confirm("Er du sikker på at du vil slette aktiviteten?")) return;
     setSaving(true);
+    setErr(null);
+
     try {
-      await hardDeleteActivity(String(rawId), { redirectToList: true });
+      await hardDeleteActivity(rawId);
+      alert("Slettet ✅");
+      router.push("/activities");
     } catch (e: any) {
-      setErr(e?.message || "Kunne ikke slette aktiviteten.");
+      setErr(e?.message || "Kunne ikke slette.");
+    } finally {
       setSaving(false);
     }
   };
 
-  if (loading)
-    return <main className="px-4 py-8 text-neutral-900">Laster…</main>;
+  if (loading) {
+    return <main className="mx-auto max-w-6xl px-4 py-8 text-neutral-900">Laster…</main>;
+  }
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 text-neutral-900">
-      {/* Crop modal */}
-      {cropOpen && cropSrc && (
-        <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4">
-          <div className="w-full max-w-3xl rounded-2xl bg-white shadow-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between">
-              <div className="font-semibold">Beskjær bilde</div>
-              <button
-                type="button"
-                onClick={closeCropper}
-                className="rounded-lg px-3 py-1.5 text-sm font-semibold ring-1 ring-neutral-300 hover:bg-neutral-50"
-              >
-                Lukk
-              </button>
-            </div>
-
-            <div className="relative h-[420px] bg-neutral-950">
-              <Cropper
-                image={cropSrc}
-                crop={cropXY}
-                zoom={zoom}
-                aspect={16 / 9}
-                onCropChange={setCropXY}
-                onZoomChange={setZoom}
-                onCropComplete={(_, areaPx) => setCroppedAreaPixels(areaPx)}
-              />
-            </div>
-
-            <div className="px-4 py-4 border-t border-neutral-200">
-              <div className="flex items-center gap-3">
-                <div className="text-sm font-medium">Zoom</div>
-                <input
-                  type="range"
-                  min={1}
-                  max={3}
-                  step={0.01}
-                  value={zoom}
-                  onChange={(e) => setZoom(Number(e.target.value))}
-                  className="w-full"
-                />
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={uploadOriginalNoCrop}
-                  className="rounded-lg px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-50 disabled:opacity-60"
-                  disabled={uploadingCover}
-                >
-                  Last opp original
-                </button>
-                <button
-                  type="button"
-                  onClick={closeCropper}
-                  className="rounded-lg px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-50"
-                >
-                  Avbryt
-                </button>
-                <button
-                  type="button"
-                  onClick={applyCropAndUpload}
-                  className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
-                  disabled={uploadingCover}
-                >
-                  {uploadingCover ? "Laster opp…" : "Bruk utsnitt"}
-                </button>
-              </div>
-
-              <div className="mt-2 text-xs text-neutral-600">
-                Tips: dra bildet for å flytte utsnittet. Juster zoom for å “zoome inn”.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Topp-linje */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-semibold tracking-tight">Rediger aktivitet</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-black">Rediger aktivitet</h1>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void onSave()}
+            disabled={saving}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+          >
+            {saving ? "Lagrer…" : "Lagre"}
+          </button>
           <Link
-            href={`/activities/${rawId}`}
-            className="rounded-lg px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-900 hover:text-white"
+            href={`/activities/${encodeURIComponent(rawId)}`}
+            className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
           >
             Tilbake
           </Link>
           <button
             type="button"
-            onClick={onDelete}
+            onClick={() => void onDelete()}
             disabled={saving}
-            className="rounded-lg px-3.5 py-2 text-sm font-semibold text-red-700 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-60"
-            title="Slett aktiviteten permanent"
+            className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50 disabled:opacity-60"
           >
             Slett
-          </button>
-          <button
-            onClick={onSave}
-            disabled={saving}
-            className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
-          >
-            {saving ? "Lagrer…" : "Lagre"}
           </button>
         </div>
       </div>
 
-      {err && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+      {err ? (
+        <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           {err}
         </div>
-      )}
+      ) : null}
+
+      {!looksLikeDbId ? (
+        <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          Denne aktiviteten ser ikke ut som en DB-id (UUID). App/publikum og galleri
+          bruker Supabase-ID – så noen funksjoner kan være begrenset.
+        </div>
+      ) : null}
+
+      {/* Crop modal */}
+      {cropOpen && cropSrc ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-3xl overflow-hidden rounded-2xl bg-white">
+            <div className="border-b border-neutral-200 p-4">
+              <div className="text-lg font-semibold">Beskjær forsidebilde</div>
+              <div className="text-sm text-neutral-600">
+                Dra og zoom til du er fornøyd. Trykk “Bruk utsnitt”.
+              </div>
+            </div>
+
+            <div className="relative h-[420px] bg-black">
+              <Cropper
+                image={cropSrc}
+                crop={crop}
+                zoom={zoom}
+                aspect={16 / 9}
+                onCropChange={setCrop}
+                onZoomChange={setZoom}
+                onCropComplete={(_, croppedPixels) => setCroppedAreaPixels(croppedPixels)}
+              />
+            </div>
+
+            <div className="p-4">
+              <label className="block text-sm font-medium text-neutral-800">Zoom</label>
+              <input
+                type="range"
+                min={1}
+                max={3}
+                step={0.01}
+                value={zoom}
+                onChange={(e) => setZoom(Number(e.target.value))}
+                className="mt-2 w-full"
+              />
+
+              <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => void applyCropAndUpload()}
+                  className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                >
+                  Bruk utsnitt
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void uploadOriginalNoCrop()}
+                  className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
+                >
+                  Last opp original
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      if (cropSrc) URL.revokeObjectURL(cropSrc);
+                    } catch {}
+                    setCropOpen(false);
+                    setCropSrc(null);
+                    setPendingFile(null);
+                  }}
+                  className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
+                >
+                  Avbryt
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <form onSubmit={onSave} className="space-y-6">
         {/* Grunninfo */}
         <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div className="grid gap-5 md:grid-cols-2">
-            <div>
+          <h2 className="text-lg font-semibold text-black">Grunninfo</h2>
+
+          <div className="mt-4 grid gap-5 md:grid-cols-2">
+            <div className="md:col-span-2">
               <label className="block text-sm font-medium text-neutral-800">Navn</label>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2 text-[15px] text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-red-600"
-                placeholder="Navn på aktivitet"
-                required
+                className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2 text-[15px] text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral-800">Kategori</label>
+              <label className="block text-sm font-medium text-neutral-800">Type</label>
               <div className="mt-1 inline-flex rounded-xl bg-white p-1 ring-1 ring-neutral-300">
                 {(
                   [
@@ -586,13 +684,13 @@ export default function ActivityEditPage() {
                     ["event", "Event"],
                     ["forestilling", "Forestilling"],
                   ] as const
-                ).map(([val, label]) => (
+                ).map(([key, label]) => (
                   <button
-                    key={val}
+                    key={key}
                     type="button"
-                    onClick={() => setType(val as ActivityType)}
+                    onClick={() => setType(key as ActivityType)}
                     className={`mx-0.5 rounded-lg px-3.5 py-1.5 text-sm font-medium ${
-                      type === val ? "bg-black text-white" : "text-neutral-900 hover:bg-neutral-100"
+                      type === key ? "bg-black text-white" : "text-neutral-900 hover:bg-neutral-100"
                     }`}
                   >
                     {label}
@@ -602,14 +700,12 @@ export default function ActivityEditPage() {
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-neutral-800">
-                Beskrivelse (brukes også i appen)
-              </label>
+              <label className="block text-sm font-medium text-neutral-800">Beskrivelse</label>
               <textarea
-                rows={5}
+                rows={6}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2 text-[15px] text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-red-600"
+                className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2 text-[15px] text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600"
               />
             </div>
           </div>
@@ -617,109 +713,200 @@ export default function ActivityEditPage() {
 
         {/* App / Publikum */}
         <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-black">App / Publikum</h2>
-              <p className="mt-1 text-xs text-neutral-600">
-                Appen viser kun aktiviteter som er <b>Publisert</b>.
-              </p>
-            </div>
-
-            <label className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 ring-1 ring-neutral-300">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
-                checked={appPublished}
-                onChange={(e) => setAppPublished(e.target.checked)}
-              />
-              <span className="text-sm font-semibold">
-                {appPublished ? "Publisert i app" : "Ikke publisert"}
-              </span>
-            </label>
-          </div>
+          <h2 className="text-lg font-semibold text-black">App / Publikum</h2>
+          <p className="mt-1 text-sm text-neutral-600">Dette styrer hva publikum ser i appen.</p>
 
           <div className="mt-4 grid gap-5 md:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-neutral-800">Korttekst (valgfri)</label>
-              <input
-                value={shortDescription}
-                onChange={(e) => setShortDescription(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2 text-[15px] text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-red-600"
-                placeholder="Kort tekst som vises i kortet i appen (valgfri)"
-              />
+              <label className="block text-sm font-medium text-neutral-800">
+                Publisert (synlig i appen)
+              </label>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600"
+                  checked={appPublished}
+                  onChange={(e) => setAppPublished(e.target.checked)}
+                />
+                <span className="text-sm text-neutral-800">Publisert</span>
+              </div>
+              <p className="mt-2 text-xs text-neutral-600">
+                Når denne er på, vil aktiviteten dukke opp i publikumsdelen av appen.
+              </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral-800">Billettlenke (valgfri)</label>
-              <input
-                value={ticketUrl}
-                onChange={(e) => setTicketUrl(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2 text-[15px] text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-red-600"
-                placeholder="https://... (lenke til billettkjøp)"
+              <label className="block text-sm font-medium text-neutral-800">Kort beskrivelse</label>
+              <textarea
+                rows={3}
+                value={shortDescription}
+                onChange={(e) => setShortDescription(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2 text-[15px] text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600"
               />
+              <p className="mt-2 text-xs text-neutral-600">
+                Hvis du lar den være tom, lager vi en kort tekst automatisk fra beskrivelsen.
+              </p>
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-neutral-800">Forsidebilde (app)</label>
+              <label className="block text-sm font-medium text-neutral-800">
+                Billett-lenke (valgfri)
+              </label>
+              <input
+                value={ticketUrl}
+                onChange={(e) => setTicketUrl(e.target.value)}
+                placeholder="https://..."
+                className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2 text-[15px] text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600"
+              />
+              <p className="mt-2 text-xs text-neutral-600">
+                Hvis aktiviteten er en forestilling/event med billett, legg lenken her.
+              </p>
+            </div>
+          </div>
 
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <input
-                  type="file"
-                  accept="image/*"
-                  disabled={!looksLikeDbId || uploadingCover}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
+          {/* Cover */}
+          <div className="mt-6 border-t border-neutral-200 pt-4">
+            <h3 className="text-base font-semibold text-neutral-900">Forsidebilde for appen</h3>
+            <p className="mt-1 text-xs text-neutral-600">
+              Vi lagrer bildet i Supabase Storage: <code>covers/{rawId}/cover.jpg</code>
+            </p>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!looksLikeDbId) {
+                    alert("Mangler DB-id (UUID). Kan ikke laste opp cover til appen.");
+                    return;
+                  }
+                  const input = document.createElement("input");
+                  input.type = "file";
+                  input.accept = "image/*";
+                  input.onchange = () => {
+                    const f = input.files?.[0];
                     if (f) openCropper(f);
-                    e.currentTarget.value = "";
-                  }}
-                  className="block text-sm"
-                />
+                  };
+                  input.click();
+                }}
+                disabled={uploadingCover}
+                className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {uploadingCover ? "Laster opp…" : "Velg bilde og beskjær"}
+              </button>
 
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await makeCoverUrl(coverPath);
-                  }}
-                  disabled={!coverPath}
-                  className="rounded-lg px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-50 disabled:opacity-60"
-                >
-                  Oppdater forhåndsvisning
-                </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (coverPath) setCoverUrl(makePublicUrl(coverPath));
+                }}
+                className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
+              >
+                Oppdater forhåndsvisning
+              </button>
 
-                <button
-                  type="button"
-                  onClick={clearCover}
-                  disabled={!coverPath || uploadingCover}
-                  className="rounded-lg px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-50 disabled:opacity-60"
-                >
-                  Fjern bilde
-                </button>
+              <button
+                type="button"
+                onClick={() => void clearCover()}
+                className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50"
+              >
+                Fjern bilde
+              </button>
+            </div>
 
-                {uploadingCover && <span className="text-sm text-neutral-600">Laster opp…</span>}
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <div className="text-xs font-medium text-neutral-600">Lagringssti</div>
+                <div className="mt-1 rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-900 ring-1 ring-neutral-200">
+                  {coverPath ?? "—"}
+                </div>
               </div>
 
-              {coverPath && (
-                <div className="mt-2 text-xs text-neutral-600">
-                  Lagringssti: <b>{coverPath}</b>{" "}
+              <div>
+                <div className="text-xs font-medium text-neutral-600">Forhåndsvisning</div>
+                <div className="mt-1 overflow-hidden rounded-lg ring-1 ring-neutral-200">
                   {coverUrl ? (
-                    <>
-                      –{" "}
-                      <a
-                        href={coverUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-semibold text-red-700 underline"
-                      >
-                        Åpne bilde
-                      </a>
-                    </>
-                  ) : null}
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={coverUrl} alt="" className="h-40 w-full object-cover" />
+                  ) : (
+                    <div className="flex h-40 w-full items-center justify-center bg-neutral-100 text-sm text-neutral-600">
+                      Ingen bilde
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
+            </div>
+          </div>
 
-              {coverUrl && (
-                <div className="mt-4 overflow-hidden rounded-2xl border border-neutral-200">
-                  <img src={coverUrl} alt="Forsidebilde" className="h-56 w-full object-cover" />
+          {/* NEW: Galleri */}
+          <div className="mt-6 border-t border-neutral-200 pt-4">
+            <h3 className="text-base font-semibold text-neutral-900">Galleri (bilder i appen)</h3>
+            <p className="mt-1 text-xs text-neutral-600">
+              Disse bildene vises inne på aktiviteten i appen. Vi lagrer dem i{" "}
+              <code>gallery/{rawId}/...</code>
+            </p>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!looksLikeDbId) {
+                    alert("Mangler DB-id (UUID). Kan ikke laste opp galleri.");
+                    return;
+                  }
+                  const input = document.createElement("input");
+                  input.type = "file";
+                  input.accept = "image/*";
+                  input.multiple = true;
+                  input.onchange = () => {
+                    if (input.files && input.files.length) {
+                      void uploadGalleryFiles(input.files);
+                    }
+                  };
+                  input.click();
+                }}
+                disabled={galleryUploading}
+                className="rounded-lg bg-black px-3.5 py-2 text-sm font-semibold text-white hover:bg-neutral-900 disabled:opacity-60"
+              >
+                {galleryUploading ? "Laster opp…" : "Last opp galleri-bilder"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void refreshGallery()}
+                disabled={galleryLoading}
+                className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 disabled:opacity-60"
+              >
+                {galleryLoading ? "Henter…" : "Oppdater liste"}
+              </button>
+
+              <div className="text-xs text-neutral-600">
+                {gallery.length ? `${gallery.length} bilde(r)` : "Ingen bilder enda"}
+              </div>
+            </div>
+
+            <div className="mt-4">
+              {gallery.length ? (
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+                  {gallery.map((g) => (
+                    <div key={g.path} className="overflow-hidden rounded-xl ring-1 ring-neutral-200">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={g.url} alt="" className="h-28 w-full object-cover" />
+                      <div className="flex items-center justify-between gap-2 p-2">
+                        <div className="truncate text-xs text-neutral-700">{g.name}</div>
+                        <button
+                          type="button"
+                          onClick={() => void deleteGalleryImage(g.path)}
+                          className="rounded-lg bg-white px-2 py-1 text-xs font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50"
+                        >
+                          Slett
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700">
+                  Ingen galleri-bilder lastet opp enda.
                 </div>
               )}
             </div>
@@ -728,7 +915,9 @@ export default function ActivityEditPage() {
 
         {/* Kategorier / faner */}
         <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-black">Kategorier / faner for denne aktiviteten</h2>
+          <h2 className="text-lg font-semibold text-black">
+            Kategorier / faner for denne aktiviteten
+          </h2>
           <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
             {ALL_TABS.map(({ key, label }) => {
               const checked = tabs.includes(key);
