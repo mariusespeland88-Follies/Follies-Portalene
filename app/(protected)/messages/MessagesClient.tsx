@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClientComponentClient } from "@/lib/supabase/browser";
 import { saveMessage } from "@/lib/messagesClient";
+import usePermissions from "@/hooks/usePermissions";
 
 const MSG_LS = "follies.messages.v1";
 
@@ -20,6 +21,10 @@ type StoredMessage = {
   target?: string;
   activityId?: string | null;
   activity_id?: string | null;
+  createdByName?: string | null;
+  createdByEmail?: string | null;
+  created_by_name?: string | null;
+  created_by_email?: string | null;
 };
 
 type MemberInfo = {
@@ -59,7 +64,9 @@ function normalizeCreatedAt(m: StoredMessage): string | null {
   return (m.createdAt || m.created_at || null) ?? null;
 }
 
-function loadMessagesGroupedByMemberFromLS(): Record<string, StoredMessage[]> {
+function loadMessagesGroupedByMemberFromLS(
+  allowedMemberId?: string | null
+): Record<string, StoredMessage[]> {
   if (typeof window === "undefined") return {};
   const raw = localStorage.getItem(MSG_LS);
   if (!raw) return {};
@@ -77,6 +84,11 @@ function loadMessagesGroupedByMemberFromLS(): Record<string, StoredMessage[]> {
       if (!grouped[mid]) grouped[mid] = [];
       grouped[mid].push({ ...item, memberId: mid });
     }
+    if (allowedMemberId) {
+      return grouped[allowedMemberId]
+        ? { [allowedMemberId]: grouped[allowedMemberId] }
+        : {};
+    }
     return grouped;
   }
 
@@ -89,6 +101,11 @@ function loadMessagesGroupedByMemberFromLS(): Record<string, StoredMessage[]> {
         ...m,
         memberId: normalizeMemberId(m, mid) ?? mid,
       }));
+    }
+    if (allowedMemberId) {
+      return grouped[allowedMemberId]
+        ? { [allowedMemberId]: grouped[allowedMemberId] }
+        : {};
     }
     return grouped;
   }
@@ -164,6 +181,8 @@ export default function MessagesClient() {
   const supabase = createClientComponentClient();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { isAdmin, isLeader, meMemberId } = usePermissions();
+  const canViewAll = isAdmin || isLeader;
 
   const [grouped, setGrouped] = useState<Record<string, StoredMessage[]>>({});
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
@@ -174,6 +193,8 @@ export default function MessagesClient() {
   const [sendInfo, setSendInfo] = useState<string | null>(null);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [senderEmail, setSenderEmail] = useState<string | null>(null);
+  const [senderName, setSenderName] = useState<string | null>(null);
 
   const logRef = useRef<HTMLDivElement | null>(null);
 
@@ -183,18 +204,30 @@ export default function MessagesClient() {
 
     (async () => {
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from("messages")
           .select(
-            "id, member_id, subject, body, created_at, scope, target, activity_id"
+            "id, member_id, subject, body, created_at, scope, target, activity_id, created_by_name, created_by_email"
           )
           .order("created_at", { ascending: true });
+
+        if (!canViewAll) {
+          if (!meMemberId) {
+            setGrouped({});
+            setThreads([]);
+            setLoading(false);
+            return;
+          }
+          query = query.eq("member_id", meMemberId);
+        }
+
+        const { data, error } = await query;
 
         if (!active) return;
 
         if (error) {
           console.error("Feil ved henting av meldinger fra DB:", error);
-          const g = loadMessagesGroupedByMemberFromLS();
+          const g = loadMessagesGroupedByMemberFromLS(meMemberId);
           const t = makeThreadSummaries(g);
           setGrouped(g);
           setThreads(t);
@@ -219,6 +252,10 @@ export default function MessagesClient() {
               target: row.target ?? undefined,
               activityId: row.activity_id ?? null,
               activity_id: row.activity_id ?? null,
+              createdByName: row.created_by_name ?? null,
+              createdByEmail: row.created_by_email ?? null,
+              created_by_name: row.created_by_name ?? null,
+              created_by_email: row.created_by_email ?? null,
             };
             if (!groupedFromDb[mid]) groupedFromDb[mid] = [];
             groupedFromDb[mid].push(msg);
@@ -229,7 +266,7 @@ export default function MessagesClient() {
           setLoading(false);
         } else {
           // DB tom → bruk LS (gammelt system)
-          const g = loadMessagesGroupedByMemberFromLS();
+          const g = loadMessagesGroupedByMemberFromLS(meMemberId);
           const t = makeThreadSummaries(g);
           setGrouped(g);
           setThreads(t);
@@ -237,11 +274,45 @@ export default function MessagesClient() {
         }
       } catch (e) {
         console.error("Uventet feil ved henting av meldinger:", e);
-        const g = loadMessagesGroupedByMemberFromLS();
+        const g = loadMessagesGroupedByMemberFromLS(meMemberId);
         const t = makeThreadSummaries(g);
         setGrouped(g);
         setThreads(t);
         setLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [supabase, canViewAll, meMemberId]);
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const email = data?.session?.user?.email ?? null;
+        if (!active) return;
+        setSenderEmail(email);
+
+        if (!email) return;
+        const { data: rows } = await supabase
+          .from("members")
+          .select("first_name, last_name")
+          .ilike("email", email)
+          .limit(1);
+        if (!active) return;
+        const record = Array.isArray(rows) ? rows[0] : null;
+        if (record) {
+          const fn = String(record.first_name || "").trim();
+          const ln = String(record.last_name || "").trim();
+          const name = fn || ln ? `${fn} ${ln}`.trim() : null;
+          setSenderName(name);
+        }
+      } catch (e) {
+        console.error("Uventet feil ved henting av avsender:", e);
       }
     })();
 
@@ -294,10 +365,11 @@ export default function MessagesClient() {
   const selectedMemberIdFromQuery = searchParams.get("memberId");
 
   const selectedMemberId = useMemo(() => {
+    if (!canViewAll && meMemberId) return meMemberId;
     if (selectedMemberIdFromQuery) return selectedMemberIdFromQuery;
     if (threads.length) return threads[0].memberId;
     return null;
-  }, [selectedMemberIdFromQuery, threads]);
+  }, [selectedMemberIdFromQuery, threads, canViewAll, meMemberId]);
 
   /* --------- ensure member info if opened from member page --------- */
   useEffect(() => {
@@ -380,6 +452,10 @@ export default function MessagesClient() {
 
   async function handleSend() {
     if (!selectedMemberId) return;
+    if (!canViewAll) {
+      setSendError("Du har ikke tilgang til å sende meldinger her.");
+      return;
+    }
     if (!body.trim()) {
       setSendError("Meldingen kan ikke være tom.");
       return;
@@ -393,6 +469,8 @@ export default function MessagesClient() {
       const subjectToUse =
         subject.trim() ||
         `Melding til ${selectedMemberInfo?.name ?? "medlem"}`;
+      const createdByName = senderName || null;
+      const createdByEmail = senderEmail || null;
 
       // 1) Lagre lokalt (LS) via eksisterende helper
       const saved = saveMessage({
@@ -402,8 +480,8 @@ export default function MessagesClient() {
         target: "custom",
         subject: subjectToUse,
         body: body.trim(),
-        createdByEmail: null,
-        createdByName: null,
+        createdByEmail,
+        createdByName,
       });
 
       // 2) Oppdater React-state (så UI viser meldingen med en gang)
@@ -416,6 +494,8 @@ export default function MessagesClient() {
             {
               ...(saved as any),
               memberId: selectedMemberId,
+              createdByEmail,
+              createdByName,
             },
           ],
         };
@@ -432,8 +512,8 @@ export default function MessagesClient() {
           target: "custom",
           subject: subjectToUse,
           body: body.trim(),
-          created_by_email: null,
-          created_by_name: null,
+          created_by_email: createdByEmail,
+          created_by_name: createdByName,
         });
         if (insertError) {
           console.error("Feil ved lagring av melding i DB:", insertError);
@@ -670,6 +750,14 @@ export default function MessagesClient() {
                         {formatDateTime(normalizeCreatedAt(m))}
                       </span>
                     </div>
+                    <div className="mb-1 text-[11px] font-medium text-neutral-600">
+                      Fra:{" "}
+                      {m.createdByName ||
+                        m.created_by_name ||
+                        m.createdByEmail ||
+                        m.created_by_email ||
+                        "Administrasjon"}
+                    </div>
                     <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-neutral-900">
                       {m.body || ""}
                     </p>
@@ -679,7 +767,7 @@ export default function MessagesClient() {
             </div>
 
             {/* Ny melding */}
-            {selectedMemberId && (
+            {selectedMemberId && canViewAll && (
               <div className="border-t border-neutral-200 bg-white px-4 py-3">
                 <div className="space-y-2">
                   <input
@@ -723,6 +811,13 @@ export default function MessagesClient() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+            {selectedMemberId && !canViewAll && (
+              <div className="border-t border-neutral-200 bg-white px-4 py-3">
+                <p className="text-xs text-neutral-600">
+                  Du kan lese meldinger her, men kun ledere/admin kan sende nye.
+                </p>
               </div>
             )}
           </section>

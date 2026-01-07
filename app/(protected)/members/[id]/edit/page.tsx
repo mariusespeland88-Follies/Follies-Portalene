@@ -1031,7 +1031,6 @@ function DeleteMemberButton({
   memberId: string;
   memberName?: string;
 }) {
-  const supabase = createClientComponentClient();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1050,32 +1049,16 @@ function DeleteMemberButton({
     setErr(null);
 
     try {
-      // 1) Slett enrollments
-      try {
-        await supabase.from("enrollments").delete().eq("member_id", memberId);
-      } catch (e) {
-        console.error("Feil ved sletting av enrollments:", e);
+      const res = await fetch(
+        `/api/members/${encodeURIComponent(memberId)}/delete`,
+        { method: "POST" }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || "Kunne ikke slette medlemmet.");
       }
 
-      // 2) Slett meldinger (hvis messages-tabell finnes)
-      try {
-        await supabase.from("messages").delete().eq("member_id", memberId);
-      } catch (e) {
-        console.error("Feil ved sletting av messages:", e);
-      }
-
-      // 3) Slett medlem
-      const { error: delErr } = await supabase
-        .from("members")
-        .delete()
-        .eq("id", memberId);
-
-      if (delErr) {
-        console.error("Feil ved sletting av medlem:", delErr);
-        throw delErr;
-      }
-
-      // 4) Rydd LS (members)
+      // 2) Rydd LS (members)
       if (typeof window !== "undefined") {
         const keys = [MEM_V1, MEM_FB];
         for (const key of keys) {
