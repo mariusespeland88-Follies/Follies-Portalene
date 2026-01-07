@@ -316,6 +316,26 @@ export default function DashboardPage() {
     };
   }, [me.email, me.member, supabase]);
 
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/messages/my", { cache: "no-store" });
+        if (!res.ok) return;
+        const payload = await res.json().catch(() => ({}));
+        if (!alive) return;
+        if (Array.isArray(payload?.messages)) {
+          setMessages(payload.messages);
+        }
+      } catch {
+        // fallback to LS
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // Kandidater fra LS (participants + leder-perms)
   const candidateActivityIds = React.useMemo(() => {
     const acts = readActivities();
@@ -436,6 +456,7 @@ export default function DashboardPage() {
         const tid = toStr(
           (m as any).to_member_id ??
             (m as any).memberId ??
+            (m as any).member_id ??
             (m as any).toId ??
             ""
         );
@@ -854,6 +875,12 @@ export default function DashboardPage() {
                               {(m as any).title ||
                                 (m as any).subject ||
                                 "Beskjed"}
+                            </div>
+                            <div className="text-[11px] text-gray-600">
+                              Fra:{" "}
+                              {(m as any).created_by_name ||
+                                (m as any).created_by_email ||
+                                "Administrasjon"}
                             </div>
                             {((m as any).body ||
                               (m as any).message) && (
