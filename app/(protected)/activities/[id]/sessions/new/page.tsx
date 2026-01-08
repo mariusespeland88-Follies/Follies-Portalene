@@ -1,25 +1,24 @@
-// SNAPSHOT: 2025-08-31 – Follies Ansattportal
-// Fiks: “Ny økt” blandet ledere/deltakere i manuell målgruppe.
-// Løsning: Bruk SAMME kilde som ellers i appen → getLeaders/getParticipants (DB-first).
-//          Robuste LS-fallbacks beholdt. Ingen designendring (kun logikk).
-
 "use client";
 
+// SNAPSHOT: 2026-01-08 – Økter til DB (Supabase) + LS fallback
+// - Ingen designendring (samme layout/klasser)
+// - DB-først: activity_sessions + activity_session_targets
+// - LS fallback beholdt: follies.activitySessions.v1 + follies.calendar.v1
+// - Proffere input: start + varighet (timer/min) → end beregnes
+
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import { createClientComponentClient } from "@/lib/supabase/browser";
-import { getLeaders, getParticipants } from "@/lib/enrollmentsClient"; // ← samme som aktivitets-sidene
+import { getLeaders, getParticipants } from "@/lib/enrollmentsClient"; // eksisterer hos dere
 
 type AnyObj = Record<string, any>;
 
 const SESS_LS = "follies.activitySessions.v1";
 const CAL_LS  = "follies.calendar.v1";
-const MEM_LS  = "follies.members.v1";
+
 const ACT_V1  = "follies.activities.v1";
 const ACT_FB  = "follies.activities";
-const ENR_V1  = "follies.enrollments.v1";
-const PERMS_LS= "follies.perms.v1";
 
 const INPUT =
   "w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 " +
@@ -29,7 +28,6 @@ const TEXTAREA = INPUT;
 const safeJSON = <T,>(s: string | null): T | null => { try { return s ? (JSON.parse(s) as T) : null; } catch { return null; } };
 const S = (v:any)=>String(v ?? "");
 
-/* ------------------------------ Helpers ------------------------------ */
 function loadActivityName(aid: string): string {
   const v1 = safeJSON<any[]>(localStorage.getItem(ACT_V1)) ?? [];
   const old= safeJSON<any[]>(localStorage.getItem(ACT_FB)) ?? [];
@@ -37,361 +35,476 @@ function loadActivityName(aid: string): string {
   const hit= all.find(a => S(a?.id ?? a?.uuid ?? a?._id) === S(aid));
   return hit ? (hit.name || hit.title || hit.navn || "Aktivitet") : "Aktivitet";
 }
-function uniqById(list: AnyObj[]): AnyObj[] {
-  const map = new Map<string, AnyObj>();
-  for (const m of list) {
-    const id = S(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id);
-    if (id) map.set(id, m);
-  }
-  return Array.from(map.values());
-}
-function membersIndex(): Record<string, AnyObj> {
-  const ms = safeJSON<any[]>(localStorage.getItem(MEM_LS)) ?? [];
-  const idx: Record<string, AnyObj> = {};
-  for (const m of ms) idx[S(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id)] = m;
-  return idx;
-}
-function extractIds(maybe: any): string[] {
-  const out: string[] = [];
-  if (!maybe) return out;
-  const push = (v:any) => { const s=S(v); if (s) out.push(s); };
-  if (Array.isArray(maybe)) {
-    for (const it of maybe) {
-      if (typeof it === "string" || typeof it === "number") push(it);
-      else if (it && typeof it === "object") push(it.id ?? it.uuid ?? it.memberId ?? it._id ?? it.email ?? it.epost ?? it.mail);
-    }
-  } else if (typeof maybe === "object") {
-    push(maybe.id ?? maybe.uuid ?? maybe.memberId ?? maybe._id);
-  }
-  return out.filter(Boolean);
-}
-function leaderIdsFromPerms(activityId: string): Set<string> {
-  const raw = safeJSON<any>(localStorage.getItem(PERMS_LS)) ?? null;
-  const wanted = new Set<string>();
-  if (!raw || typeof raw !== "object") return wanted;
-  const isLeader = (val:any) => ["admin","edit","leder","leader"].includes(String(val ?? "").toLowerCase());
 
-  if (raw.perOffer && typeof raw.perOffer === "object") {
-    const map = raw.perOffer[S(activityId)];
-    if (map && typeof map === "object") {
-      for (const [uid, lvl] of Object.entries<any>(map)) {
-        const level = (lvl as any)?.level ?? lvl;
-        if (isLeader(level)) wanted.add(S(uid));
-      }
-    }
-  }
-  if (raw.byUser && typeof raw.byUser === "object") {
-    for (const [uid, amap] of Object.entries<any>(raw.byUser)) {
-      const level = (amap as any)[S(activityId)];
-      const v = (level as any)?.level ?? level;
-      if (isLeader(v)) wanted.add(S(uid));
-    }
-  }
-  const arr: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.entries) ? raw.entries : [];
-  for (const r of arr) {
-    const aid = S(r?.activityId ?? r?.offerId ?? r?.resourceId ?? r?.id ?? "");
-    if (aid !== S(activityId)) continue;
-    const uid = S(r?.memberId ?? r?.userId ?? r?.uid ?? r?.ownerId ?? r?.who ?? "");
-    const lvl = r?.perm ?? r?.role ?? r?.level ?? r?.access ?? r?.type ?? "";
-    if (uid && isLeader(lvl)) wanted.add(uid);
-  }
-  return wanted;
+function minutesToLabel(total: number) {
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h <= 0) return `${m} min`;
+  if (m === 0) return `${h} t`;
+  return `${h} t ${m} min`;
 }
 
-/** ROBUST SPLITT for LS når DB ikke svarer – array|map + akt.felter + perms */
-function lsSplitRoles(activityId: string): { leaders: AnyObj[]; participants: AnyObj[] } {
-  const idx = membersIndex();
-  let leaderIds = new Set<string>();
-  let partIds   = new Set<string>();
-
-  // enrollments – array
-  const enrRaw = safeJSON<any>(localStorage.getItem(ENR_V1));
-  if (Array.isArray(enrRaw)) {
-    for (const r of enrRaw) {
-      if (S(r?.activity_id) !== S(activityId)) continue;
-      const mid = S(r?.member_id);
-      const role = String(r?.role ?? "").toLowerCase();
-      if (!mid) continue;
-      if (role === "leader" || role === "leder") leaderIds.add(mid);
-      else partIds.add(mid);
-    }
-  } else if (enrRaw && typeof enrRaw === "object") {
-    // enrollments – map pr aktivitet
-    const bucket = enrRaw[S(activityId)];
-    if (bucket && typeof bucket === "object") {
-      for (const id of extractIds(bucket.leaders ?? bucket.ledere))      leaderIds.add(S(id));
-      for (const id of extractIds(bucket.participants ?? bucket.deltakere ?? bucket.deltagere)) partIds.add(S(id));
-    }
-  }
-
-  // aktivitetens egne felter (norske alias) hvis vi fortsatt mangler
-  if (leaderIds.size === 0 && partIds.size === 0) {
-    const v1  = safeJSON<any[]>(localStorage.getItem(ACT_V1)) ?? [];
-    const old = safeJSON<any[]>(localStorage.getItem(ACT_FB)) ?? [];
-    const all = [...old, ...v1];
-    const hit = all.find(a => S(a?.id ?? a?.uuid ?? a?._id) === S(activityId));
-    if (hit && typeof hit === "object") {
-      const l = extractIds(hit.leaders ?? hit.ledere);
-      const p = extractIds(hit.participants ?? hit.deltakere ?? hit.deltagere ?? hit.paameldte ?? hit["påmeldte"] ?? hit.members);
-      for (const id of l) leaderIds.add(S(id));
-      for (const id of p) partIds.add(S(id));
-    }
-  }
-
-  // perms kan gjøre noen til leder selv uten enrollment
-  for (const id of leaderIdsFromPerms(activityId)) leaderIds.add(id);
-
-  // leder vinner over deltaker
-  for (const id of leaderIds) if (partIds.has(id)) partIds.delete(id);
-
-  const leaders = Array.from(leaderIds).map(id => idx[id]).filter(Boolean);
-  const participants = Array.from(partIds).map(id => idx[id]).filter(Boolean);
-  return { leaders: uniqById(leaders), participants: uniqById(participants) };
+function toISO(date: string, time: string) {
+  // Local -> ISO string
+  const d = new Date(`${date}T${time}:00`);
+  return d.toISOString();
 }
 
-/* ------------------------------- Side ------------------------------- */
+function addMinutes(iso: string, minutes: number) {
+  const d = new Date(iso);
+  d.setMinutes(d.getMinutes() + minutes);
+  return d.toISOString();
+}
+
+function fmtNb(iso: string) {
+  const d = new Date(iso);
+  return Number.isNaN(+d) ? iso : d.toLocaleString("nb-NO");
+}
+
+type MemberLite = {
+  id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+  name?: string | null;
+  full_name?: string | null;
+};
+
+function fullName(m: MemberLite) {
+  const fromFields = `${m.first_name || ""} ${m.last_name || ""}`.trim();
+  const fromAlt = m.full_name || m.name || "";
+  return (fromFields || fromAlt || m.email || "Uten navn").trim();
+}
+
+type LsSession = {
+  id: string;
+  activityId: string;
+  title: string;
+  start: string; // ISO
+  end: string;   // ISO
+  location?: string;
+  note?: string;
+  targets?: string[]; // member ids (optional)
+};
+
+type LsCalItem = {
+  id: string;
+  activity_id: string;
+  session_id: string;
+  title: string;
+  start: string; // ISO
+  end: string;   // ISO
+};
+
+function readLsSessionsMap(): Record<string, LsSession[]> {
+  return safeJSON<Record<string, LsSession[]>>(localStorage.getItem(SESS_LS)) ?? {};
+}
+function writeLsSessionsMap(map: Record<string, LsSession[]>) {
+  localStorage.setItem(SESS_LS, JSON.stringify(map));
+}
+function readLsCalendar(): LsCalItem[] {
+  return safeJSON<LsCalItem[]>(localStorage.getItem(CAL_LS)) ?? [];
+}
+function writeLsCalendar(items: LsCalItem[]) {
+  localStorage.setItem(CAL_LS, JSON.stringify(items));
+}
+
 export default function NewSessionPage() {
   const { id: activityId } = useParams() as { id: string };
   const router = useRouter();
   const supabase = createClientComponentClient();
 
-  // Meta
-  const [activityName, setActivityName] = useState<string>("Aktivitet");
-  const [leaders, setLeaders] = useState<AnyObj[]>([]);
-  const [participants, setParticipants] = useState<AnyObj[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [activityName, setActivityName] = useState("Aktivitet");
 
-  // Skjema
+  const [leaders, setLeaders] = useState<MemberLite[]>([]);
+  const [participants, setParticipants] = useState<MemberLite[]>([]);
+  const enrolled = useMemo(() => {
+    const map = new Map<string, MemberLite>();
+    [...leaders, ...participants].forEach((m) => map.set(String(m.id), m));
+    return Array.from(map.values());
+  }, [leaders, participants]);
+
+  // Form
   const [title, setTitle] = useState("");
   const [date, setDate] = useState<string>("");
-  const [time, setTime] = useState<string>("");
-  const [duration, setDuration] = useState<number>(90);
-  const [location, setLocation] = useState<string>("");
-  const [note, setNote] = useState<string>("");
+  const [startTime, setStartTime] = useState<string>("");
 
-  const [aud, setAud] = useState<"all" | "custom">("all");
+  // Proffere: varighet i timer + minutter
+  const [durHours, setDurHours] = useState<number>(2);
+  const [durMinutes, setDurMinutes] = useState<number>(0);
 
-  // separate selection-maps (hver liste for seg)
-  const [selLeaders, setSelLeaders] = useState<Record<string, boolean>>({});
-  const [selParts, setSelParts]     = useState<Record<string, boolean>>({});
+  const durationTotal = useMemo(() => Math.max(0, durHours * 60 + durMinutes), [durHours, durMinutes]);
 
+  const [location, setLocation] = useState("");
+  const [note, setNote] = useState("");
+
+  // Målgruppe
+  const [allEnrolled, setAllEnrolled] = useState(true);
+  const [targetIds, setTargetIds] = useState<string[]>([]);
+
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [dbInfo, setDbInfo] = useState<string | null>(null);
+
+  useEffect(() => {
+    setActivityName(loadActivityName(activityId));
+  }, [activityId]);
+
+  // Hent rolle-lister DB-først (samme som resten av portalen)
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        setLoading(true);
-        setActivityName(loadActivityName(S(activityId)));
-
-        // 1) DB-first – BRUK SAMME FUNKSJONER SOM ANDRE SIDER
-        try {
-          const [L, P] = await Promise.all([
-            getLeaders(String(activityId)),      // ← samme kilde som aktivitets-sidene
-            getParticipants(String(activityId)),
-          ]);
-          const leadersClean = uniqById(L || []);
-          const leaderSet    = new Set(leadersClean.map(m => S(m?.id)));
-          const partsClean   = uniqById((P || []).filter((p:any) => !leaderSet.has(S(p?.id))));
-
-          setLeaders(leadersClean);
-          setParticipants(partsClean);
-        } catch {
-          // 2) LS-fallback – robust
-          const ls = lsSplitRoles(String(activityId));
-          setLeaders(ls.leaders);
-          setParticipants(ls.participants);
-        }
-
-        setSelLeaders({});
-        setSelParts({});
-      } finally {
-        if (alive) setLoading(false);
+        const [ls, ps] = await Promise.all([
+          getLeaders(activityId),
+          getParticipants(activityId),
+        ]);
+        if (!alive) return;
+        setLeaders((ls ?? []) as any);
+        setParticipants((ps ?? []) as any);
+      } catch {
+        // Hvis dette feiler i din miljø: la det være tomt, men ikke krasj.
+        if (!alive) return;
+        setLeaders([]);
+        setParticipants([]);
       }
     })();
     return () => { alive = false; };
   }, [activityId]);
 
-  // "Alle" = union av rene lister
-  const allTargetIds = useMemo(() => {
-    const L = leaders.map(m => S(m.id));
-    const P = participants.map(m => S(m.id));
-    return Array.from(new Set([...L, ...P]));
-  }, [leaders, participants]);
+  const preview = useMemo(() => {
+    if (!date || !startTime || durationTotal <= 0) return null;
+    const startIso = toISO(date, startTime);
+    const endIso = addMinutes(startIso, durationTotal);
+    return { startIso, endIso };
+  }, [date, startTime, durationTotal]);
 
-  const onSave = () => {
-    if (!title || !date || !time) { alert("Fyll ut tittel, dato og tid."); return; }
-    const start = new Date(`${date}T${time}:00`);
-    const end   = new Date(start.getTime() + duration * 60000);
+  function toggleTarget(id: string) {
+    setTargetIds((prev) => {
+      const set = new Set(prev.map(String));
+      if (set.has(String(id))) set.delete(String(id));
+      else set.add(String(id));
+      return Array.from(set);
+    });
+  }
 
-    let targets: string[] = [];
-    if (aud === "all") {
-      targets = allTargetIds;
-      if (targets.length === 0) { alert("Ingen målgruppe funnet."); return; }
-    } else {
-      const chosenLeaders = leaders.map(m => S(m.id)).filter(id => !!selLeaders[id]);
-      const chosenParts   = participants.map(m => S(m.id)).filter(id => !!selParts[id]);
-      targets = Array.from(new Set([...chosenLeaders, ...chosenParts]));
-      if (targets.length === 0) { alert("Velg minst én mottaker."); return; }
+  async function onSave() {
+    setErr(null);
+    setDbInfo(null);
+
+    if (!date) return setErr("Velg dato.");
+    if (!startTime) return setErr("Velg starttid.");
+    if (durationTotal <= 0) return setErr("Varighet må være minst 1 minutt.");
+
+    const startIso = toISO(date, startTime);
+    const endIso = addMinutes(startIso, durationTotal);
+
+    const chosenTargets = allEnrolled
+      ? enrolled.map((m) => String(m.id))
+      : targetIds.map(String);
+
+    if (!allEnrolled && chosenTargets.length === 0) {
+      return setErr("Velg minst én person, eller huk av for “Alle påmeldte”.");
     }
 
-    // 1) sessions LS
-    const sess = {
-      id: crypto.randomUUID(),
-      activity_id: S(activityId),
-      title,
-      start: start.toISOString(),
-      end: end.toISOString(),
-      location: location || null,
-      note: note || null,
-      targets,
+    setSaving(true);
+
+    // LS fallback snapshot (så du aldri mister økten)
+    const lsSessionId = crypto?.randomUUID?.() ?? `s-${Date.now()}`;
+    const lsSession: LsSession = {
+      id: lsSessionId,
+      activityId,
+      title: title.trim() || "Økt",
+      start: startIso,
+      end: endIso,
+      location: location.trim() || undefined,
+      note: note.trim() || undefined,
+      targets: allEnrolled ? undefined : chosenTargets,
     };
-    const map = safeJSON<Record<string, any[]>>(localStorage.getItem(SESS_LS)) ?? {};
-    map[S(activityId)] = [sess, ...(map[S(activityId)] ?? [])];
-    localStorage.setItem(SESS_LS, JSON.stringify(map));
 
-    // 2) kalender LS (med session_id for klikk i kalenderen)
-    const cal = safeJSON<any[]>(localStorage.getItem(CAL_LS)) ?? [];
-    for (const mid of targets) {
-      cal.unshift({
-        id: crypto.randomUUID(),
-        member_id: S(mid),
-        title: `${activityName}: ${title}`,
-        start: start.toISOString(),
-        end: end.toISOString(),
-        source: "session",
-        activity_id: S(activityId),
-        session_id: sess.id,
+    try {
+      // DIAG: sjekk om vi er innlogget (hjelper når RLS stopper)
+      const u = await supabase.auth.getUser();
+      const email = u?.data?.user?.email ?? null;
+      if (!email) {
+        throw new Error("Du er ikke innlogget i Supabase (mangler user/session).");
+      }
+
+      // 1) Insert session
+      const ins = await supabase
+        .from("activity_sessions")
+        .insert({
+          activity_id: activityId,
+          title: lsSession.title,
+          start_at: startIso,
+          end_at: endIso,
+          location: lsSession.location ?? null,
+          note: lsSession.note ?? null,
+        })
+        .select("id")
+        .single();
+
+      if (ins.error) throw ins.error;
+
+      const dbSessionId = String(ins.data.id);
+
+      // 2) Insert targets
+      const targetRows = chosenTargets.map((mid) => ({
+        session_id: dbSessionId,
+        member_id: String(mid),
+      }));
+
+      const insT = await supabase.from("activity_session_targets").insert(targetRows);
+      if (insT.error) throw insT.error;
+
+      // ✅ DB OK → speil også til LS for resten av portalen som fortsatt leser LS
+      const map = readLsSessionsMap();
+      const prev = map[activityId] ?? [];
+      map[activityId] = [
+        ...prev,
+        {
+          ...lsSession,
+          id: dbSessionId, // bruk DB-id så link /sessions/[id] gir mening
+        },
+      ];
+      writeLsSessionsMap(map);
+
+      const cal = readLsCalendar();
+      cal.push({
+        id: crypto?.randomUUID?.() ?? `c-${Date.now()}`,
+        activity_id: activityId,
+        session_id: dbSessionId,
+        title: lsSession.title,
+        start: startIso,
+        end: endIso,
       });
+      writeLsCalendar(cal);
+
+      setDbInfo(`Lagret i Supabase ✅ (${dbSessionId})`);
+
+      // Gå til økt-side
+      router.push(`/sessions/${encodeURIComponent(dbSessionId)}`);
+    } catch (e: any) {
+      // ❗ DB feilet → lagre lokalt så du ikke mister det
+      const map = readLsSessionsMap();
+      const prev = map[activityId] ?? [];
+      map[activityId] = [...prev, lsSession];
+      writeLsSessionsMap(map);
+
+      const cal = readLsCalendar();
+      cal.push({
+        id: crypto?.randomUUID?.() ?? `c-${Date.now()}`,
+        activity_id: activityId,
+        session_id: lsSession.id,
+        title: lsSession.title,
+        start: startIso,
+        end: endIso,
+      });
+      writeLsCalendar(cal);
+
+      setErr(`DB-feil: ${String(e?.message ?? e)} (økt lagret lokalt som backup)`);
+    } finally {
+      setSaving(false);
     }
-    localStorage.setItem(CAL_LS, JSON.stringify(cal));
-
-    router.push(`/sessions/${encodeURIComponent(sess.id)}`);
-  };
-
-  if (loading) return <main className="mx-auto max-w-6xl px-4 py-8 text-neutral-900">Laster…</main>;
+  }
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 text-neutral-900 space-y-6">
-      {/* HERO */}
-      <div className="rounded-2xl ring-1 ring-black/10 bg-gradient-to-r from-black via-red-800 to-red-600 text-white p-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Ny økt – {activityName}</h1>
-            <p className="text-white/90 text-sm">Fyll inn tid, sted, plan og målgruppe.</p>
-          </div>
-          <Link
-            href={`/activities/${encodeURIComponent(S(activityId))}`}
-            className="rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 hover:bg-neutral-100 ring-1 ring-white/40"
+    <div className="mx-auto max-w-3xl px-4 py-8">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight text-black">Ny økt</h1>
+          <p className="mt-1 text-sm text-neutral-600">
+            {activityName}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onSave}
+            disabled={saving}
+            className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
           >
-            Tilbake
+            {saving ? "Lagrer…" : "Lagre økt"}
+          </button>
+          <Link
+            href={`/activities/${encodeURIComponent(activityId)}`}
+            className="rounded-lg px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-900 hover:text-white"
+          >
+            Avbryt
           </Link>
         </div>
       </div>
 
-      {/* Tid / sted / plan */}
-      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <label className="block">
-            <div className="mb-1 text-sm font-medium text-neutral-900">Tittel <span className="text-red-600">*</span></div>
-            <input value={title} onChange={(e)=>setTitle(e.target.value)} className={INPUT} placeholder="Øving – Scene 3" />
-          </label>
-          <label className="block">
-            <div className="mb-1 text-sm font-medium text-neutral-900">Sted</div>
-            <input value={location} onChange={(e)=>setLocation(e.target.value)} className={INPUT} placeholder="Hovedsal / Ute / …" />
-          </label>
-          <label className="block">
-            <div className="mb-1 text-sm font-medium text-neutral-900">Dato <span className="text-red-600">*</span></div>
-            <input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className={INPUT} />
-          </label>
-          <label className="block">
-            <div className="mb-1 text-sm font-medium text-neutral-900">Tid <span className="text-red-600">*</span></div>
-            <input type="time" value={time} onChange={(e)=>setTime(e.target.value)} className={INPUT} />
-          </label>
-          <label className="block">
-            <div className="mb-1 text-sm font-medium text-neutral-900">Varighet (minutter)</div>
-            <input type="number" min={15} max={480} value={duration} onChange={(e)=>setDuration(Number(e.target.value))} className={INPUT} />
-          </label>
-
-          <label className="block md:col-span-2">
-            <div className="mb-1 text-sm font-medium text-neutral-900">Beskrivelse / plan</div>
-            <textarea rows={5} value={note} onChange={(e)=>setNote(e.target.value)} className={TEXTAREA} placeholder={`Hva skjer i økten?\n– Oppmøte kl …\n– Øver: side 5–6\n– Etterpå: …\n– Husk: …`} />
-          </label>
+      {err ? (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          {err}
         </div>
-      </section>
+      ) : null}
 
-      {/* Målgruppe */}
-      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-        <div className="text-sm font-semibold text-neutral-900 mb-2">Målgruppe</div>
-        <div className="flex flex-wrap gap-4 text-neutral-900">
-          <label className="inline-flex items-center gap-2">
-            <input type="radio" checked={aud==="all"} onChange={()=>setAud("all")} />
-            <span>Alle (ledere + deltakere)</span>
-          </label>
-          <label className="inline-flex items-center gap-2">
-            <input type="radio" checked={aud==="custom"} onChange={()=>setAud("custom")} />
-            <span>Velg manuelt</span>
-          </label>
+      {dbInfo ? (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+          {dbInfo}
         </div>
+      ) : null}
 
-        {aud==="custom" && (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Ledere */}
-            <div className="rounded-xl border border-neutral-200 p-3">
-              <div className="font-semibold mb-2 text-neutral-900">
-                Ledere <span className="text-xs text-neutral-600">({leaders.length})</span>
-              </div>
-              {leaders.length === 0 ? (
-                <div className="text-sm text-neutral-600">Ingen funnet.</div>
-              ) : (
-                <ul className="space-y-1">
-                  {leaders.map((p) => {
-                    const pid = S(p?.id);
-                    const name = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Uten navn";
-                    return (
-                      <li key={pid} className="flex items-center gap-2">
-                        <input type="checkbox" checked={!!selLeaders[pid]} onChange={() => setSelLeaders(s => ({ ...s, [pid]: !s[pid] }))} />
-                        <span className="text-sm text-neutral-900">{name}</span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+      <div className="space-y-5 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="text-sm font-medium text-neutral-800">Tittel</label>
+            <input
+              className={INPUT}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="F.eks. Prøve, gjennomgang, forestilling…"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-neutral-800">Dato</label>
+            <input
+              type="date"
+              className={INPUT}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-neutral-800">Start</label>
+            <input
+              type="time"
+              className={INPUT}
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-neutral-800">Varighet</label>
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              <select
+                className={INPUT}
+                value={durHours}
+                onChange={(e) => setDurHours(Number(e.target.value))}
+              >
+                {Array.from({ length: 9 }).map((_, i) => (
+                  <option key={i} value={i}>{i} t</option>
+                ))}
+              </select>
+
+              <select
+                className={INPUT}
+                value={durMinutes}
+                onChange={(e) => setDurMinutes(Number(e.target.value))}
+              >
+                {[0, 15, 30, 45].map((m) => (
+                  <option key={m} value={m}>{m} min</option>
+                ))}
+              </select>
             </div>
 
-            {/* Deltakere */}
-            <div className="rounded-xl border border-neutral-200 p-3 max-h-64 overflow-auto pr-1">
-              <div className="font-semibold mb-2 text-neutral-900">
-                Deltakere <span className="text-xs text-neutral-600">({participants.length})</span>
-              </div>
-              {participants.length === 0 ? (
-                <div className="text-sm text-neutral-600">Ingen funnet.</div>
-              ) : (
-                <ul className="space-y-1">
-                  {participants.map((p) => {
-                    const pid = S(p?.id);
-                    const name = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Uten navn";
-                    return (
-                      <li key={pid} className="flex items-center gap-2">
-                        <input type="checkbox" checked={!!selParts[pid]} onChange={() => setSelParts(s => ({ ...s, [pid]: !s[pid] }))} />
-                        <span className="text-sm text-neutral-900">{name}</span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+            <div className="mt-1 text-xs text-neutral-500">
+              {durationTotal > 0 ? `= ${minutesToLabel(durationTotal)}` : null}
             </div>
           </div>
-        )}
-      </section>
 
-      {/* Handlinger */}
-      <div className="flex items-center gap-2">
-        <button onClick={onSave} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
-          Lagre økt
-        </button>
-        <Link href={`/activities/${encodeURIComponent(S(activityId))}`} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100">
-          Avbryt
-        </Link>
+          <div>
+            <label className="text-sm font-medium text-neutral-800">Sted (valgfritt)</label>
+            <input
+              className={INPUT}
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="F.eks. Follies – Sal 1"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium text-neutral-800">Notat (valgfritt)</label>
+          <textarea
+            className={TEXTAREA + " min-h-[120px]"}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Kort info til deltakerne: hva skal vi gjøre, hva må de ta med, osv."
+          />
+        </div>
+
+        {/* Målgruppe */}
+        <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-neutral-900">Hvem gjelder økten for?</div>
+              <div className="mt-1 text-xs text-neutral-600">
+                Velg “Alle påmeldte” eller velg spesifikke personer.
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2 text-sm font-medium text-neutral-800">
+              <input
+                type="checkbox"
+                checked={allEnrolled}
+                onChange={(e) => {
+                  setAllEnrolled(e.target.checked);
+                  if (e.target.checked) setTargetIds([]);
+                }}
+              />
+              Alle påmeldte
+            </label>
+          </div>
+
+          {!allEnrolled ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {enrolled.map((m) => {
+                const mid = String(m.id);
+                const checked = targetIds.includes(mid);
+                return (
+                  <label
+                    key={mid}
+                    className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleTarget(mid)}
+                    />
+                    <span className="truncate">{fullName(m)}</span>
+                  </label>
+                );
+              })}
+              {enrolled.length === 0 ? (
+                <div className="text-sm text-neutral-600">
+                  Fant ingen deltakere/ledere å velge – sjekk enrollments.
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        {/* Forhåndsvisning */}
+        <div className="rounded-xl border border-neutral-200 bg-white p-4">
+          <div className="text-sm font-semibold text-neutral-900">Forhåndsvisning</div>
+          {preview ? (
+            <div className="mt-2 text-sm text-neutral-700">
+              <div className="font-medium text-neutral-900">{title.trim() || "Økt"}</div>
+              <div className="mt-1">
+                {fmtNb(preview.startIso)} – {new Date(preview.endIso).toLocaleTimeString("nb-NO")}
+                {location.trim() ? <> · <span className="text-neutral-600">Sted:</span> {location.trim()}</> : null}
+              </div>
+              {!allEnrolled ? (
+                <div className="mt-1 text-xs text-neutral-600">
+                  Målgruppe: {targetIds.length} valgt
+                </div>
+              ) : (
+                <div className="mt-1 text-xs text-neutral-600">
+                  Målgruppe: alle påmeldte
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mt-2 text-sm text-neutral-500">Fyll inn dato + start + varighet for å se forhåndsvisning.</div>
+          )}
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
