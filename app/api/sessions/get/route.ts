@@ -8,6 +8,11 @@ function getAdminClient() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
+function fullName(m: any) {
+  const n = `${m?.first_name ?? ""} ${m?.last_name ?? ""}`.trim();
+  return (n || m?.email || "Uten navn").trim();
+}
+
 export async function POST(req: Request) {
   try {
     const { sessionId } = await req.json();
@@ -20,52 +25,77 @@ export async function POST(req: Request) {
       .select("id, activity_id, title, start_at, end_at, location, note")
       .eq("id", sessionId)
       .single();
+
     if (sRes.error) throw sRes.error;
 
+    const session = sRes.data as any;
+    const activityId = String(session.activity_id);
+
+    // targets
     const tRes = await supabase
       .from("activity_session_targets")
       .select("member_id")
       .eq("session_id", sessionId);
     if (tRes.error) throw tRes.error;
 
-    const tids = (tRes.data ?? []).map((r: any) => String(r.member_id)).filter(Boolean);
+    const targetIds = Array.from(
+      new Set((tRes.data ?? []).map((r: any) => String(r.member_id)).filter(Boolean))
+    );
 
+    // target members
     let targetMembers: any[] = [];
-    if (tids.length) {
+    if (targetIds.length) {
       const mRes = await supabase
         .from("members")
-        .select("id, first_name, last_name, email, name, full_name")
-        .in("id", tids);
-      if (!mRes.error) targetMembers = mRes.data ?? [];
+        .select("id, first_name, last_name, email")
+        .in("id", targetIds);
+      if (mRes.error) throw mRes.error;
+
+      targetMembers = (mRes.data ?? []).map((m: any) => ({
+        id: String(m.id),
+        name: fullName(m),
+        email: m.email ?? null,
+      }));
     }
 
-    // leaders/participants (2-stegs via enrollments)
+    // leaders/participants via enrollments -> member ids -> members
     const eRes = await supabase
       .from("enrollments")
       .select("member_id, role")
-      .eq("activity_id", (sRes.data as any).activity_id);
+      .eq("activity_id", activityId);
     if (eRes.error) throw eRes.error;
 
-    const leaderIds = Array.from(new Set((eRes.data ?? []).filter((x: any) => x.role === "leader").map((x: any) => String(x.member_id))));
-    const partIds = Array.from(new Set((eRes.data ?? []).filter((x: any) => x.role === "participant").map((x: any) => String(x.member_id))));
-    const allIds = Array.from(new Set([...leaderIds, ...partIds]));
+    const leaderIds = Array.from(
+      new Set((eRes.data ?? []).filter((x: any) => x.role === "leader").map((x: any) => String(x.member_id)))
+    );
+    const participantIds = Array.from(
+      new Set((eRes.data ?? []).filter((x: any) => x.role === "participant").map((x: any) => String(x.member_id)))
+    );
+    const allIds = Array.from(new Set([...leaderIds, ...participantIds])).filter(Boolean);
 
-    let allMembers: any[] = [];
+    let peopleById = new Map<string, any>();
     if (allIds.length) {
       const mmRes = await supabase
         .from("members")
-        .select("id, first_name, last_name, email, name, full_name")
+        .select("id, first_name, last_name, email")
         .in("id", allIds);
-      if (!mmRes.error) allMembers = mmRes.data ?? [];
+      if (mmRes.error) throw mmRes.error;
+
+      for (const m of mmRes.data ?? []) {
+        peopleById.set(String((m as any).id), {
+          id: String((m as any).id),
+          name: fullName(m),
+          email: (m as any).email ?? null,
+        });
+      }
     }
 
-    const byId = new Map(allMembers.map((m: any) => [String(m.id), m]));
-    const leaders = leaderIds.map((id) => byId.get(id)).filter(Boolean);
-    const participants = partIds.map((id) => byId.get(id)).filter(Boolean);
+    const leaders = leaderIds.map((id) => peopleById.get(String(id))).filter(Boolean);
+    const participants = participantIds.map((id) => peopleById.get(String(id))).filter(Boolean);
 
     return NextResponse.json({
-      session: sRes.data,
-      targetIds: tids,
+      session,
+      targetIds,
       targetMembers,
       leaders,
       participants,
