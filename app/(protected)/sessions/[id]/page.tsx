@@ -1,21 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 function S(v: any) {
   return String(v ?? "");
 }
-function fullName(m: any) {
-  const fromFields = `${m?.first_name ?? ""} ${m?.last_name ?? ""}`.trim();
-  const fromAlt = (m?.full_name ?? m?.name ?? "").trim();
-  return (fromFields || fromAlt || m?.email || "Uten navn").trim();
-}
+
 function fmtNb(iso: string) {
   const d = new Date(iso);
   return Number.isNaN(+d) ? iso : d.toLocaleString("nb-NO");
 }
+
 function timeNb(iso: string) {
   const d = new Date(iso);
   return Number.isNaN(+d) ? "" : d.toLocaleTimeString("nb-NO");
@@ -23,6 +20,8 @@ function timeNb(iso: string) {
 
 export default function SessionPage() {
   const params = useParams();
+  const router = useRouter();
+
   const sessionId = useMemo(() => {
     const raw = Array.isArray((params as any)?.id) ? (params as any).id[0] : (params as any)?.id;
     return raw ? String(raw) : "";
@@ -37,38 +36,54 @@ export default function SessionPage() {
   const [leaders, setLeaders] = useState<any[]>([]);
   const [participants, setParticipants] = useState<any[]>([]);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      setLoading(true);
-      setErr(null);
-      try {
-        const res = await fetch("/api/sessions/get", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ sessionId }),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json?.error || "Failed");
+  const refresh = async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/sessions/get", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Failed");
 
-        if (!alive) return;
-        setSession(json.session);
-        setTargetIds((json.targetIds ?? []).map(String));
-        setTargetMembers(json.targetMembers ?? []);
-        setLeaders(json.leaders ?? []);
-        setParticipants(json.participants ?? []);
-      } catch (e: any) {
-        if (!alive) return;
-        setErr(String(e?.message ?? e));
-      } finally {
-        if (!alive) return;
-        setLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
+      setSession(json.session);
+      setTargetIds((json.targetIds ?? []).map(String));
+      setTargetMembers(json.targetMembers ?? []);
+      setLeaders(json.leaders ?? []);
+      setParticipants(json.participants ?? []);
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  const onDelete = async () => {
+    if (!session?.id) return;
+    if (!confirm("Er du sikker på at du vil slette denne økten?")) return;
+
+    try {
+      const res = await fetch("/api/sessions/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId: session.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Failed");
+
+      // Tilbake til aktiviteten
+      router.push(`/activities/${encodeURIComponent(S(session.activity_id))}`);
+    } catch (e: any) {
+      alert(`Kunne ikke slette: ${String(e?.message ?? e)}`);
+    }
+  };
 
   if (loading) {
     return (
@@ -104,12 +119,20 @@ export default function SessionPage() {
           <p className="mt-1 text-sm text-neutral-600">{subtitle}</p>
         </div>
 
-        <Link
-          href={`/activities/${encodeURIComponent(S(session.activity_id))}`}
-          className="rounded-lg px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-900 hover:text-white"
-        >
-          Tilbake til aktivitet
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/activities/${encodeURIComponent(S(session.activity_id))}`}
+            className="rounded-lg px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-900 hover:text-white"
+          >
+            Tilbake til aktivitet
+          </Link>
+          <button
+            onClick={onDelete}
+            className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700"
+          >
+            Slett økt
+          </button>
+        </div>
       </div>
 
       <div className="space-y-5 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
@@ -134,9 +157,9 @@ export default function SessionPage() {
             <ul className="mt-3 list-disc pl-5 text-sm text-neutral-700">
               {targetMembers
                 .slice()
-                .sort((a, b) => fullName(a).localeCompare(fullName(b), "nb"))
-                .map((m) => (
-                  <li key={S(m.id)}>{fullName(m)}</li>
+                .sort((a, b) => String(a?.name ?? "").localeCompare(String(b?.name ?? ""), "nb"))
+                .map((m: any) => (
+                  <li key={S(m.id)}>{m?.name ?? "Uten navn"}</li>
                 ))}
             </ul>
           ) : null}
@@ -149,7 +172,7 @@ export default function SessionPage() {
               {leaders.length ? (
                 <ul className="list-disc pl-5">
                   {leaders.map((m: any) => (
-                    <li key={S(m.id)}>{fullName(m)}</li>
+                    <li key={S(m.id)}>{m?.name ?? "Uten navn"}</li>
                   ))}
                 </ul>
               ) : (
@@ -164,7 +187,7 @@ export default function SessionPage() {
               {participants.length ? (
                 <ul className="list-disc pl-5">
                   {participants.map((m: any) => (
-                    <li key={S(m.id)}>{fullName(m)}</li>
+                    <li key={S(m.id)}>{m?.name ?? "Uten navn"}</li>
                   ))}
                 </ul>
               ) : (
