@@ -8,6 +8,17 @@ function getAdminClient() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
+function toHHMM(d: Date) {
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+function fullName(m: any) {
+  const n = `${m?.first_name ?? ""} ${m?.last_name ?? ""}`.trim();
+  return (n || m?.email || "Uten navn").trim();
+}
+
 export async function POST(req: Request) {
   try {
     const { activityId } = await req.json();
@@ -23,62 +34,76 @@ export async function POST(req: Request) {
 
     if (sRes.error) throw sRes.error;
 
-    const tRes = await supabase
-      .from("activity_session_targets")
-      .select("session_id, member_id")
-      .in("session_id", (sRes.data ?? []).map((s) => s.id));
+    const sessions = (sRes.data ?? []) as any[];
+    const ids = sessions.map((s) => String(s.id)).filter(Boolean);
 
-    if (tRes.error) throw tRes.error;
+    // targets
+    let targets: any[] = [];
+    if (ids.length) {
+      const tRes = await supabase
+        .from("activity_session_targets")
+        .select("session_id, member_id")
+        .in("session_id", ids);
+      if (tRes.error) throw tRes.error;
+      targets = tRes.data ?? [];
+    }
 
     const targetBySession = new Map<string, string[]>();
-    for (const r of tRes.data ?? []) {
+    const allMemberIds = new Set<string>();
+
+    for (const r of targets) {
       const sid = String((r as any).session_id);
       const mid = String((r as any).member_id);
+      if (!sid || !mid) continue;
       const arr = targetBySession.get(sid) ?? [];
       arr.push(mid);
       targetBySession.set(sid, arr);
+      allMemberIds.add(mid);
     }
 
-    // Hent navn for target-medlemmer (for pen visning, ikke UUID)
-    const allMemberIds = Array.from(
-      new Set((tRes.data ?? []).map((r: any) => String(r.member_id)))
-    );
+    // member names for targets (optional “preview”)
+    const memberIds = Array.from(allMemberIds);
+    const membersById = new Map<string, any>();
 
-    let membersById = new Map<string, any>();
-    if (allMemberIds.length) {
+    if (memberIds.length) {
       const mRes = await supabase
         .from("members")
-        .select("id, first_name, last_name, email, name, full_name")
-        .in("id", allMemberIds);
+        .select("id, first_name, last_name, email")
+        .in("id", memberIds);
+      if (mRes.error) throw mRes.error;
 
-      if (!mRes.error) {
-        for (const m of mRes.data ?? []) {
-          membersById.set(String((m as any).id), m);
-        }
+      for (const m of mRes.data ?? []) {
+        membersById.set(String((m as any).id), {
+          id: String((m as any).id),
+          name: fullName(m),
+        });
       }
     }
 
-    const out = (sRes.data ?? []).map((s: any) => {
+    const out = sessions.map((s) => {
+      const start = s.start_at ? new Date(s.start_at) : null;
+      const end = s.end_at ? new Date(s.end_at) : null;
+
+      const date = start ? start.toISOString().slice(0, 10) : "";
+      const startTime = start ? toHHMM(start) : "";
+      const endTime = end ? toHHMM(end) : "";
+
       const sid = String(s.id);
-      const mids = (targetBySession.get(sid) ?? []).map(String);
-      const targetMembers = mids.map((id) => {
-        const m = membersById.get(id);
-        const name =
-          (m?.first_name || m?.last_name)
-            ? `${m?.first_name ?? ""} ${m?.last_name ?? ""}`.trim()
-            : (m?.full_name || m?.name || m?.email || null);
-        return { id, name: name ?? null, email: m?.email ?? null };
-      });
+      const tids = targetBySession.get(sid) ?? [];
+      const targetMembers = tids
+        .map((id) => membersById.get(String(id)))
+        .filter(Boolean)
+        .slice(0, 6); // preview
 
       return {
         id: sid,
-        activity_id: String(s.activity_id),
         title: s.title ?? "Økt",
-        start_at: s.start_at,
-        end_at: s.end_at ?? null,
+        date,
+        startTime,
+        endTime,
         location: s.location ?? "",
         note: s.note ?? "",
-        targetIds: mids,
+        targetIds: tids,
         targetMembers,
       };
     });
