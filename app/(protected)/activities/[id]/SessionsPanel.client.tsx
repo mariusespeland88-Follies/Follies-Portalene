@@ -2,30 +2,21 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  createActivitySession,
-  deleteActivitySession,
-  fetchActivitySessions,
-  updateActivitySession,
-  type ActivitySession,
-} from "@/lib/activitySessionsClient";
 
 type AnyObj = Record<string, any>;
 
 interface Props {
   activityId: string;
   activityName: string;
-
-  // Beholder props for kompatibilitet med eksisterende kall (ingen redesign / ingen refactor nødvendig)
-  sessions?: AnyObj[];
-  setSessions?: (s: AnyObj[]) => void;
-  participants?: AnyObj[];
-  leaders?: AnyObj[];
-  enrolledIds?: string[];
+  sessions: AnyObj[];
+  setSessions: (s: AnyObj[]) => void;
+  participants: AnyObj[];
+  leaders: AnyObj[];
+  enrolledIds: string[];
 }
 
 const CAL_LS = "follies.calendar.v1";
-const SESS_LS = "follies.activitySessions.v1"; // legacy fallback/cached map: { [activityId]: sessions[] }
+const SESS_LS = "follies.activitySessions.v1";
 
 const safeJSON = <T,>(s: string | null): T | null => {
   try {
@@ -35,19 +26,16 @@ const safeJSON = <T,>(s: string | null): T | null => {
   }
 };
 
-function S(v: any) {
-  return String(v ?? "");
-}
+const S = (v: any) => String(v ?? "");
 
 type SessionDraft = {
+  id?: string;
   title: string;
   date: string; // YYYY-MM-DD
-  startTime: string; // HH:mm
-  endTime: string; // HH:mm
+  startTime: string; // HH:MM
+  endTime: string; // HH:MM
   location: string;
   note: string;
-  audience: "all" | "custom";
-  selected: Record<string, boolean>; // memberId -> true
 };
 
 const emptyDraft: SessionDraft = {
@@ -57,82 +45,59 @@ const emptyDraft: SessionDraft = {
   endTime: "",
   location: "",
   note: "",
-  audience: "all",
-  selected: {},
 };
 
-function toDateParts(iso: string) {
-  const d = new Date(iso);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${mi}` };
+function lsLoadSessions(activityId: string): AnyObj[] {
+  if (typeof window === "undefined") return [];
+  const raw = safeJSON<Record<string, AnyObj[]>>(localStorage.getItem(SESS_LS));
+  if (!raw) return [];
+  return raw[activityId] ?? [];
 }
 
-function buildISO(date: string, time: string) {
-  // NB: Dette lager en lokal tid og lagrer som ISO med timezone.
-  // Det er bra – Supabase har timestamptz.
-  return new Date(`${date}T${time}:00`).toISOString();
-}
-
-function lsLoadSessions(activityId: string): ActivitySession[] {
-  const raw = safeJSON<Record<string, any[]>>(localStorage.getItem(SESS_LS)) ?? {};
-  const list = raw[activityId] ?? [];
-  // normaliser litt
-  return (Array.isArray(list) ? list : []).map((x: any) => ({
-    id: S(x.id),
-    activity_id: S(x.activity_id ?? x.activityId ?? activityId),
-    title: S(x.title) || "Økt",
-    start_at: S(x.start_at ?? x.start ?? ""),
-    end_at: S(x.end_at ?? x.end ?? ""),
-    location: S(x.location ?? ""),
-    note: S(x.note ?? ""),
-    targets: Array.isArray(x.targets) ? x.targets.map(S) : [],
-  }));
-}
-
-function lsSaveSessions(activityId: string, list: ActivitySession[]) {
-  const raw = safeJSON<Record<string, any[]>>(localStorage.getItem(SESS_LS)) ?? {};
+function lsSaveSessions(activityId: string, list: AnyObj[]) {
+  if (typeof window === "undefined") return;
+  const raw =
+    safeJSON<Record<string, AnyObj[]>>(localStorage.getItem(SESS_LS)) ?? {};
   raw[activityId] = list;
   localStorage.setItem(SESS_LS, JSON.stringify(raw));
 }
 
 /**
- * Speil økter til kalender-LS så eksisterende kalender (dashboard + kalender-side)
- * fortsatt viser økter uten redesign akkurat nå.
- *
- * Vi gjør dette "per aktivitet":
- * - fjerner gamle "session"-events for denne activity_id
- * - legger inn nye events basert på sessions + targets
+ * Speil økter inn i kalender-LS (samme format som kalenderen din bruker: array)
+ * Vi gjør dette "best effort".
  */
-function mirrorSessionsToCalendarLS(activityId: string, activityName: string, sessions: ActivitySession[]) {
-  const cur = safeJSON<any[]>(localStorage.getItem(CAL_LS)) ?? [];
+function mirrorSessionsToCalendar(activityId: string, activityName: string, list: AnyObj[]) {
+  if (typeof window === "undefined") return;
 
-  const keep = cur.filter((e) => {
+  const existing = safeJSON<any[]>(localStorage.getItem(CAL_LS)) ?? [];
+
+  // Fjern gamle session-events for denne aktiviteten
+  const keep = existing.filter((e) => {
     const src = String(e?.source ?? "");
-    const aid = String(e?.activity_id ?? e?.activityId ?? "");
-    // fjern tidligere session-speil for samme aktivitet
+    const aid = String(e?.activity_id ?? "");
     if (src === "session" && aid === String(activityId)) return false;
     return true;
   });
 
   const next = [...keep];
 
-  // bygg nye
-  for (const s of sessions) {
-    const targets = Array.from(new Set((s.targets || []).map(S).filter(Boolean)));
-    for (const memberId of targets) {
+  for (const s of list) {
+    const sid = S(s.id);
+    const title = S(s.title) || "Økt";
+    const start = S(s.start_at ?? s.start ?? "");
+    const end = S(s.end_at ?? s.end ?? start);
+    const targets = Array.isArray(s.targets) ? s.targets.map(S) : [];
+
+    for (const mid of targets) {
       next.unshift({
         id: crypto.randomUUID(),
-        member_id: memberId,
-        title: `${activityName}: ${s.title}`,
-        start: s.start_at,
-        end: s.end_at,
+        member_id: mid,
+        title: `${activityName}: ${title}`,
+        start,
+        end,
         source: "session",
         activity_id: activityId,
-        session_id: s.id,
+        session_id: sid,
       });
     }
   }
@@ -140,54 +105,86 @@ function mirrorSessionsToCalendarLS(activityId: string, activityName: string, se
   localStorage.setItem(CAL_LS, JSON.stringify(next));
 }
 
-function uniqIdsFromPeople(list: AnyObj[] | undefined): string[] {
-  const out: string[] = [];
-  for (const m of list || []) {
-    const id = S(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id);
-    if (id) out.push(id);
+/* -------------------- API helpers (bruker din eksisterende struktur) -------------------- */
+
+async function apiList(activityId: string): Promise<AnyObj[]> {
+  const res = await fetch(`/api/sessions/list?activityId=${encodeURIComponent(activityId)}`, {
+    cache: "no-store",
+  });
+
+  const json = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const msg = (json as any)?.error || res.statusText || "Kunne ikke hente økter";
+    throw new Error(String(msg));
   }
-  return Array.from(new Set(out));
+
+  // støtte både {sessions:[...]} og bare [...]
+  const list = Array.isArray(json) ? json : Array.isArray((json as any)?.sessions) ? (json as any).sessions : [];
+  return Array.isArray(list) ? list : [];
 }
 
+async function apiUpsert(payload: AnyObj): Promise<void> {
+  const res = await fetch(`/api/sessions/upsert`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const json = await res.json().catch(() => null);
+  if (!res.ok) {
+    const msg = (json as any)?.error || res.statusText || "Kunne ikke lagre økt";
+    throw new Error(String(msg));
+  }
+}
+
+async function apiDelete(id: string): Promise<void> {
+  const res = await fetch(`/api/sessions/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+
+  const json = await res.json().catch(() => null);
+  if (!res.ok) {
+    const msg = (json as any)?.error || res.statusText || "Kunne ikke slette økt";
+    throw new Error(String(msg));
+  }
+}
+
+/* -------------------- Component -------------------- */
+
 export default function SessionsPanel(props: Props) {
-  const { activityId, activityName } = props;
+  const { activityId, activityName, sessions, setSessions } = props;
 
-  const leaders = props.leaders ?? [];
-  const participants = props.participants ?? [];
-  const enrolledIdsFromProps = props.enrolledIds ?? [];
-
-  const allPeopleIds = useMemo(() => {
-    const fromLists = [...uniqIdsFromPeople(leaders), ...uniqIdsFromPeople(participants)];
-    return Array.from(new Set([...fromLists, ...enrolledIdsFromProps.map(S).filter(Boolean)]));
-  }, [leaders, participants, enrolledIdsFromProps]);
-
+  const [draft, setDraft] = useState<SessionDraft>(emptyDraft);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const [sessions, setSessionsState] = useState<ActivitySession[]>([]);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<SessionDraft>(emptyDraft);
+  const resetDraft = () => {
+    setDraft(emptyDraft);
+    setEditingId(null);
+  };
 
-  // Load: DB-first, LS-fallback
+  // Hent økter DB-first via /api/sessions/list
   useEffect(() => {
     let alive = true;
 
     (async () => {
       setLoading(true);
       try {
-        const list = await fetchActivitySessions(activityId);
+        const list = await apiList(activityId);
         if (!alive) return;
-
-        setSessionsState(list);
-        lsSaveSessions(activityId, list); // cache
-        mirrorSessionsToCalendarLS(activityId, activityName, list);
+        setSessions(list);
+        lsSaveSessions(activityId, list);
+        mirrorSessionsToCalendar(activityId, activityName, list);
       } catch {
-        // fallback LS
-        const ls = lsLoadSessions(activityId);
+        // fallback: LS
+        const fromLs = lsLoadSessions(activityId);
         if (!alive) return;
-        setSessionsState(ls);
-        // speil også (så kalender henger sammen lokalt)
-        mirrorSessionsToCalendarLS(activityId, activityName, ls);
+        setSessions(fromLs);
+        mirrorSessionsToCalendar(activityId, activityName, fromLs);
       } finally {
         if (alive) setLoading(false);
       }
@@ -196,212 +193,187 @@ export default function SessionsPanel(props: Props) {
     return () => {
       alive = false;
     };
-  }, [activityId, activityName]);
+  }, [activityId, activityName, setSessions]);
 
-  function resetDraft() {
-    setDraft(emptyDraft);
-    setEditingId(null);
-  }
+  const handleEdit = (session: AnyObj) => {
+    // Støtter både gamle og nye feltnavn
+    const startISO = S(session.start_at ?? session.start ?? "");
+    const endISO = S(session.end_at ?? session.end ?? "");
 
-  function beginEdit(s: ActivitySession) {
-    const start = toDateParts(s.start_at);
-    const end = toDateParts(s.end_at);
+    const start = startISO ? new Date(startISO) : null;
+    const end = endISO ? new Date(endISO) : null;
 
-    const selected: Record<string, boolean> = {};
-    for (const id of s.targets || []) selected[String(id)] = true;
+    const yyyy = start ? start.getFullYear() : "";
+    const mm = start ? String(start.getMonth() + 1).padStart(2, "0") : "";
+    const dd = start ? String(start.getDate()).padStart(2, "0") : "";
+    const date = start ? `${yyyy}-${mm}-${dd}` : "";
+
+    const st = start ? `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}` : "";
+    const et = end ? `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}` : "";
 
     setDraft({
-      title: s.title || "Økt",
-      date: start.date,
-      startTime: start.time,
-      endTime: end.time,
-      location: s.location || "",
-      note: s.note || "",
-      audience: "custom", // når vi redigerer, vis som custom (gir kontroll)
-      selected,
+      id: session.id,
+      title: session.title ?? "",
+      date,
+      startTime: st,
+      endTime: et,
+      location: session.location ?? "",
+      note: session.note ?? "",
     });
+    setEditingId(String(session.id));
+  };
 
-    setEditingId(s.id);
-  }
-
-  async function save() {
+  const handleSave = async () => {
     if (!draft.date || !draft.startTime) {
       alert("Dato og starttid må fylles ut.");
       return;
     }
 
-    const title = draft.title.trim() || "Økt";
-    const startISO = buildISO(draft.date, draft.startTime);
-    const endISO = draft.endTime ? buildISO(draft.date, draft.endTime) : startISO;
+    const startISO = new Date(`${draft.date}T${draft.startTime}:00`).toISOString();
+    const endISO = draft.endTime
+      ? new Date(`${draft.date}T${draft.endTime}:00`).toISOString()
+      : startISO;
 
-    let targets: string[] = [];
-    if (draft.audience === "all") {
-      targets = allPeopleIds;
-    } else {
-      targets = Object.entries(draft.selected)
-        .filter(([, v]) => !!v)
-        .map(([k]) => String(k));
-    }
+    // IMPORTANT: Vi bruker den nye DB-strukturen (activity_sessions)
+    // og lar server-route gjøre det riktige.
+    const payload = {
+      id: editingId || undefined,
+      activity_id: activityId,
+      title: draft.title || "Økt",
+      start_at: startISO,
+      end_at: endISO,
+      location: draft.location || null,
+      note: draft.note || null,
 
-    // Hvis ingen targets, gjør det tydelig
-    if (targets.length === 0) {
-      alert("Velg minst én mottaker (eller velg 'Alle').");
-      return;
-    }
+      // targets: Hvis deres upsert-route støtter targets, sender vi den.
+      // Hvis ikke, ignorerer den bare feltet (trygt).
+      targets: Array.isArray(props.enrolledIds) ? props.enrolledIds : [],
+    };
 
     setBusy("save");
     try {
-      if (editingId) {
-        await updateActivitySession(editingId, {
-          activity_id: activityId,
-          title,
-          start_at: startISO,
-          end_at: endISO,
-          location: draft.location.trim(),
-          note: draft.note.trim(),
-          targets,
-        });
-      } else {
-        await createActivitySession({
-          activity_id: activityId,
-          title,
-          start_at: startISO,
-          end_at: endISO,
-          location: draft.location.trim(),
-          note: draft.note.trim(),
-          targets,
-        });
-      }
+      await apiUpsert(payload);
 
-      // refresh fra DB (sannhet)
-      const list = await fetchActivitySessions(activityId);
-      setSessionsState(list);
+      const list = await apiList(activityId);
+      setSessions(list);
       lsSaveSessions(activityId, list);
-      mirrorSessionsToCalendarLS(activityId, activityName, list);
+      mirrorSessionsToCalendar(activityId, activityName, list);
 
       resetDraft();
     } catch (e: any) {
-      // fallback: lagre lokalt (nødplan)
-      const local: ActivitySession = {
-        id: editingId || crypto.randomUUID(),
-        activity_id: activityId,
-        title,
-        start_at: startISO,
-        end_at: endISO,
-        location: draft.location.trim(),
-        note: draft.note.trim(),
-        targets,
-      };
-
-      const prev = lsLoadSessions(activityId);
-      const next = editingId
-        ? prev.map((x) => (String(x.id) === String(editingId) ? local : x))
-        : [local, ...prev];
-
-      lsSaveSessions(activityId, next);
-      setSessionsState(next);
-      mirrorSessionsToCalendarLS(activityId, activityName, next);
-
-      alert("Supabase svarte ikke – økten ble lagret lokalt som nødplan. Prøv igjen senere for å få den inn i databasen.");
-      resetDraft();
+      alert(e?.message || "Kunne ikke lagre økt i databasen.");
     } finally {
       setBusy(null);
     }
-  }
-
-  async function remove(sessionId: string) {
-    if (!confirm("Er du sikker på at du vil slette denne økten?")) return;
-
-    setBusy(sessionId);
-    try {
-      await deleteActivitySession(sessionId);
-
-      const list = await fetchActivitySessions(activityId);
-      setSessionsState(list);
-      lsSaveSessions(activityId, list);
-      mirrorSessionsToCalendarLS(activityId, activityName, list);
-
-      if (editingId === sessionId) resetDraft();
-    } catch {
-      // fallback: slett lokalt
-      const prev = lsLoadSessions(activityId);
-      const next = prev.filter((x) => String(x.id) !== String(sessionId));
-      lsSaveSessions(activityId, next);
-      setSessionsState(next);
-      mirrorSessionsToCalendarLS(activityId, activityName, next);
-
-      if (editingId === sessionId) resetDraft();
-      alert("Supabase svarte ikke – økten ble slettet lokalt som nødplan. Prøv igjen senere for å rydde i databasen.");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  const toggleSelected = (memberId: string) => {
-    setDraft((d) => ({
-      ...d,
-      selected: { ...d.selected, [memberId]: !d.selected[memberId] },
-    }));
   };
 
-  // UI (samme “look & feel” som nå: mørke kort inni hvit side)
-  if (loading) return <div className="text-neutral-600">Laster økter…</div>;
+  const handleDelete = async (id: string) => {
+    if (!confirm("Er du sikker på at du vil slette denne økten?")) return;
+
+    setBusy(id);
+    try {
+      await apiDelete(id);
+
+      const list = await apiList(activityId);
+      setSessions(list);
+      lsSaveSessions(activityId, list);
+      mirrorSessionsToCalendar(activityId, activityName, list);
+
+      if (editingId === id) resetDraft();
+    } catch (e: any) {
+      alert(e?.message || "Kunne ikke slette økt i databasen.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const prettyTime = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return iso;
+    }
+  };
+
+  const prettyDateTime = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleString("nb-NO");
+    } catch {
+      return iso;
+    }
+  };
+
+  const normalizedSessions = useMemo(() => {
+    // Støtt både start_at/end_at og start/end
+    return (sessions || []).map((s) => ({
+      ...s,
+      start_at: S(s.start_at ?? s.start ?? ""),
+      end_at: S(s.end_at ?? s.end ?? s.start_at ?? s.start ?? ""),
+    }));
+  }, [sessions]);
 
   return (
     <div className="space-y-6">
-      {/* Info */}
-      <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-800">
+      {/* Info / status (DESIGN uendret fra din fil, men tekst oppdatert) */}
+      <div className="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4 text-sm text-neutral-200">
         <p className="font-semibold mb-1">Økter for denne aktiviteten</p>
-        <p className="text-neutral-600">
-          Nå lagres økter i databasen (Supabase). Hvis databasen er nede, lagres de midlertidig lokalt og kan synkes senere.
+        <p className="text-neutral-400">
+          Økter hentes nå fra databasen (Supabase) via /api/sessions/list. Hvis databasen ikke svarer, brukes lokal fallback.
         </p>
+        {loading && (
+          <p className="mt-2 text-xs text-yellow-400">Laster økter…</p>
+        )}
       </div>
 
-      {/* Liste */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-4">
-        <h2 className="mb-3 text-base font-semibold text-neutral-900">Planlagte økter</h2>
+      {/* Liste over økter */}
+      <div className="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4">
+        <h2 className="mb-3 text-base font-semibold text-neutral-100">
+          Planlagte økter
+        </h2>
 
-        {sessions.length === 0 ? (
-          <p className="text-sm text-neutral-600">Ingen økter registrert ennå. Legg til den første økten i skjemaet under.</p>
+        {normalizedSessions.length === 0 ? (
+          <p className="text-sm text-neutral-400">
+            Ingen økter registrert ennå.
+          </p>
         ) : (
           <div className="space-y-3">
-            {sessions.map((s) => (
+            {normalizedSessions.map((s) => (
               <div
-                key={s.id}
-                className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-3 md:flex-row md:items-center md:justify-between"
+                key={String(s.id ?? `${s.start_at}-${s.title}`)}
+                className="flex flex-col gap-2 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 md:flex-row md:items-center md:justify-between"
               >
-                <div className="space-y-1 min-w-0">
-                  <div className="text-sm font-semibold text-neutral-900 truncate">{s.title || "Økt"}</div>
-                  <div className="text-xs text-neutral-700">
-                    {new Date(s.start_at).toLocaleString("nb-NO")} – {new Date(s.end_at).toLocaleTimeString("nb-NO")}
+                <div className="space-y-1">
+                  <div className="text-sm font-semibold text-neutral-100">
+                    {s.title || "Økt"}
+                  </div>
+                  <div className="text-xs text-neutral-300">
+                    {s.start_at ? prettyDateTime(s.start_at) : "Ukjent tidspunkt"}
+                    {s.end_at ? ` – ${prettyTime(s.end_at)}` : null}
                   </div>
                   {(s.location || s.note) && (
-                    <div className="text-xs text-neutral-600">
+                    <div className="text-xs text-neutral-400">
                       {s.location ? <span>Sted: {s.location}. </span> : null}
                       {s.note ? <span>Notat: {s.note}</span> : null}
                     </div>
                   )}
-                  <div className="text-xs text-neutral-500">
-                    Mottakere: {(s.targets || []).length}
-                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2 text-xs">
                   <button
                     type="button"
-                    onClick={() => beginEdit(s)}
-                    disabled={busy === "save" || !!busy}
-                    className="rounded-full border border-neutral-300 px-3 py-1 hover:border-red-500 hover:text-red-600"
+                    onClick={() => handleEdit(s)}
+                    className="rounded-full border border-neutral-600 px-3 py-1 hover:border-red-500 hover:text-red-300"
+                    disabled={!!busy}
                   >
                     Rediger
                   </button>
                   <button
                     type="button"
-                    onClick={() => remove(s.id)}
-                    disabled={busy === s.id || busy === "save"}
-                    className="rounded-full border border-neutral-300 px-3 py-1 text-red-600 hover:border-red-500 hover:bg-red-50 disabled:opacity-60"
+                    onClick={() => handleDelete(String(s.id))}
+                    className="rounded-full border border-neutral-700 px-3 py-1 text-red-300 hover:border-red-600 hover:bg-red-900/30 disabled:opacity-60"
+                    disabled={busy === String(s.id) || busy === "save"}
                   >
-                    {busy === s.id ? "Sletter…" : "Slett"}
+                    {busy === String(s.id) ? "Sletter…" : "Slett"}
                   </button>
                 </div>
               </div>
@@ -410,57 +382,57 @@ export default function SessionsPanel(props: Props) {
         )}
       </div>
 
-      {/* Skjema */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-4">
-        <h2 className="mb-3 text-base font-semibold text-neutral-900">
+      {/* Skjema for ny / redigert økt (DESIGN uendret) */}
+      <div className="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4">
+        <h2 className="mb-3 text-base font-semibold text-neutral-100">
           {editingId ? "Rediger økt" : "Ny økt"}
         </h2>
 
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-neutral-700">Tittel</label>
+            <label className="text-xs font-medium text-neutral-300">Tittel</label>
             <input
-              className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-900 outline-none focus:border-red-500"
+              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
               value={draft.title}
               onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
-              placeholder="F.eks. Øving – Scene 3"
+              placeholder="F.eks. Prøve, gjennomgang, forestilling ..."
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-neutral-700">Dato</label>
+            <label className="text-xs font-medium text-neutral-300">Dato</label>
             <input
               type="date"
-              className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-900 outline-none focus:border-red-500"
+              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
               value={draft.date}
               onChange={(e) => setDraft((d) => ({ ...d, date: e.target.value }))}
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-neutral-700">Starttid</label>
+            <label className="text-xs font-medium text-neutral-300">Starttid</label>
             <input
               type="time"
-              className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-900 outline-none focus:border-red-500"
+              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
               value={draft.startTime}
               onChange={(e) => setDraft((d) => ({ ...d, startTime: e.target.value }))}
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-neutral-700">Sluttid (valgfritt)</label>
+            <label className="text-xs font-medium text-neutral-300">Sluttid (valgfritt)</label>
             <input
               type="time"
-              className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-900 outline-none focus:border-red-500"
+              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
               value={draft.endTime}
               onChange={(e) => setDraft((d) => ({ ...d, endTime: e.target.value }))}
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-neutral-700">Sted (valgfritt)</label>
+            <label className="text-xs font-medium text-neutral-300">Sted (valgfritt)</label>
             <input
-              className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-900 outline-none focus:border-red-500"
+              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
               value={draft.location}
               onChange={(e) => setDraft((d) => ({ ...d, location: e.target.value }))}
               placeholder="F.eks. Follies, sal 1"
@@ -468,86 +440,23 @@ export default function SessionsPanel(props: Props) {
           </div>
 
           <div className="space-y-1 md:col-span-2">
-            <label className="text-xs font-medium text-neutral-700">Notat (valgfritt)</label>
+            <label className="text-xs font-medium text-neutral-300">Notat (valgfritt)</label>
             <textarea
-              className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-900 outline-none focus:border-red-500"
+              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
               rows={3}
               value={draft.note}
               onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))}
-              placeholder="Ekstra info"
+              placeholder="Ekstra info til deg selv/lederne."
             />
           </div>
-        </div>
-
-        {/* Mottakere */}
-        <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-          <div className="text-xs font-semibold text-neutral-900 mb-2">Hvem skal få denne økten?</div>
-          <div className="flex flex-wrap gap-4 text-sm text-neutral-900">
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="radio"
-                checked={draft.audience === "all"}
-                onChange={() => setDraft((d) => ({ ...d, audience: "all" }))}
-              />
-              <span>Alle (ledere + deltakere)</span>
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="radio"
-                checked={draft.audience === "custom"}
-                onChange={() => setDraft((d) => ({ ...d, audience: "custom" }))}
-              />
-              <span>Velg manuelt</span>
-            </label>
-          </div>
-
-          {draft.audience === "custom" && (
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="rounded-lg border border-neutral-200 bg-white p-3">
-                <div className="font-medium mb-2 text-neutral-900">Ledere</div>
-                <ul className="space-y-1">
-                  {leaders.map((p) => {
-                    const pid = S(p?.id ?? p?.uuid ?? p?.memberId ?? p?._id);
-                    const name = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Uten navn";
-                    if (!pid) return null;
-                    return (
-                      <li key={pid} className="flex items-center gap-2 text-sm text-neutral-900">
-                        <input type="checkbox" checked={!!draft.selected[pid]} onChange={() => toggleSelected(pid)} />
-                        <span>{name}</span>
-                      </li>
-                    );
-                  })}
-                  {leaders.length === 0 ? <li className="text-sm text-neutral-600">Ingen.</li> : null}
-                </ul>
-              </div>
-
-              <div className="rounded-lg border border-neutral-200 bg-white p-3">
-                <div className="font-medium mb-2 text-neutral-900">Deltakere</div>
-                <ul className="space-y-1 max-h-60 overflow-auto pr-1">
-                  {participants.map((p) => {
-                    const pid = S(p?.id ?? p?.uuid ?? p?.memberId ?? p?._id);
-                    const name = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Uten navn";
-                    if (!pid) return null;
-                    return (
-                      <li key={pid} className="flex items-center gap-2 text-sm text-neutral-900">
-                        <input type="checkbox" checked={!!draft.selected[pid]} onChange={() => toggleSelected(pid)} />
-                        <span>{name}</span>
-                      </li>
-                    );
-                  })}
-                  {participants.length === 0 ? <li className="text-sm text-neutral-600">Ingen.</li> : null}
-                </ul>
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={save}
+            onClick={handleSave}
             disabled={busy === "save"}
-            className="rounded-full bg-red-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+            className="rounded-full bg-red-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-60"
           >
             {busy === "save" ? "Lagrer…" : editingId ? "Lagre endringer" : "Legg til økt"}
           </button>
@@ -556,7 +465,7 @@ export default function SessionsPanel(props: Props) {
             <button
               type="button"
               onClick={resetDraft}
-              className="rounded-full border border-neutral-300 px-4 py-1.5 text-sm text-neutral-800 hover:border-red-500 hover:text-red-600"
+              className="rounded-full border border-neutral-600 px-4 py-1.5 text-sm text-neutral-200 hover:border-red-500 hover:text-red-300"
             >
               Avbryt redigering
             </button>
