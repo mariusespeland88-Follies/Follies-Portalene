@@ -4,14 +4,12 @@
 import { useEffect, useMemo, useState } from "react";
 
 type AnyObj = Record<string, any>;
-
 type SessionItem = {
-  id?: string;
-  title?: string;
-  start_at?: string;
-  end_at?: string;
-  start?: string;   // legacy
-  end?: string;     // legacy
+  id: string;
+  activity_id: string;
+  title: string;
+  start_at: string;
+  end_at: string;
   location?: string | null;
   note?: string | null;
   targets?: string[];
@@ -27,123 +25,24 @@ interface Props {
   enrolledIds: string[];
 }
 
-const CAL_LS = "follies.calendar.v1";
-const SESS_LS = "follies.activitySessions.v1";
-
-const safeJSON = <T,>(s: string | null): T | null => {
-  try {
-    return s ? (JSON.parse(s) as T) : null;
-  } catch {
-    return null;
-  }
-};
-
 const S = (v: any) => String(v ?? "");
 
-type SessionDraft = {
-  id?: string;
+type Draft = {
   title: string;
-  date: string; // YYYY-MM-DD
-  startTime: string; // HH:MM
-  endTime: string; // HH:MM
+  date: string;
+  startTime: string;
+  endTime: string;
   location: string;
   note: string;
 };
-
-const emptyDraft: SessionDraft = {
-  title: "",
-  date: "",
-  startTime: "",
-  endTime: "",
-  location: "",
-  note: "",
-};
-
-function lsLoadSessions(activityId: string): SessionItem[] {
-  if (typeof window === "undefined") return [];
-  const raw = safeJSON<Record<string, SessionItem[]>>(localStorage.getItem(SESS_LS));
-  if (!raw) return [];
-  return raw[activityId] ?? [];
-}
-
-function lsSaveSessions(activityId: string, list: SessionItem[]) {
-  if (typeof window === "undefined") return;
-  const raw =
-    safeJSON<Record<string, SessionItem[]>>(localStorage.getItem(SESS_LS)) ?? {};
-  raw[activityId] = list;
-  localStorage.setItem(SESS_LS, JSON.stringify(raw));
-}
-
-/**
- * Speil økter inn i kalender-LS (array-format)
- * Best effort.
- */
-function mirrorSessionsToCalendar(
-  activityId: string,
-  activityName: string,
-  list: SessionItem[]
-) {
-  if (typeof window === "undefined") return;
-
-  const existing = safeJSON<any[]>(localStorage.getItem(CAL_LS)) ?? [];
-
-  // Fjern gamle session-events for denne aktiviteten
-  const keep = existing.filter((e) => {
-    const src = String(e?.source ?? "");
-    const aid = String(e?.activity_id ?? "");
-    if (src === "session" && aid === String(activityId)) return false;
-    return true;
-  });
-
-  const next = [...keep];
-
-  for (const s of list) {
-    const sid = S(s.id);
-    const title = S(s.title) || "Økt";
-    const start = S(s.start_at ?? s.start ?? "");
-    const end = S(s.end_at ?? s.end ?? start);
-    const targets = Array.isArray(s.targets) ? s.targets.map(S) : [];
-
-    for (const mid of targets) {
-      next.unshift({
-        id: crypto.randomUUID(),
-        member_id: mid,
-        title: `${activityName}: ${title}`,
-        start,
-        end,
-        source: "session",
-        activity_id: activityId,
-        session_id: sid,
-      });
-    }
-  }
-
-  localStorage.setItem(CAL_LS, JSON.stringify(next));
-}
-
-/* -------------------- API helpers (din eksisterende struktur) -------------------- */
+const emptyDraft: Draft = { title: "", date: "", startTime: "", endTime: "", location: "", note: "" };
 
 async function apiList(activityId: string): Promise<SessionItem[]> {
-  const res = await fetch(
-    `/api/sessions/list?activityId=${encodeURIComponent(activityId)}`,
-    { cache: "no-store" }
-  );
-
-  const json = await res.json().catch(() => null);
-
-  if (!res.ok) {
-    const msg =
-      (json as any)?.error || res.statusText || "Kunne ikke hente økter";
-    throw new Error(String(msg));
-  }
-
-  const list = Array.isArray(json)
-    ? json
-    : Array.isArray((json as any)?.sessions)
-    ? (json as any).sessions
-    : [];
-
-  return Array.isArray(list) ? (list as SessionItem[]) : [];
+  const res = await fetch(`/api/sessions/list?activityId=${encodeURIComponent(activityId)}`, { cache: "no-store" });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(String((json as any)?.error || "Kunne ikke hente økter"));
+  const list = Array.isArray((json as any)?.sessions) ? (json as any).sessions : [];
+  return list as SessionItem[];
 }
 
 async function apiUpsert(payload: AnyObj): Promise<void> {
@@ -152,13 +51,8 @@ async function apiUpsert(payload: AnyObj): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-
-  const json = await res.json().catch(() => null);
-  if (!res.ok) {
-    const msg =
-      (json as any)?.error || res.statusText || "Kunne ikke lagre økt";
-    throw new Error(String(msg));
-  }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(String((json as any)?.error || "Kunne ikke lagre økt"));
 }
 
 async function apiDelete(id: string): Promise<void> {
@@ -167,335 +61,248 @@ async function apiDelete(id: string): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id }),
   });
-
-  const json = await res.json().catch(() => null);
-  if (!res.ok) {
-    const msg =
-      (json as any)?.error || res.statusText || "Kunne ikke slette økt";
-    throw new Error(String(msg));
-  }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(String((json as any)?.error || "Kunne ikke slette økt"));
 }
 
-/* -------------------- Component -------------------- */
+function toISO(date: string, time: string) {
+  return new Date(`${date}T${time}:00`).toISOString();
+}
 
-export default function SessionsPanel(props: Props) {
-  const { activityId, activityName, sessions, setSessions } = props;
-
-  const [draft, setDraft] = useState<SessionDraft>(emptyDraft);
-  const [editingId, setEditingId] = useState<string | null>(null);
+export default function SessionsPanel({ activityId, activityName, sessions, setSessions, enrolledIds }: Props) {
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
 
-  const resetDraft = () => {
-    setDraft(emptyDraft);
-    setEditingId(null);
-  };
+  async function refresh() {
+    setErr(null);
+    const list = await apiList(activityId);
+    setSessions(list as any);
+  }
 
-  // Hent økter DB-first via /api/sessions/list
   useEffect(() => {
     let alive = true;
-
     (async () => {
       setLoading(true);
       try {
         const list = await apiList(activityId);
         if (!alive) return;
-
         setSessions(list as any);
-        lsSaveSessions(activityId, list);
-        mirrorSessionsToCalendar(activityId, activityName, list);
-      } catch {
-        // fallback: LS
-        const fromLs = lsLoadSessions(activityId);
+      } catch (e: any) {
         if (!alive) return;
-
-        setSessions(fromLs as any);
-        mirrorSessionsToCalendar(activityId, activityName, fromLs);
+        setErr(e?.message || "Kunne ikke hente økter.");
+        setSessions([]);
       } finally {
         if (alive) setLoading(false);
       }
     })();
+    return () => { alive = false; };
+  }, [activityId, setSessions]);
 
-    return () => {
-      alive = false;
-    };
-  }, [activityId, activityName, setSessions]);
+  const normalized: SessionItem[] = useMemo(() => {
+    return (sessions || []).map((s: any) => ({
+      id: S(s.id),
+      activity_id: S(s.activity_id ?? activityId),
+      title: S(s.title) || "Økt",
+      start_at: S(s.start_at),
+      end_at: S(s.end_at || s.start_at),
+      location: s.location ?? "",
+      note: s.note ?? "",
+      targets: Array.isArray(s.targets) ? s.targets : [],
+    })).filter((s: any) => s.id && s.start_at);
+  }, [sessions, activityId]);
 
-  const handleEdit = (session: SessionItem) => {
-    const startISO = S(session.start_at ?? session.start ?? "");
-    const endISO = S(session.end_at ?? session.end ?? "");
+  function reset() { setDraft(emptyDraft); setEditingId(null); }
 
-    const start = startISO ? new Date(startISO) : null;
-    const end = endISO ? new Date(endISO) : null;
+  function edit(s: SessionItem) {
+    const st = new Date(s.start_at);
+    const en = new Date(s.end_at || s.start_at);
 
-    const yyyy = start ? start.getFullYear() : "";
-    const mm = start ? String(start.getMonth() + 1).padStart(2, "0") : "";
-    const dd = start ? String(start.getDate()).padStart(2, "0") : "";
-    const date = start ? `${yyyy}-${mm}-${dd}` : "";
+    const yyyy = st.getFullYear();
+    const mm = String(st.getMonth() + 1).padStart(2, "0");
+    const dd = String(st.getDate()).padStart(2, "0");
+    const date = `${yyyy}-${mm}-${dd}`;
 
-    const st = start
-      ? `${String(start.getHours()).padStart(2, "0")}:${String(
-          start.getMinutes()
-        ).padStart(2, "0")}`
-      : "";
-    const et = end
-      ? `${String(end.getHours()).padStart(2, "0")}:${String(
-          end.getMinutes()
-        ).padStart(2, "0")}`
-      : "";
+    const stt = `${String(st.getHours()).padStart(2, "0")}:${String(st.getMinutes()).padStart(2, "0")}`;
+    const ett = `${String(en.getHours()).padStart(2, "0")}:${String(en.getMinutes()).padStart(2, "0")}`;
 
     setDraft({
-      id: session.id,
-      title: session.title ?? "",
+      title: s.title || "Økt",
       date,
-      startTime: st,
-      endTime: et,
-      location: session.location ?? "",
-      note: session.note ?? "",
+      startTime: stt,
+      endTime: ett,
+      location: S(s.location),
+      note: S(s.note),
     });
-    setEditingId(String(session.id ?? ""));
-  };
+    setEditingId(s.id);
+  }
 
-  const handleSave = async () => {
-    if (!draft.date || !draft.startTime) {
-      alert("Dato og starttid må fylles ut.");
-      return;
-    }
-
-    const startISO = new Date(`${draft.date}T${draft.startTime}:00`).toISOString();
-    const endISO = draft.endTime
-      ? new Date(`${draft.date}T${draft.endTime}:00`).toISOString()
-      : startISO;
-
-    const payload = {
-      id: editingId || undefined,
-      activity_id: activityId,
-      title: draft.title || "Økt",
-      start_at: startISO,
-      end_at: endISO,
-      location: draft.location || null,
-      note: draft.note || null,
-      targets: Array.isArray(props.enrolledIds) ? props.enrolledIds : [],
-    };
-
+  async function save() {
+    if (!draft.date || !draft.startTime) { alert("Dato og starttid må fylles ut."); return; }
     setBusy("save");
+    setErr(null);
     try {
+      const payload = {
+        id: editingId || undefined,
+        activity_id: activityId,
+        title: draft.title || "Økt",
+        start_at: toISO(draft.date, draft.startTime),
+        end_at: draft.endTime ? toISO(draft.date, draft.endTime) : toISO(draft.date, draft.startTime),
+        location: draft.location || null,
+        note: draft.note || null,
+        targets: Array.isArray(enrolledIds) ? enrolledIds : [],
+      };
       await apiUpsert(payload);
-
-      const list = await apiList(activityId);
-      setSessions(list as any);
-      lsSaveSessions(activityId, list);
-      mirrorSessionsToCalendar(activityId, activityName, list);
-
-      resetDraft();
+      await refresh();
+      reset();
     } catch (e: any) {
-      alert(e?.message || "Kunne ikke lagre økt i databasen.");
+      setErr(e?.message || "Kunne ikke lagre økt.");
     } finally {
       setBusy(null);
     }
-  };
+  }
 
-  const handleDelete = async (id: string) => {
+  async function remove(id: string) {
     if (!confirm("Er du sikker på at du vil slette denne økten?")) return;
-
     setBusy(id);
+    setErr(null);
     try {
       await apiDelete(id);
-
-      const list = await apiList(activityId);
-      setSessions(list as any);
-      lsSaveSessions(activityId, list);
-      mirrorSessionsToCalendar(activityId, activityName, list);
-
-      if (editingId === id) resetDraft();
+      await refresh();
+      if (editingId === id) reset();
     } catch (e: any) {
-      alert(e?.message || "Kunne ikke slette økt i databasen.");
+      setErr(e?.message || "Kunne ikke slette økt.");
     } finally {
       setBusy(null);
     }
-  };
+  }
 
-  const prettyTime = (iso: string) => {
-    try {
-      return new Date(iso).toLocaleTimeString("nb-NO", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return iso;
-    }
-  };
-
-  const prettyDateTime = (iso: string) => {
-    try {
-      return new Date(iso).toLocaleString("nb-NO");
-    } catch {
-      return iso;
-    }
-  };
-
-  const normalizedSessions: SessionItem[] = useMemo(() => {
-    const list = (sessions || []) as SessionItem[];
-    return list.map((s) => ({
-      ...s,
-      start_at: S(s.start_at ?? s.start ?? ""),
-      end_at: S(s.end_at ?? s.end ?? s.start_at ?? s.start ?? ""),
-    }));
-  }, [sessions]);
+  if (loading) {
+    return <div className="text-neutral-300">Laster økter…</div>;
+  }
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4 text-sm text-neutral-200">
-        <p className="font-semibold mb-1">Økter for denne aktiviteten</p>
-        <p className="text-neutral-400">
-          Økter hentes fra databasen via /api/sessions/list.
-        </p>
-        {loading && (
-          <p className="mt-2 text-xs text-yellow-400">Laster økter…</p>
-        )}
-      </div>
+      {err ? (
+        <div className="rounded-lg border border-red-500/40 bg-red-950/30 px-4 py-3 text-red-200 text-sm">
+          {err}
+          <div className="mt-2 text-red-200/80 text-xs">
+            (Dette skjer ofte hvis Vercel mangler SUPABASE_SERVICE_ROLE_KEY.)
+          </div>
+        </div>
+      ) : null}
 
-      <div className="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4">
-        <h2 className="mb-3 text-base font-semibold text-neutral-100">
-          Planlagte økter
-        </h2>
+      <div className="rounded-xl border border-white/10 p-4 bg-black/40">
+        <h3 className="font-semibold mb-3">Planlagte økter</h3>
 
-        {normalizedSessions.length === 0 ? (
-          <p className="text-sm text-neutral-400">Ingen økter registrert.</p>
+        {normalized.length === 0 ? (
+          <div className="text-neutral-400">Ingen økter.</div>
         ) : (
-          <div className="space-y-3">
-            {normalizedSessions.map((s) => (
-              <div
-                key={String(s.id ?? `${s.start_at}-${s.title}`)}
-                className="flex flex-col gap-2 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 md:flex-row md:items-center md:justify-between"
-              >
-                <div className="space-y-1">
-                  <div className="text-sm font-semibold text-neutral-100">
-                    {s.title || "Økt"}
+          <ul className="space-y-2">
+            {normalized.map((s) => (
+              <li key={s.id} className="flex items-center justify-between rounded-lg border border-white/10 p-3">
+                <div>
+                  <div className="font-medium">{s.title}</div>
+                  <div className="text-sm text-neutral-400">
+                    {new Date(s.start_at).toLocaleString("nb-NO")} – {new Date(s.end_at).toLocaleTimeString("nb-NO")}
                   </div>
-                  <div className="text-xs text-neutral-300">
-                    {s.start_at ? prettyDateTime(s.start_at) : "Ukjent tidspunkt"}
-                    {s.end_at ? ` – ${prettyTime(s.end_at)}` : null}
-                  </div>
-                  {(s.location || s.note) && (
-                    <div className="text-xs text-neutral-400">
-                      {s.location ? <span>Sted: {s.location}. </span> : null}
-                      {s.note ? <span>Notat: {s.note}</span> : null}
-                    </div>
-                  )}
                 </div>
-
-                <div className="flex flex-wrap gap-2 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => handleEdit(s)}
-                    className="rounded-full border border-neutral-600 px-3 py-1 hover:border-red-500 hover:text-red-300"
-                    disabled={!!busy}
-                  >
+                <div className="flex gap-2">
+                  <button onClick={() => edit(s)} className="rounded-full border border-neutral-600 px-3 py-1 text-sm hover:border-red-500">
                     Rediger
                   </button>
                   <button
-                    type="button"
-                    onClick={() => handleDelete(String(s.id ?? ""))}
-                    className="rounded-full border border-neutral-700 px-3 py-1 text-red-300 hover:border-red-600 hover:bg-red-900/30 disabled:opacity-60"
-                    disabled={busy === String(s.id ?? "") || busy === "save"}
+                    onClick={() => remove(s.id)}
+                    disabled={busy === s.id}
+                    className="rounded-full border border-neutral-700 px-3 py-1 text-sm text-red-300 hover:border-red-600 disabled:opacity-60"
                   >
-                    {busy === String(s.id ?? "") ? "Sletter…" : "Slett"}
+                    {busy === s.id ? "Sletter…" : "Slett"}
                   </button>
                 </div>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </div>
 
-      <div className="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4">
-        <h2 className="mb-3 text-base font-semibold text-neutral-100">
-          {editingId ? "Rediger økt" : "Ny økt"}
-        </h2>
+      <div className="rounded-xl border border-white/10 p-4 bg-black/40">
+        <h3 className="font-semibold mb-3">{editingId ? "Rediger økt" : "Ny økt"}</h3>
 
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-neutral-300">Tittel</label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-neutral-300 mb-1">Tittel</label>
             <input
-              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
               value={draft.title}
               onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
-              placeholder="F.eks. Prøve, gjennomgang, forestilling ..."
+              className="w-full rounded-xl bg-neutral-800 text-white px-3 py-2 border border-white/10 focus:border-red-500"
+              placeholder="Øving – Scene 3"
             />
           </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-neutral-300">Dato</label>
+          <div>
+            <label className="block text-sm text-neutral-300 mb-1">Dato</label>
             <input
               type="date"
-              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
               value={draft.date}
               onChange={(e) => setDraft((d) => ({ ...d, date: e.target.value }))}
+              className="w-full rounded-xl bg-neutral-800 text-white px-3 py-2 border border-white/10 focus:border-red-500"
             />
           </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-neutral-300">Starttid</label>
+          <div>
+            <label className="block text-sm text-neutral-300 mb-1">Tid (start)</label>
             <input
               type="time"
-              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
               value={draft.startTime}
               onChange={(e) => setDraft((d) => ({ ...d, startTime: e.target.value }))}
+              className="w-full rounded-xl bg-neutral-800 text-white px-3 py-2 border border-white/10 focus:border-red-500"
             />
           </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-neutral-300">Sluttid (valgfritt)</label>
+          <div>
+            <label className="block text-sm text-neutral-300 mb-1">Tid (slutt)</label>
             <input
               type="time"
-              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
               value={draft.endTime}
               onChange={(e) => setDraft((d) => ({ ...d, endTime: e.target.value }))}
+              className="w-full rounded-xl bg-neutral-800 text-white px-3 py-2 border border-white/10 focus:border-red-500"
             />
           </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-neutral-300">Sted (valgfritt)</label>
+          <div className="md:col-span-2">
+            <label className="block text-sm text-neutral-300 mb-1">Sted</label>
             <input
-              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
               value={draft.location}
               onChange={(e) => setDraft((d) => ({ ...d, location: e.target.value }))}
-              placeholder="F.eks. Follies, sal 1"
+              className="w-full rounded-xl bg-neutral-800 text-white px-3 py-2 border border-white/10 focus:border-red-500"
+              placeholder="Metro Storsal"
             />
           </div>
-
-          <div className="space-y-1 md:col-span-2">
-            <label className="text-xs font-medium text-neutral-300">Notat (valgfritt)</label>
+          <div className="md:col-span-2">
+            <label className="block text-sm text-neutral-300 mb-1">Notat</label>
             <textarea
-              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-red-500"
-              rows={3}
               value={draft.note}
               onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))}
-              placeholder="Ekstra info til deg selv/lederne."
+              className="w-full rounded-xl bg-neutral-800 text-white px-3 py-2 border border-white/10 focus:border-red-500"
+              rows={3}
             />
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 flex gap-2">
           <button
-            type="button"
-            onClick={handleSave}
+            onClick={save}
             disabled={busy === "save"}
-            className="rounded-full bg-red-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-60"
+            className="rounded-xl bg-red-600 hover:bg-red-700 px-4 py-2 font-semibold disabled:opacity-60"
           >
-            {busy === "save" ? "Lagrer…" : editingId ? "Lagre endringer" : "Legg til økt"}
+            {busy === "save" ? "Lagrer…" : editingId ? "Lagre" : "Legg til"}
           </button>
-
-          {editingId && (
+          {editingId ? (
             <button
-              type="button"
-              onClick={resetDraft}
-              className="rounded-full border border-neutral-600 px-4 py-1.5 text-sm text-neutral-200 hover:border-red-500 hover:text-red-300"
+              onClick={reset}
+              className="rounded-xl border border-white/20 px-4 py-2 font-semibold hover:bg-white/10"
             >
-              Avbryt redigering
+              Avbryt
             </button>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
