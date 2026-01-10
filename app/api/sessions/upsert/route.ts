@@ -1,55 +1,72 @@
+// PATH: app/api/sessions/upsert/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
-function getAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-  return createClient(url, key, { auth: { persistSession: false } });
-}
+const S = (v: any) => String(v ?? "").trim();
 
 export async function POST(req: Request) {
   try {
-    const { sessionId, activityId, title, start_at, end_at, location, note, targetIds } = await req.json();
+    const supabase = getSupabaseServiceRoleClient();
+    if (!supabase) {
+      return NextResponse.json(
+        { error: "Service role client mangler (SUPABASE_SERVICE_ROLE_KEY er ikke satt på Vercel)." },
+        { status: 500 }
+      );
+    }
 
-    if (!activityId) return NextResponse.json({ error: "Missing activityId" }, { status: 400 });
-    if (!start_at) return NextResponse.json({ error: "Missing start_at" }, { status: 400 });
+    const body = await req.json().catch(() => ({}));
+    const id = S(body.id);
+    const activity_id = S(body.activity_id);
+    const title = S(body.title) || "Økt";
+    const start_at = S(body.start_at);
+    const end_at = S(body.end_at) || start_at;
+    const location = S(body.location) || null;
+    const note = S(body.note) || null;
+    const targets = Array.isArray(body.targets) ? body.targets.map(S).filter(Boolean) : [];
 
-    const supabase = getAdminClient();
+    if (!activity_id || !start_at) {
+      return NextResponse.json({ error: "Missing activity_id or start_at" }, { status: 400 });
+    }
 
-    const payload = {
-      activity_id: activityId,
-      title: title ?? "Økt",
-      start_at,
-      end_at: end_at ?? null,
-      location: location ?? null,
-      note: note ?? null,
-    };
+    // Upsert session
+    let sessionId = id;
 
-    let id = sessionId ? String(sessionId) : null;
+    if (sessionId) {
+      const { error } = await supabase
+        .from("activity_sessions")
+        .update({ title, start_at, end_at, location, note })
+        .eq("id", sessionId);
 
-    if (id) {
-      const up = await supabase.from("activity_sessions").update(payload).eq("id", id);
-      if (up.error) throw up.error;
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     } else {
-      const ins = await supabase.from("activity_sessions").insert(payload).select("id").single();
-      if (ins.error) throw ins.error;
-      id = String((ins.data as any).id);
+      const { data, error } = await supabase
+        .from("activity_sessions")
+        .insert({ activity_id, title, start_at, end_at, location, note })
+        .select("id")
+        .single();
+
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      sessionId = S(data?.id);
     }
 
-    // Targets: slett og sett inn på nytt
-    const delT = await supabase.from("activity_session_targets").delete().eq("session_id", id);
-    if (delT.error) throw delT.error;
+    // Replace targets
+    const { error: delErr } = await supabase
+      .from("activity_session_targets")
+      .delete()
+      .eq("session_id", sessionId);
 
-    const tids = Array.isArray(targetIds) ? targetIds.map(String).filter(Boolean) : [];
-    if (tids.length) {
-      const rows = tids.map((mid) => ({ session_id: id, member_id: mid }));
-      const insT = await supabase.from("activity_session_targets").insert(rows);
-      if (insT.error) throw insT.error;
+    if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
+
+    if (targets.length) {
+      const { error: insErr } = await supabase
+        .from("activity_session_targets")
+        .insert(targets.map((member_id: string) => ({ session_id: sessionId, member_id })));
+
+      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
     }
 
-    return NextResponse.json({ id });
+    return NextResponse.json({ ok: true, id: sessionId });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: e?.message || "Unknown error" }, { status: 500 });
   }
 }
