@@ -1,3 +1,4 @@
+// PATH: app/(protected)/activities/[id]/AttendanceTab.tsx
 
 "use client";
 

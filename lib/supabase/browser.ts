@@ -1,3 +1,4 @@
+// PATH: lib/supabase/browser.ts
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient, SupabaseClientOptions } from "@supabase/supabase-js";
 

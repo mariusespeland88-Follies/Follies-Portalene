@@ -1,3 +1,4 @@
+// PATH: app/api/admin/invite-member/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 

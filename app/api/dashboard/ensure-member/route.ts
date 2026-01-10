@@ -1,3 +1,4 @@
+// PATH: app/api/dashboard/ensure-member/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 

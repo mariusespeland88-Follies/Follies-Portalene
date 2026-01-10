@@ -1,3 +1,4 @@
+// PATH: lib/calendar.ts
 // lib/calendar.ts
 export type CalendarItem = {
   id: string

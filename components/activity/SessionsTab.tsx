@@ -1,3 +1,4 @@
+// PATH: components/activity/SessionsTab.tsx
 "use client";
 
 export default function SessionsTab({ activityId }: { activityId: string }) {

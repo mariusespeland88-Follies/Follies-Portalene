@@ -1,3 +1,4 @@
+// PATH: lib/saveActivityDBFirst.ts
 // lib/activity/saveActivityDBFirst.ts
 "use client";
 import { createClientComponentClient } from "@/lib/supabase/browser";

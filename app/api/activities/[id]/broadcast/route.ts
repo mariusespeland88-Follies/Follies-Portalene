@@ -1,3 +1,4 @@
+// PATH: app/api/activities/[id]/broadcast/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";

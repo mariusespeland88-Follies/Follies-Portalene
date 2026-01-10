@@ -1,3 +1,4 @@
+// PATH: tsconfig.json
 {
   "compilerOptions": {
     "target": "ES2020",

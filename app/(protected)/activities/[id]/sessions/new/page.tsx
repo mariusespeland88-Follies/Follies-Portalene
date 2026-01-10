@@ -1,3 +1,4 @@
+// PATH: app/(protected)/activities/[id]/sessions/new/page.tsx
 "use client";
 
 // SNAPSHOT: 2026-01-08 – Økter til DB (Supabase) + LS fallback

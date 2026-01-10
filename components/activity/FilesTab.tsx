@@ -1,3 +1,4 @@
+// PATH: components/activity/FilesTab.tsx
 "use client";
 
 export default function FilesTab({ activityId }: { activityId: string }) {

@@ -1,3 +1,4 @@
+// PATH: hooks/usePermissions.ts
 "use client";
 
 import * as React from "react";

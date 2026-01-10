@@ -1,3 +1,4 @@
+// PATH: lib/members.ts
 // lib/members.ts
 // Hjelpefunksjoner for "Medlemmer":
 // - Primær DB-tilgang via Supabase (klient)

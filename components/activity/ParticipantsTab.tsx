@@ -1,3 +1,4 @@
+// PATH: components/activity/ParticipantsTab.tsx
 "use client";
 
 import { useEffect, useState } from "react";

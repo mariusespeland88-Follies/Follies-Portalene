@@ -1,3 +1,4 @@
+// PATH: supabase/migrations/20240715000000_add_activity_volunteers_tasks.sql
 -- Add volunteers and tasks modules for activities
 
 create extension if not exists "pgcrypto";

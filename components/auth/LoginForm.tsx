@@ -1,3 +1,4 @@
+// PATH: components/auth/LoginForm.tsx
 "use client";
 
 import { useEffect, useState } from "react";

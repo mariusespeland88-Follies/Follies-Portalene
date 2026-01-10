@@ -1,3 +1,4 @@
+// PATH: app/components/UploadProfilePicture.tsx
 "use client";
 
 import { useMemo, useRef, useState } from "react";

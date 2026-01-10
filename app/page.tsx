@@ -1,3 +1,4 @@
+// PATH: app/page.tsx
 // app/page.tsx
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';

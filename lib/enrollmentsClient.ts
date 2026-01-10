@@ -1,3 +1,4 @@
+// PATH: lib/enrollmentsClient.ts
 // lib/enrollmentsClient.ts
 "use client";
 

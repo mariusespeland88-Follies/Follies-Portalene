@@ -1,3 +1,4 @@
+// PATH: app/auth/callback/route.ts
 // app/auth/callback/route.ts
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'

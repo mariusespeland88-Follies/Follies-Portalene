@@ -1,3 +1,4 @@
+// PATH: lib/activitiesClient.ts
 "use client";
 
 // Midlertidig, men funksjonell klient for aktiviteter.

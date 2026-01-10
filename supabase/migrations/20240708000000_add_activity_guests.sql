@@ -1,3 +1,4 @@
+// PATH: supabase/migrations/20240708000000_add_activity_guests.sql
 -- Add guest & attendance support for activities
 
 create extension if not exists "pgcrypto";

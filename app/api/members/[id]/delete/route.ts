@@ -1,3 +1,4 @@
+// PATH: app/api/members/[id]/delete/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 

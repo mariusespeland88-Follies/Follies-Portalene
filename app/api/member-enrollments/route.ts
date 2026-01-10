@@ -1,3 +1,4 @@
+// PATH: app/api/member-enrollments/route.ts
 import { NextResponse } from 'next/server';
 
 const URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;

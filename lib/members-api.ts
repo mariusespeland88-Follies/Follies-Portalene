@@ -1,3 +1,4 @@
+// PATH: lib/members-api.ts
 // lib/members-api.ts
 // Hjelpefil for å snakke med API-endepunktene for Medlemmer – uten å røre UI.
 // - POST /api/members/create

@@ -1,3 +1,4 @@
+// PATH: app/(protected)/activities/[id]/print-guests/page.tsx
 
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import Link from "next/link";

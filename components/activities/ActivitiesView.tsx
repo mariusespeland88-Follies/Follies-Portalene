@@ -1,3 +1,4 @@
+// PATH: components/activities/ActivitiesView.tsx
 'use client';
 
 import { useMemo, useState } from 'react';

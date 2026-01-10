@@ -1,3 +1,4 @@
+// PATH: lib/messagesClient.ts
 "use client";
 
 export type MessageScope = "activity" | "member";

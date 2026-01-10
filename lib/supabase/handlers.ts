@@ -1,3 +1,4 @@
+// PATH: lib/supabase/handlers.ts
 import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest, NextResponse } from "next/server";

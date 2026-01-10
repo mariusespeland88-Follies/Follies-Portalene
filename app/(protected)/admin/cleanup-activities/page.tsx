@@ -1,3 +1,4 @@
+// PATH: app/(protected)/admin/cleanup-activities/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";

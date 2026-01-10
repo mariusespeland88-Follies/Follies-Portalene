@@ -1,3 +1,4 @@
+// PATH: app/api/admin/create-leader/route.ts
 import { NextResponse } from "next/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 

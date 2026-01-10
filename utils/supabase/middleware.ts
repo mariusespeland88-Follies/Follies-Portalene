@@ -1,3 +1,4 @@
+// PATH: utils/supabase/middleware.ts
 // utils/supabase/middleware.ts
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';

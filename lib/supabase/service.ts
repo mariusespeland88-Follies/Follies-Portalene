@@ -1,3 +1,4 @@
+// PATH: lib/supabase/service.ts
 // lib/supabase/service.ts
 // Server-side helper for creating a Supabase client with the service role key.
 // This must never be imported from the browser – it exposes full database access.

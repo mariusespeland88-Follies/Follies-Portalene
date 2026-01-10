@@ -1,3 +1,4 @@
+// PATH: app/(protected)/members/[id]/layout.tsx
 "use client";
 
 import * as React from "react";

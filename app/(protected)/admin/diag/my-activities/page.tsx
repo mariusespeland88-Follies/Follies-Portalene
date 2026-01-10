@@ -1,3 +1,4 @@
+// PATH: app/(protected)/admin/diag/my-activities/page.tsx
 "use client";
 
 import * as React from "react";
