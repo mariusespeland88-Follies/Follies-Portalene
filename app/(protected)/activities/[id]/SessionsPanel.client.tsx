@@ -5,6 +5,18 @@ import { useEffect, useMemo, useState } from "react";
 
 type AnyObj = Record<string, any>;
 
+type SessionItem = {
+  id?: string;
+  title?: string;
+  start_at?: string;
+  end_at?: string;
+  start?: string;   // legacy
+  end?: string;     // legacy
+  location?: string | null;
+  note?: string | null;
+  targets?: string[];
+};
+
 interface Props {
   activityId: string;
   activityName: string;
@@ -47,26 +59,30 @@ const emptyDraft: SessionDraft = {
   note: "",
 };
 
-function lsLoadSessions(activityId: string): AnyObj[] {
+function lsLoadSessions(activityId: string): SessionItem[] {
   if (typeof window === "undefined") return [];
-  const raw = safeJSON<Record<string, AnyObj[]>>(localStorage.getItem(SESS_LS));
+  const raw = safeJSON<Record<string, SessionItem[]>>(localStorage.getItem(SESS_LS));
   if (!raw) return [];
   return raw[activityId] ?? [];
 }
 
-function lsSaveSessions(activityId: string, list: AnyObj[]) {
+function lsSaveSessions(activityId: string, list: SessionItem[]) {
   if (typeof window === "undefined") return;
   const raw =
-    safeJSON<Record<string, AnyObj[]>>(localStorage.getItem(SESS_LS)) ?? {};
+    safeJSON<Record<string, SessionItem[]>>(localStorage.getItem(SESS_LS)) ?? {};
   raw[activityId] = list;
   localStorage.setItem(SESS_LS, JSON.stringify(raw));
 }
 
 /**
- * Speil økter inn i kalender-LS (samme format som kalenderen din bruker: array)
- * Vi gjør dette "best effort".
+ * Speil økter inn i kalender-LS (array-format)
+ * Best effort.
  */
-function mirrorSessionsToCalendar(activityId: string, activityName: string, list: AnyObj[]) {
+function mirrorSessionsToCalendar(
+  activityId: string,
+  activityName: string,
+  list: SessionItem[]
+) {
   if (typeof window === "undefined") return;
 
   const existing = safeJSON<any[]>(localStorage.getItem(CAL_LS)) ?? [];
@@ -105,23 +121,29 @@ function mirrorSessionsToCalendar(activityId: string, activityName: string, list
   localStorage.setItem(CAL_LS, JSON.stringify(next));
 }
 
-/* -------------------- API helpers (bruker din eksisterende struktur) -------------------- */
+/* -------------------- API helpers (din eksisterende struktur) -------------------- */
 
-async function apiList(activityId: string): Promise<AnyObj[]> {
-  const res = await fetch(`/api/sessions/list?activityId=${encodeURIComponent(activityId)}`, {
-    cache: "no-store",
-  });
+async function apiList(activityId: string): Promise<SessionItem[]> {
+  const res = await fetch(
+    `/api/sessions/list?activityId=${encodeURIComponent(activityId)}`,
+    { cache: "no-store" }
+  );
 
   const json = await res.json().catch(() => null);
 
   if (!res.ok) {
-    const msg = (json as any)?.error || res.statusText || "Kunne ikke hente økter";
+    const msg =
+      (json as any)?.error || res.statusText || "Kunne ikke hente økter";
     throw new Error(String(msg));
   }
 
-  // støtte både {sessions:[...]} og bare [...]
-  const list = Array.isArray(json) ? json : Array.isArray((json as any)?.sessions) ? (json as any).sessions : [];
-  return Array.isArray(list) ? list : [];
+  const list = Array.isArray(json)
+    ? json
+    : Array.isArray((json as any)?.sessions)
+    ? (json as any).sessions
+    : [];
+
+  return Array.isArray(list) ? (list as SessionItem[]) : [];
 }
 
 async function apiUpsert(payload: AnyObj): Promise<void> {
@@ -133,7 +155,8 @@ async function apiUpsert(payload: AnyObj): Promise<void> {
 
   const json = await res.json().catch(() => null);
   if (!res.ok) {
-    const msg = (json as any)?.error || res.statusText || "Kunne ikke lagre økt";
+    const msg =
+      (json as any)?.error || res.statusText || "Kunne ikke lagre økt";
     throw new Error(String(msg));
   }
 }
@@ -147,7 +170,8 @@ async function apiDelete(id: string): Promise<void> {
 
   const json = await res.json().catch(() => null);
   if (!res.ok) {
-    const msg = (json as any)?.error || res.statusText || "Kunne ikke slette økt";
+    const msg =
+      (json as any)?.error || res.statusText || "Kunne ikke slette økt";
     throw new Error(String(msg));
   }
 }
@@ -176,14 +200,16 @@ export default function SessionsPanel(props: Props) {
       try {
         const list = await apiList(activityId);
         if (!alive) return;
-        setSessions(list);
+
+        setSessions(list as any);
         lsSaveSessions(activityId, list);
         mirrorSessionsToCalendar(activityId, activityName, list);
       } catch {
         // fallback: LS
         const fromLs = lsLoadSessions(activityId);
         if (!alive) return;
-        setSessions(fromLs);
+
+        setSessions(fromLs as any);
         mirrorSessionsToCalendar(activityId, activityName, fromLs);
       } finally {
         if (alive) setLoading(false);
@@ -195,8 +221,7 @@ export default function SessionsPanel(props: Props) {
     };
   }, [activityId, activityName, setSessions]);
 
-  const handleEdit = (session: AnyObj) => {
-    // Støtter både gamle og nye feltnavn
+  const handleEdit = (session: SessionItem) => {
     const startISO = S(session.start_at ?? session.start ?? "");
     const endISO = S(session.end_at ?? session.end ?? "");
 
@@ -208,8 +233,16 @@ export default function SessionsPanel(props: Props) {
     const dd = start ? String(start.getDate()).padStart(2, "0") : "";
     const date = start ? `${yyyy}-${mm}-${dd}` : "";
 
-    const st = start ? `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}` : "";
-    const et = end ? `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}` : "";
+    const st = start
+      ? `${String(start.getHours()).padStart(2, "0")}:${String(
+          start.getMinutes()
+        ).padStart(2, "0")}`
+      : "";
+    const et = end
+      ? `${String(end.getHours()).padStart(2, "0")}:${String(
+          end.getMinutes()
+        ).padStart(2, "0")}`
+      : "";
 
     setDraft({
       id: session.id,
@@ -220,7 +253,7 @@ export default function SessionsPanel(props: Props) {
       location: session.location ?? "",
       note: session.note ?? "",
     });
-    setEditingId(String(session.id));
+    setEditingId(String(session.id ?? ""));
   };
 
   const handleSave = async () => {
@@ -234,8 +267,6 @@ export default function SessionsPanel(props: Props) {
       ? new Date(`${draft.date}T${draft.endTime}:00`).toISOString()
       : startISO;
 
-    // IMPORTANT: Vi bruker den nye DB-strukturen (activity_sessions)
-    // og lar server-route gjøre det riktige.
     const payload = {
       id: editingId || undefined,
       activity_id: activityId,
@@ -244,9 +275,6 @@ export default function SessionsPanel(props: Props) {
       end_at: endISO,
       location: draft.location || null,
       note: draft.note || null,
-
-      // targets: Hvis deres upsert-route støtter targets, sender vi den.
-      // Hvis ikke, ignorerer den bare feltet (trygt).
       targets: Array.isArray(props.enrolledIds) ? props.enrolledIds : [],
     };
 
@@ -255,7 +283,7 @@ export default function SessionsPanel(props: Props) {
       await apiUpsert(payload);
 
       const list = await apiList(activityId);
-      setSessions(list);
+      setSessions(list as any);
       lsSaveSessions(activityId, list);
       mirrorSessionsToCalendar(activityId, activityName, list);
 
@@ -275,7 +303,7 @@ export default function SessionsPanel(props: Props) {
       await apiDelete(id);
 
       const list = await apiList(activityId);
-      setSessions(list);
+      setSessions(list as any);
       lsSaveSessions(activityId, list);
       mirrorSessionsToCalendar(activityId, activityName, list);
 
@@ -289,7 +317,10 @@ export default function SessionsPanel(props: Props) {
 
   const prettyTime = (iso: string) => {
     try {
-      return new Date(iso).toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" });
+      return new Date(iso).toLocaleTimeString("nb-NO", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
     } catch {
       return iso;
     }
@@ -303,9 +334,9 @@ export default function SessionsPanel(props: Props) {
     }
   };
 
-  const normalizedSessions = useMemo(() => {
-    // Støtt både start_at/end_at og start/end
-    return (sessions || []).map((s) => ({
+  const normalizedSessions: SessionItem[] = useMemo(() => {
+    const list = (sessions || []) as SessionItem[];
+    return list.map((s) => ({
       ...s,
       start_at: S(s.start_at ?? s.start ?? ""),
       end_at: S(s.end_at ?? s.end ?? s.start_at ?? s.start ?? ""),
@@ -314,27 +345,23 @@ export default function SessionsPanel(props: Props) {
 
   return (
     <div className="space-y-6">
-      {/* Info / status (DESIGN uendret fra din fil, men tekst oppdatert) */}
       <div className="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4 text-sm text-neutral-200">
         <p className="font-semibold mb-1">Økter for denne aktiviteten</p>
         <p className="text-neutral-400">
-          Økter hentes nå fra databasen (Supabase) via /api/sessions/list. Hvis databasen ikke svarer, brukes lokal fallback.
+          Økter hentes fra databasen via /api/sessions/list.
         </p>
         {loading && (
           <p className="mt-2 text-xs text-yellow-400">Laster økter…</p>
         )}
       </div>
 
-      {/* Liste over økter */}
       <div className="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4">
         <h2 className="mb-3 text-base font-semibold text-neutral-100">
           Planlagte økter
         </h2>
 
         {normalizedSessions.length === 0 ? (
-          <p className="text-sm text-neutral-400">
-            Ingen økter registrert ennå.
-          </p>
+          <p className="text-sm text-neutral-400">Ingen økter registrert.</p>
         ) : (
           <div className="space-y-3">
             {normalizedSessions.map((s) => (
@@ -369,11 +396,11 @@ export default function SessionsPanel(props: Props) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleDelete(String(s.id))}
+                    onClick={() => handleDelete(String(s.id ?? ""))}
                     className="rounded-full border border-neutral-700 px-3 py-1 text-red-300 hover:border-red-600 hover:bg-red-900/30 disabled:opacity-60"
-                    disabled={busy === String(s.id) || busy === "save"}
+                    disabled={busy === String(s.id ?? "") || busy === "save"}
                   >
-                    {busy === String(s.id) ? "Sletter…" : "Slett"}
+                    {busy === String(s.id ?? "") ? "Sletter…" : "Slett"}
                   </button>
                 </div>
               </div>
@@ -382,7 +409,6 @@ export default function SessionsPanel(props: Props) {
         )}
       </div>
 
-      {/* Skjema for ny / redigert økt (DESIGN uendret) */}
       <div className="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4">
         <h2 className="mb-3 text-base font-semibold text-neutral-100">
           {editingId ? "Rediger økt" : "Ny økt"}
