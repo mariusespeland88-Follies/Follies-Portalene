@@ -132,7 +132,9 @@ export default function SessionPage() {
       setMyMemberId(mid);
 
       // Leader = finnes i leaders-lista vi allerede får fra /api/sessions/get
-      const leaderMatch = (leaders || []).some((x: any) => String(x?.id ?? "") === mid);
+      const leaderMatch = (leaders || []).some(
+        (x: any) => String(x?.id ?? "") === mid
+      );
       setIsLeader(leaderMatch);
     } catch {
       setMyMemberId(null);
@@ -253,7 +255,11 @@ export default function SessionPage() {
     }
   };
 
-  const onDeleteFile = async (fileRow: { id: string; storage_path: string; name: string }) => {
+  const onDeleteFile = async (fileRow: {
+    id: string;
+    storage_path: string;
+    name: string;
+  }) => {
     if (!isLeader) {
       alert("Kun ledere kan slette filer.");
       return;
@@ -266,7 +272,12 @@ export default function SessionPage() {
         .from("session-files")
         .remove([fileRow.storage_path]);
 
-      if (stErr && !String(stErr.message || "").toLowerCase().includes("not found")) {
+      if (
+        stErr &&
+        !String(stErr.message || "")
+          .toLowerCase()
+          .includes("not found")
+      ) {
         throw stErr;
       }
 
@@ -306,21 +317,26 @@ export default function SessionPage() {
   }
 
   const endTime = session.end_at ? timeNb(session.end_at) : "";
-  const subtitle = `${fmtNb(session.start_at)}${endTime ? ` – ${endTime}` : ""}${
-    session.location ? ` · Sted: ${session.location}` : ""
-  }`;
+  const subtitle = `${fmtNb(session.start_at)}${
+    endTime ? ` – ${endTime}` : ""
+  }${session.location ? ` · Sted: ${session.location}` : ""}`;
 
   const targetCount = targetIds.length;
-  const targetLabel = targetCount === 0 ? "Alle påmeldte (standard)" : `${targetCount} valgt`;
+  const targetLabel =
+    targetCount === 0 ? "Alle påmeldte (standard)" : `${targetCount} valgt`;
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-black">{session.title}</h1>
+          <h1 className="text-3xl font-semibold tracking-tight text-black">
+            {session.title}
+          </h1>
           <p className="mt-1 text-sm text-neutral-600">{subtitle}</p>
           <p className="mt-2 text-xs text-neutral-500">
-            {isLeader ? "Du er leder på denne aktiviteten." : "Du er ikke leder på denne aktiviteten."}
+            {isLeader
+              ? "Du er leder på denne aktiviteten."
+              : "Du er ikke leder på denne aktiviteten."}
           </p>
         </div>
 
@@ -344,14 +360,18 @@ export default function SessionPage() {
         <div>
           <div className="text-sm font-semibold text-neutral-900">Notat</div>
           {session.note ? (
-            <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-700">{session.note}</p>
+            <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-700">
+              {session.note}
+            </p>
           ) : (
             <p className="mt-2 text-sm text-neutral-500">Ingen notat.</p>
           )}
         </div>
 
         <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-          <div className="text-sm font-semibold text-neutral-900">Hvem er med på økta</div>
+          <div className="text-sm font-semibold text-neutral-900">
+            Hvem er med på økta
+          </div>
           <div className="mt-2 text-sm text-neutral-700">
             <span className="inline-flex items-center rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs font-semibold text-neutral-800">
               {targetLabel}
@@ -362,7 +382,12 @@ export default function SessionPage() {
             <ul className="mt-3 list-disc pl-5 text-sm text-neutral-700">
               {targetMembers
                 .slice()
-                .sort((a, b) => String(a?.name ?? "").localeCompare(String(b?.name ?? ""), "nb"))
+                .sort((a, b) =>
+                  String(a?.name ?? "").localeCompare(
+                    String(b?.name ?? ""),
+                    "nb"
+                  )
+                )
                 .map((m: any) => (
                   <li key={S(m.id)}>{m?.name ?? "Uten navn"}</li>
                 ))}
@@ -376,7 +401,9 @@ export default function SessionPage() {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl border border-neutral-200 bg-white p-4">
-            <div className="text-sm font-semibold text-neutral-900">Ledere (aktivitet)</div>
+            <div className="text-sm font-semibold text-neutral-900">
+              Ledere (aktivitet)
+            </div>
             <div className="mt-2 text-sm text-neutral-700">
               {leaders.length ? (
                 <ul className="list-disc pl-5">
@@ -391,7 +418,9 @@ export default function SessionPage() {
           </div>
 
           <div className="rounded-xl border border-neutral-200 bg-white p-4">
-            <div className="text-sm font-semibold text-neutral-900">Deltakere (aktivitet)</div>
+            <div className="text-sm font-semibold text-neutral-900">
+              Deltakere (aktivitet)
+            </div>
             <div className="mt-2 text-sm text-neutral-700">
               {participants.length ? (
                 <ul className="list-disc pl-5">
@@ -453,11 +482,16 @@ export default function SessionPage() {
           {filesLoading ? (
             <div className="mt-3 text-sm text-neutral-600">Laster…</div>
           ) : files.length === 0 ? (
-            <div className="mt-3 text-sm text-neutral-600">Ingen filer lastet opp enda.</div>
+            <div className="mt-3 text-sm text-neutral-600">
+              Ingen filer lastet opp enda.
+            </div>
           ) : (
             <ul className="mt-3 divide-y divide-neutral-200">
               {files.map((f) => (
-                <li key={f.id} className="flex items-center justify-between gap-3 py-2">
+                <li
+                  key={f.id}
+                  className="flex items-center justify-between gap-3 py-2"
+                >
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold text-neutral-900">
                       {f.name || filenameFromPath(f.storage_path)}
@@ -480,11 +514,19 @@ export default function SessionPage() {
                     {isLeader ? (
                       <button
                         type="button"
-                        onClick={() => void onDeleteFile({ id: f.id, storage_path: f.storage_path, name: f.name })}
+                        onClick={() =>
+                          void onDeleteFile({
+                            id: f.id,
+                            storage_path: f.storage_path,
+                            name: f.name,
+                          })
+                        }
                         disabled={busyAction === `delFile:${f.id}`}
                         className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50 disabled:opacity-60"
                       >
-                        {busyAction === `delFile:${f.id}` ? "Sletter…" : "Slett"}
+                        {busyAction === `delFile:${f.id}`
+                          ? "Sletter…"
+                          : "Slett"}
                       </button>
                     ) : null}
                   </div>
@@ -500,20 +542,4 @@ export default function SessionPage() {
       </div>
     </div>
   );
-
-  async function onDownloadFile(storagePath: string) {
-    try {
-      const { data, error } = await supabase.storage
-        .from("session-files")
-        .createSignedUrl(storagePath, 60 * 30);
-
-      if (error) throw error;
-      const url = data?.signedUrl;
-      if (!url) throw new Error("Kunne ikke lage nedlastingslenke.");
-
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch (e: any) {
-      alert(`Kunne ikke laste ned: ${String(e?.message ?? e)}`);
-    }
-  }
 }
