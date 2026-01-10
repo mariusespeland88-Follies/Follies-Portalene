@@ -10,12 +10,11 @@ import { createClientComponentClient } from "@/lib/supabase/browser";
  * DESIGN URØRT.
  * Henter "Mine aktiviteter" via server-rute (e-post/navn) med fallback på LS-kandidater.
  *
- * NYTT (kun datakilde):
- * - Kalender (30 dager) hentes DB-first via /api/dashboard/my-sessions
- * - Faller tilbake til LS-kalender hvis API feiler
+ * Endring (kun funksjon):
+ * - Kalender (30 dager) henter DB-økter via /api/dashboard/my-sessions (DB-first) med LS fallback.
  *
- * RESTORE:
- * - Bilder/thumbnails på “Mine aktiviteter” er tilbake (henter fra LS covers + fallback)
+ * Restore:
+ * - Thumbnails på “Mine aktiviteter” er tilbake (størrelse/posisjon som et ordentlig kort-thumbnail).
  */
 
 type AnyObj = Record<string, any>;
@@ -29,7 +28,7 @@ const REMINDERS_KEY = "follies.reminders.v1";
 const MESSAGES_KEY = "follies.messages.v1";
 const PERMS_KEY = "follies.perms.v1";
 
-// Covers store (samme nøkkel som ActivitiesPage bruker)
+// samme cover-store som resten av appen bruker
 const LS_COVERS = "follies.activityCovers.v1";
 
 /* ---------- utils ---------- */
@@ -105,53 +104,10 @@ function readPerms(): AnyObj {
   return parseJSON<AnyObj>(readLS(PERMS_KEY), {});
 }
 
-/* ---------- covers (for thumbnails) ---------- */
-function readCoverStore(): Record<
-  string,
-  { dataUrl: string; mime: string; updated_at: string }
-> {
-  return parseJSON<
-    Record<string, { dataUrl: string; mime: string; updated_at: string }>
-  >(readLS(LS_COVERS), {});
-}
-
-function pickImageFlexible(a: any): string | null {
-  return (
-    a?.coverUrl ||
-    a?.cover_url ||
-    a?.cover ||
-    a?.image_url ||
-    a?.image ||
-    a?.bannerUrl ||
-    a?.banner_url ||
-    a?.thumb ||
-    a?.thumbnail ||
-    a?.avatar ||
-    a?.logo ||
-    a?.icon ||
-    a?.media?.cover ||
-    a?.media?.image ||
-    a?.image?.url ||
-    a?.cover?.url ||
-    a?.assets?.cover ||
-    a?.assets?.image ||
-    null
-  );
-}
-
-function coverOfActivity(a: AnyObj): string {
-  const id = activityId(a);
-  const covers = readCoverStore();
-  const entry = covers[id];
-  if (entry?.dataUrl) return entry.dataUrl;
-
-  const url = pickImageFlexible(a);
-  return url || "/Images/follies-logo.jpg";
-}
-
-/* ---------- identity ---------- */
 function getCurrentIdentity(members: AnyObj[]) {
-  const id = toStr(parseJSON<string | null>(readLS("follies.currentMemberId"), null));
+  const id = toStr(
+    parseJSON<string | null>(readLS("follies.currentMemberId"), null)
+  );
   const email =
     toStr(parseJSON<string | null>(readLS("follies.currentEmail"), null)) ||
     toStr(parseJSON<string | null>(readLS("follies.session.email"), null)) ||
@@ -160,7 +116,8 @@ function getCurrentIdentity(members: AnyObj[]) {
   if (id) member = members.find((m) => matchesId(m, id)) ?? null;
   if (!member && email) {
     const lower = email.toLowerCase();
-    member = members.find((m) => memberEmail(m)?.toLowerCase() === lower) ?? null;
+    member =
+      members.find((m) => memberEmail(m)?.toLowerCase() === lower) ?? null;
   }
   return { id, email, member };
 }
@@ -200,7 +157,9 @@ function isUserInActivity(a: AnyObj, me: { id?: string; email?: string }) {
       if (myId && toStr(item) === myId) return true;
     } else if (item && typeof item === "object") {
       const mid = toStr(item?.memberId ?? item?.id ?? item?.uuid ?? item?._id);
-      const mem = toStr(item?.email ?? item?.epost ?? item?.mail).trim().toLowerCase();
+      const mem = toStr(item?.email ?? item?.epost ?? item?.mail)
+        .trim()
+        .toLowerCase();
       if (myId && mid && mid === myId) return true;
       if (email && mem && mem === email) return true;
     }
@@ -247,6 +206,44 @@ function leaderActivityIdsFromPerms(perms: AnyObj, myId: string): Set<string> {
   return out;
 }
 
+/* ---------- Covers / images ---------- */
+function readCoverStore(): Record<string, { dataUrl: string; mime: string; updated_at: string }> {
+  return parseJSON<Record<string, { dataUrl: string; mime: string; updated_at: string }>>(
+    readLS(LS_COVERS),
+    {}
+  );
+}
+function pickImageFlexible(a: any): string | null {
+  return (
+    a?.coverUrl ||
+    a?.cover_url ||
+    a?.cover ||
+    a?.image_url ||
+    a?.image ||
+    a?.bannerUrl ||
+    a?.banner_url ||
+    a?.thumb ||
+    a?.thumbnail ||
+    a?.avatar ||
+    a?.logo ||
+    a?.icon ||
+    a?.media?.cover ||
+    a?.media?.image ||
+    a?.image?.url ||
+    a?.cover?.url ||
+    a?.assets?.cover ||
+    a?.assets?.image ||
+    null
+  );
+}
+function coverOf(a: AnyObj): string {
+  const id = activityId(a);
+  const covers = readCoverStore();
+  const entry = covers[id];
+  if (entry?.dataUrl) return entry.dataUrl;
+  return pickImageFlexible(a) || "/Images/follies-logo.jpg";
+}
+
 /* ========================================================================== */
 
 type DbSession = {
@@ -268,20 +265,14 @@ export default function DashboardPage() {
   const [calendar, setCalendar] = React.useState<AnyObj[]>([]);
   const [reminders, setReminders] = React.useState<AnyObj[]>([]);
   const [messages, setMessages] = React.useState<AnyObj[]>([]);
-  const [me, setMe] = React.useState<{
-    id?: string;
-    email?: string;
-    member?: AnyObj | null;
-  }>({});
+  const [me, setMe] = React.useState<{ id?: string; email?: string; member?: AnyObj | null }>({});
   const [msgOpen, setMsgOpen] = React.useState(false);
 
   const [myDbActivities, setMyDbActivities] = React.useState<AnyObj[]>([]);
 
-  // DB-økter for dashboard
+  // DB sessions
   const [dbSessions, setDbSessions] = React.useState<DbSession[]>([]);
-  const [sessionsStatus, setSessionsStatus] = React.useState<
-    "idle" | "loading" | "ok" | "fail"
-  >("idle");
+  const [sessionsStatus, setSessionsStatus] = React.useState<"idle" | "loading" | "ok" | "fail">("idle");
 
   // LS-init
   React.useEffect(() => {
@@ -308,10 +299,8 @@ export default function DashboardPage() {
         const { data } = await supabase.auth.getSession();
         const email = data?.session?.user?.email?.trim() ?? "";
         if (!alive || !email) return;
-
         writeLS("follies.session.email", email);
         writeLS("follies.currentEmail", email);
-
         setMe((prev) => ({ ...prev, email }));
       } catch {}
     })();
@@ -331,9 +320,7 @@ export default function DashboardPage() {
         .filter((a) => isUserInActivity(a, { id: me.id, email: me.email }))
         .map((a) => activityId(a))
     );
-    const leaderIds = myId
-      ? leaderActivityIdsFromPerms(perms, myId)
-      : new Set<string>();
+    const leaderIds = myId ? leaderActivityIdsFromPerms(perms, myId) : new Set<string>();
 
     return Array.from(new Set<string>([...inRosterIds, ...leaderIds]));
   }, [me.id, me.email]);
@@ -344,6 +331,7 @@ export default function DashboardPage() {
     (async () => {
       const email = (me.email || "").trim();
       if (!email) return;
+
       const displayName =
         (me.member &&
           (fullName(me.member) ||
@@ -370,7 +358,7 @@ export default function DashboardPage() {
     };
   }, [me.email, me.member, candidateActivityIds.join(",")]);
 
-  // Hent kommende økter DB-first (30 dager) – fall tilbake til LS hvis API feiler
+  // Hent DB-økter for dashboard (30 dager)
   React.useEffect(() => {
     let alive = true;
     (async () => {
@@ -399,7 +387,6 @@ export default function DashboardPage() {
         setSessionsStatus("fail");
       }
     })();
-
     return () => {
       alive = false;
     };
@@ -416,19 +403,15 @@ export default function DashboardPage() {
       const ax = (x as any).archived ? 1 : 0;
       const ay = (y as any).archived ? 1 : 0;
       if (ax !== ay) return ax - ay;
-      const dx = (x as any).start_date
-        ? new Date((x as any).start_date).getTime()
-        : Number.MAX_SAFE_INTEGER;
-      const dy = (y as any).start_date
-        ? new Date((y as any).start_date).getTime()
-        : Number.MAX_SAFE_INTEGER;
+      const dx = (x as any).start_date ? new Date((x as any).start_date).getTime() : Number.MAX_SAFE_INTEGER;
+      const dy = (y as any).start_date ? new Date((y as any).start_date).getTime() : Number.MAX_SAFE_INTEGER;
       if (dx !== dy) return dx - dy;
       return activityTitle(x).localeCompare(activityTitle(y), "nb");
     });
     return list;
   }, [myDbActivities, me.id, me.email, candidateActivityIds]);
 
-  // LS fallback (samme som før)
+  // LS fallback upcoming (som før)
   const upcomingFromLS = React.useMemo(() => {
     const now = new Date();
     const cutoff = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
@@ -449,7 +432,7 @@ export default function DashboardPage() {
     return items;
   }, [me.id, calendar]);
 
-  // DB-first upcoming (mapper DB-økter inn i samme “shape” som UI allerede bruker)
+  // DB-first upcoming
   const upcoming = React.useMemo(() => {
     if (sessionsStatus === "ok") {
       return (dbSessions || [])
@@ -469,12 +452,8 @@ export default function DashboardPage() {
     if (!Array.isArray(base) || (!me.id && !me.email)) return [];
     const mine = base
       .filter((m) => {
-        const tid = toStr(
-          (m as any).to_member_id ?? (m as any).memberId ?? (m as any).toId ?? ""
-        );
-        const temail = toStr((m as any).to_email ?? (m as any).email ?? "")
-          .trim()
-          .toLowerCase();
+        const tid = toStr((m as any).to_member_id ?? (m as any).memberId ?? (m as any).toId ?? "");
+        const temail = toStr((m as any).to_email ?? (m as any).email ?? "").trim().toLowerCase();
         const broadcast = !!((m as any).to_all || (m as any).broadcast);
         const myId = (me.id || "").trim();
         const myEmail = (me.email || "").trim().toLowerCase();
@@ -487,31 +466,19 @@ export default function DashboardPage() {
         const ar = (a as any).read_at ? 1 : 0;
         const br = (b as any).read_at ? 1 : 0;
         if (ar !== br) return ar - br;
-        const at = new Date(
-          (a as any).created_at || (a as any).date || (a as any).sent_at || 0
-        ).getTime();
-        const bt = new Date(
-          (b as any).created_at || (b as any).date || (b as any).sent_at || 0
-        ).getTime();
+        const at = new Date((a as any).created_at || (a as any).date || (a as any).sent_at || 0).getTime();
+        const bt = new Date((b as any).created_at || (b as any).date || (b as any).sent_at || 0).getTime();
         return bt - at;
       });
     return mine;
   }, [messages, me.id, me.email]);
 
-  const unreadCount = myMessages.reduce(
-    (n, m) => n + ((m as any).read_at ? 0 : 1),
-    0
-  );
+  const unreadCount = myMessages.reduce((n, m) => n + ((m as any).read_at ? 0 : 1), 0);
 
   const name = me.member ? fullName(me.member) : "Velkommen";
   const email = me.member ? memberEmail(me.member) : me.email || "—";
   const mid = me.member
-    ? toStr(
-        (me.member as any).id ??
-          (me.member as any).uuid ??
-          (me.member as any)._id ??
-          (me.member as any).memberId
-      )
+    ? toStr((me.member as any).id ?? (me.member as any).uuid ?? (me.member as any)._id ?? (me.member as any).memberId)
     : "";
 
   function markMessageRead(id: string) {
@@ -546,7 +513,6 @@ export default function DashboardPage() {
               <div className="text-white">{email}</div>
             </div>
             <div className="flex items-center gap-2">
-              {/* Knapp som åpner beskjeder */}
               <button
                 onClick={() => setMsgOpen(true)}
                 className="relative inline-flex items-center justify-center rounded-lg bg-white/95 text-black px-3.5 py-2 text-sm font-semibold shadow-sm hover:bg-white focus:outline-none focus:ring-2 focus:ring-red-600"
@@ -596,20 +562,19 @@ export default function DashboardPage() {
             <ul className="mt-3 divide-y">
               {myActivities.slice(0, 6).map((a) => {
                 const id = activityId(a);
-                const img = coverOfActivity(a);
+                const img = coverOf(a);
 
                 return (
                   <li key={id} className="py-3 flex items-center justify-between gap-3">
                     <div className="min-w-0 flex items-center gap-3">
-                      {/* RESTORE: thumbnail */}
-                      <div className="h-10 w-10 rounded-full overflow-hidden ring-1 ring-neutral-200 bg-neutral-100 shrink-0">
+                      {/* RESTORE: thumbnail slik som “kort”-følelse (større + samme posisjon i raden) */}
+                      <div className="h-14 w-20 rounded-lg overflow-hidden ring-1 ring-neutral-200 bg-neutral-100 shrink-0">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={img}
                           alt=""
                           className="h-full w-full object-cover"
                           onError={(e) => {
-                            // fallback til logo hvis URL feiler
                             (e.currentTarget as HTMLImageElement).src = "/Images/follies-logo.jpg";
                           }}
                         />
@@ -650,8 +615,8 @@ export default function DashboardPage() {
                     {(e as any).title || (e as any).name || "Kalenderpunkt"}
                   </div>
 
-                  {/* DB-first sessions har id = sessionId → lenk direkte */}
-                  {(sessionsStatus === "ok" && (e as any).id) ? (
+                  {/* DB-first: gå til økt */}
+                  {sessionsStatus === "ok" && (e as any).id ? (
                     <div className="mt-2 flex flex-wrap gap-2">
                       <button
                         onClick={() =>
@@ -715,9 +680,7 @@ export default function DashboardPage() {
             <ul className="mt-3 divide-y">
               {reminders.slice(0, 8).map((r) => (
                 <li key={(r as any).id || (r as any).title} className="py-3">
-                  <div className="font-medium text-black">
-                    {(r as any).title || "Påminnelse"}
-                  </div>
+                  <div className="font-medium text-black">{(r as any).title || "Påminnelse"}</div>
                   {(r as any).when ? (
                     <div className="text-sm text-gray-700">
                       {new Date((r as any).when).toLocaleString("nb-NO")}
@@ -802,10 +765,7 @@ export default function DashboardPage() {
                 <ul className="divide-y">
                   {myMessages.map((m) => {
                     const when = new Date(
-                      (m as any).created_at ||
-                        (m as any).sent_at ||
-                        (m as any).date ||
-                        Date.now()
+                      (m as any).created_at || (m as any).sent_at || (m as any).date || Date.now()
                     );
                     const unread = !(m as any).read_at;
                     const activity = (m as any).activity_id || (m as any).activityId;
