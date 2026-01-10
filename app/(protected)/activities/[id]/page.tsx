@@ -1,3 +1,4 @@
+// PATH: app/(protected)/activities/[id]/page.tsx
 "use client";
 
 /**
@@ -5,6 +6,10 @@
  * - Hero/faner/deltakere/ledere som før.
  * - Faner styres nå av activity.tab_config (DB) + has_*-feltene.
  * - Gjelder for ALLE typer (tilbud, event, forestilling).
+ *
+ * FIX:
+ * - Økter hentes DB-first via /api/sessions/list (som du viste returnerer alle øktene),
+ *   og faller tilbake til localStorage hvis API feiler.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -102,7 +107,7 @@ const typeClass = (t?: string | null) => {
   const lbl = labelForType(t);
   if (lbl === "Forestilling") return "bg-purple-700";
   if (lbl === "Event") return "bg-red-700";
-  return "bg-red-700"; // Tilbud
+  return "bg-red-700";
 };
 
 const gradientFor = (accent?: string | null, t?: string | null) => {
@@ -186,9 +191,7 @@ function lsRosterByRole(activityId: string) {
   const old = safeJSON<AnyObj[]>(localStorage.getItem(LS_ACT_OLD)) ?? [];
   const all = [...old, ...v1];
   const hit = all.find((a) => S(a?.id ?? a?.uuid ?? a?._id) === S(activityId));
-  const participants: string[] = Array.isArray(hit?.participants)
-    ? hit!.participants
-    : [];
+  const participants: string[] = Array.isArray(hit?.participants) ? hit!.participants : [];
   const leaders: string[] = Array.isArray(hit?.leaders) ? hit!.leaders : [];
   const mem = lsMembersMap();
   const mapToMember = (ids: string[]) => ids.map((id) => mem[id]).filter(Boolean);
@@ -199,6 +202,30 @@ function lsRosterByRole(activityId: string) {
 function lsLoadSessions(activityId: string): any[] {
   const all = safeJSON<Record<string, any[]>>(localStorage.getItem(SESS_LS)) ?? {};
   return all[activityId] ?? [];
+}
+
+// ✅ DB-first sessions via API (den du testet i nettleseren)
+async function fetchSessionsDBFirst(activityId: string): Promise<any[]> {
+  try {
+    const res = await fetch(`/api/sessions/list?activityId=${encodeURIComponent(activityId)}`, { cache: "no-store" });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(String((json as any)?.error || "Kunne ikke hente økter"));
+    const list = Array.isArray((json as any)?.sessions) ? (json as any).sessions : [];
+    if (!Array.isArray(list)) return [];
+
+    // map DB start_at/end_at -> UI start/end
+    return list.map((r: any) => ({
+      id: S(r.id),
+      title: S(r.title) || "Økt",
+      start: S(r.start_at),
+      end: S(r.end_at || r.start_at),
+      location: r.location ?? "",
+      note: r.note ?? "",
+      targets: Array.isArray(r.targets) ? r.targets : [],
+    }));
+  } catch {
+    return lsLoadSessions(activityId);
+  }
 }
 
 /* ------------------------ DB-hent i to steg ------------------------ */
@@ -215,9 +242,7 @@ async function fetchPeopleForRole(
 
   if (error) return { list: [] as AnyObj[], error };
 
-  const ids = Array.from(
-    new Set((rows || []).map((r: any) => r?.member_id).filter(Boolean))
-  );
+  const ids = Array.from(new Set((rows || []).map((r: any) => r?.member_id).filter(Boolean)));
   if (ids.length === 0) return { list: [] as AnyObj[], error: null };
 
   const { data: members, error: mErr } = await supabase
@@ -245,50 +270,40 @@ const ALL_TAB_KEYS: Tab[] = [
   "meldinger",
 ];
 
-// Støtt både norske og engelske/sanne navn fra UI/DB
 const TAB_SYNONYMS: Record<string, Tab> = {
   overview: "oversikt",
   oversikt: "oversikt",
-
   participants: "deltakere",
   participant: "deltakere",
   members: "deltakere",
   member: "deltakere",
   deltakere: "deltakere",
-
   leaders: "ledere",
   leader: "ledere",
   ledere: "ledere",
-
   sessions: "okter",
   session: "okter",
   okter: "okter",
-
   files: "filer",
   file: "filer",
   documents: "filer",
   docs: "filer",
   filer: "filer",
-
   messages: "meldinger",
   message: "meldinger",
   announcement: "meldinger",
   announcements: "meldinger",
   meldinger: "meldinger",
-
   guests: "gjester",
   guest: "gjester",
   gjester: "gjester",
-
   attendance: "innsjekk",
   checkin: "innsjekk",
   "check-in": "innsjekk",
   innsjekk: "innsjekk",
-
   volunteers: "frivillige",
   volunteer: "frivillige",
   frivillige: "frivillige",
-
   tasks: "oppgaver",
   task: "oppgaver",
   oppgaver: "oppgaver",
@@ -298,11 +313,7 @@ const normalizeTabKey = (raw: any): Tab | null => {
   if (raw == null) return null;
   const s = String(raw).trim().toLowerCase();
   if (!s) return null;
-
-  if ((ALL_TAB_KEYS as string[]).includes(s)) {
-    return s as Tab;
-  }
-
+  if ((ALL_TAB_KEYS as string[]).includes(s)) return s as Tab;
   return TAB_SYNONYMS[s] ?? null;
 };
 
@@ -315,7 +326,6 @@ function computeEnabledTabs(act: DbActivity | null): Tab[] {
     "filer",
     "meldinger",
   ];
-
   if (!act) return fallbackBase;
 
   const rawConfig = (act as any).tab_config as any;
@@ -325,17 +335,13 @@ function computeEnabledTabs(act: DbActivity | null): Tab[] {
   if (Array.isArray(rawConfig)) {
     for (const entry of rawConfig) {
       const key = normalizeTabKey(entry);
-      if (key && validSet.has(key) && !cleaned.includes(key)) {
-        cleaned.push(key);
-      }
+      if (key && validSet.has(key) && !cleaned.includes(key)) cleaned.push(key);
     }
   } else if (rawConfig && typeof rawConfig === "object") {
     for (const [rk, val] of Object.entries(rawConfig)) {
       if (!val) continue;
       const key = normalizeTabKey(rk);
-      if (key && validSet.has(key) && !cleaned.includes(key)) {
-        cleaned.push(key);
-      }
+      if (key && validSet.has(key) && !cleaned.includes(key)) cleaned.push(key);
     }
   }
 
@@ -345,12 +351,10 @@ function computeEnabledTabs(act: DbActivity | null): Tab[] {
   }
 
   const tabs = [...fallbackBase];
-
   if ((act as any).has_guests) tabs.push("gjester");
   if ((act as any).has_attendance) tabs.push("innsjekk");
   if ((act as any).has_volunteers) tabs.push("frivillige");
   if ((act as any).has_tasks) tabs.push("oppgaver");
-
   return tabs;
 }
 
@@ -360,9 +364,7 @@ export default function ActivityDetailPage() {
   const router = useRouter();
   const supabase = createClientComponentClient();
 
-  const id = Array.isArray(params?.id)
-    ? params.id[0]
-    : (params?.id as string | undefined);
+  const id = Array.isArray(params?.id) ? params.id[0] : (params?.id as string | undefined);
   const routeIdValue = String(id ?? "");
 
   const [tab, setTab] = useState<Tab>("oversikt");
@@ -379,32 +381,17 @@ export default function ActivityDetailPage() {
   const [imgOk, setImgOk] = useState(true);
 
   const [busyId, setBusyId] = useState<string | null>(null);
-
   const [enabledTabs, setEnabledTabs] = useState<Tab[]>([]);
 
-  const showGuestsTab = useMemo(
-    () => Boolean((act as any)?.has_guests),
-    [act]
-  );
-  const showAttendanceTab = useMemo(
-    () => Boolean((act as any)?.has_attendance),
-    [act]
-  );
-  const showVolunteersTab = useMemo(
-    () => Boolean((act as any)?.has_volunteers),
-    [act]
-  );
-  const showTasksTab = useMemo(
-    () => Boolean((act as any)?.has_tasks),
-    [act]
-  );
+  const showGuestsTab = useMemo(() => Boolean((act as any)?.has_guests), [act]);
+  const showAttendanceTab = useMemo(() => Boolean((act as any)?.has_attendance), [act]);
+  const showVolunteersTab = useMemo(() => Boolean((act as any)?.has_volunteers), [act]);
+  const showTasksTab = useMemo(() => Boolean((act as any)?.has_tasks), [act]);
 
   useEffect(() => {
     const next = computeEnabledTabs(act);
     setEnabledTabs(next);
-    if (!next.includes(tab)) {
-      setTab("oversikt");
-    }
+    if (!next.includes(tab)) setTab("oversikt");
   }, [act, tab]);
 
   useEffect(() => {
@@ -422,16 +409,13 @@ export default function ActivityDetailPage() {
         setLeaders(ll);
         return;
       }
+
       const [pRes, lRes] = await Promise.all([
         fetchPeopleForRole(supabase, activityId, "participant"),
         fetchPeopleForRole(supabase, activityId, "leader"),
       ]);
 
-      if (
-        pRes.list.length === 0 &&
-        lRes.list.length === 0 &&
-        (pRes.error || lRes.error)
-      ) {
+      if (pRes.list.length === 0 && lRes.list.length === 0 && (pRes.error || lRes.error)) {
         const { participants: lp, leaders: ll } = lsRosterByRole(routeIdValue);
         setParticipants(lp);
         setLeaders(ll);
@@ -444,21 +428,17 @@ export default function ActivityDetailPage() {
     [routeIdValue, supabase]
   );
 
-  const derivedActivityDbId = useMemo(
-    () => pickActivityDbId(act, routeIdValue),
-    [act, routeIdValue]
-  );
+  const derivedActivityDbId = useMemo(() => pickActivityDbId(act, routeIdValue), [act, routeIdValue]);
   const effectiveActivityDbId = activityDbId ?? derivedActivityDbId ?? null;
 
   useEffect(() => {
-    if (derivedActivityDbId !== activityDbId) {
-      setActivityDbId(derivedActivityDbId ?? null);
-    }
+    if (derivedActivityDbId !== activityDbId) setActivityDbId(derivedActivityDbId ?? null);
   }, [activityDbId, derivedActivityDbId]);
 
   useEffect(() => {
     setActivityDbId(null);
     let alive = true;
+
     (async () => {
       if (!routeIdValue) {
         setErr("Mangler aktivitets-ID i URLen.");
@@ -475,18 +455,27 @@ export default function ActivityDetailPage() {
           a = res.data.find((x) => String(x.id) === routeIdValue) ?? null;
         }
         if (!alive) return;
+
         if (!a) {
           setErr(`Fant ikke aktiviteten (id: ${routeIdValue}).`);
           setLoading(false);
           return;
         }
+
         setAct(a);
         setVis(visualsFromLocalStorage(routeIdValue));
 
         const resolvedDbId = pickActivityDbId(a, routeIdValue);
 
         await reloadRoster(resolvedDbId);
-        setSessions(lsLoadSessions(routeIdValue));
+
+        // ✅ DB-first økter
+        const usedId = resolvedDbId || routeIdValue;
+        const sess = await fetchSessionsDBFirst(usedId);
+
+        if (!alive) return;
+        setSessions(sess);
+
         setLoading(false);
       } catch (e) {
         console.error("Feil:", e);
@@ -496,6 +485,7 @@ export default function ActivityDetailPage() {
         }
       }
     })();
+
     return () => {
       alive = false;
     };
@@ -504,10 +494,7 @@ export default function ActivityDetailPage() {
   const typeLabel = useMemo(() => labelForType((act as any)?.type), [act]);
 
   const setRole = async (memberId: string, role: "participant" | "leader") => {
-    const resolvedId = pickActivityDbId(
-      act,
-      effectiveActivityDbId ?? routeIdValue
-    );
+    const resolvedId = pickActivityDbId(act, effectiveActivityDbId ?? routeIdValue);
     if (!resolvedId) return;
     try {
       setBusyId(memberId);
@@ -526,11 +513,9 @@ export default function ActivityDetailPage() {
     }
   };
 
-  const preferredRouteId =
-    routeIdValue || effectiveActivityDbId || String(act?.id || "");
+  const preferredRouteId = routeIdValue || effectiveActivityDbId || String(act?.id || "");
 
-  if (loading)
-    return <main className="px-4 py-6 text-neutral-900">Laster…</main>;
+  if (loading) return <main className="px-4 py-6 text-neutral-900">Laster…</main>;
   if (err) {
     return (
       <main className="px-4 py-6 text-neutral-900">
@@ -545,12 +530,7 @@ export default function ActivityDetailPage() {
       </main>
     );
   }
-  if (!act)
-    return (
-      <main className="px-4 py-6 text-neutral-900">
-        Finner ikke aktiviteten.
-      </main>
-    );
+  if (!act) return <main className="px-4 py-6 text-neutral-900">Finner ikke aktiviteten.</main>;
 
   const gradient = gradientFor(vis.accent, (act as any)?.type);
   const avatar = vis.coverUrl || null;
@@ -560,22 +540,14 @@ export default function ActivityDetailPage() {
 
   const allTabDefs: TabDef[] = [
     { key: "oversikt", label: "Oversikt" },
-    {
-      key: "deltakere",
-      label: `Deltakere (${participants.length})`,
-    },
-    {
-      key: "ledere",
-      label: `Ledere (${leaders.length})`,
-    },
+    { key: "deltakere", label: `Deltakere (${participants.length})` },
+    { key: "ledere", label: `Ledere (${leaders.length})` },
     { key: "okter", label: "Økter" },
   ];
 
   if (showGuestsTab) allTabDefs.push({ key: "gjester", label: "Gjester" });
-  if (showAttendanceTab)
-    allTabDefs.push({ key: "innsjekk", label: "Innsjekk" });
-  if (showVolunteersTab)
-    allTabDefs.push({ key: "frivillige", label: "Frivillige" });
+  if (showAttendanceTab) allTabDefs.push({ key: "innsjekk", label: "Innsjekk" });
+  if (showVolunteersTab) allTabDefs.push({ key: "frivillige", label: "Frivillige" });
   if (showTasksTab) allTabDefs.push({ key: "oppgaver", label: "Oppgaver" });
 
   allTabDefs.push({ key: "filer", label: "Filer" });
@@ -589,9 +561,7 @@ export default function ActivityDetailPage() {
     return true;
   };
 
-  const visibleTabDefs = allTabDefs.filter(
-    (def) => enabledTabs.includes(def.key) && isTabFeatureAvailable(def.key)
-  );
+  const visibleTabDefs = allTabDefs.filter((def) => enabledTabs.includes(def.key) && isTabFeatureAvailable(def.key));
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
@@ -618,41 +588,23 @@ export default function ActivityDetailPage() {
               </div>
               <div>
                 <div className="flex items-center gap-3">
-                  <h1 className="text-3xl font-semibold tracking-tight text-white">
-                    {act.name}
-                  </h1>
-                  <span
-                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${typeClass(
-                      (act as any)?.type
-                    )} ring-1 ring-white/40`}
-                  >
+                  <h1 className="text-3xl font-semibold tracking-tight text-white">{act.name}</h1>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold text-white ${typeClass((act as any)?.type)} ring-1 ring-white/40`}>
                     {typeLabel}
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-white/90">
-                  {(act as any).start_date
-                    ? `Start: ${(act as any).start_date}`
-                    : "Start: —"}{" "}
-                  ·{" "}
-                  {(act as any).end_date
-                    ? `Slutt: ${(act as any).end_date}`
-                    : "Slutt: —"}
+                  {(act as any).start_date ? `Start: ${(act as any).start_date}` : "Start: —"} ·{" "}
+                  {(act as any).end_date ? `Slutt: ${(act as any).end_date}` : "Slutt: —"}
                 </p>
               </div>
             </div>
             <div className="mt-4 flex items-center gap-2 md:mt-0">
-              <Link
-                href="/activities"
-                className="rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold text-white ring-1 ring-white/40 hover:bg-white/25"
-              >
+              <Link href="/activities" className="rounded-lg bg-white/15 px-3.5 py-2 text-sm font-semibold text-white ring-1 ring-white/40 hover:bg-white/25">
                 Til oversikt
               </Link>
               <button
-                onClick={() =>
-                  router.push(
-                    `/activities/${encodeURIComponent(preferredRouteId)}/edit`
-                  )
-                }
+                onClick={() => router.push(`/activities/${encodeURIComponent(preferredRouteId)}/edit`)}
                 className="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 hover:bg-white/90"
               >
                 Rediger
@@ -668,10 +620,8 @@ export default function ActivityDetailPage() {
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 ${
-              tab === key
-                ? "bg-white text-zinc-900 shadow-sm"
-                : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
+            className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
+              tab === key ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/70 hover:text-zinc-800"
             }`}
           >
             {label}
@@ -681,71 +631,38 @@ export default function ActivityDetailPage() {
 
       {/* Innhold */}
       {tab === "gjester" ? (
-        // ✅ Full bredde på Gjester (ingen høyre info-boks)
         <div className="mt-6">
           {showGuestsTab ? (
-            effectiveActivityDbId ? (
-              <GuestsTab activityId={effectiveActivityDbId} />
-            ) : (
-              <MissingActivityDbIdNotice title="Gjester" />
-            )
+            effectiveActivityDbId ? <GuestsTab activityId={effectiveActivityDbId} /> : <MissingActivityDbIdNotice title="Gjester" />
           ) : (
             <MissingActivityDbIdNotice title="Gjester" />
           )}
         </div>
       ) : (
         <div className="mt-6 grid gap-6 lg:grid-cols-3">
-          {/* Venstre */}
           <section className="space-y-6 lg:col-span-2">
             {tab === "oversikt" && (
               <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
                 <h2 className="text-lg font-semibold">Oversikt</h2>
-                <p className="mt-2 text-[15px] text-neutral-800">
-                  {(act as any).description
-                    ? (act as any).description
-                    : "Ingen beskrivelse."}
-                </p>
+                <p className="mt-2 text-[15px] text-neutral-800">{(act as any).description ? (act as any).description : "Ingen beskrivelse."}</p>
               </div>
             )}
 
             {tab === "deltakere" && (
-              <PeoplePanel
-                title="Deltakere"
-                people={participants}
-                emphasize={false}
-                variant="participants"
-                busyId={busyId}
-                onPromote={async (mid) => await setRole(mid, "leader")}
-              />
+              <PeoplePanel title="Deltakere" people={participants} emphasize={false} variant="participants" busyId={busyId} onPromote={async (mid) => await setRole(mid, "leader")} />
             )}
 
             {tab === "ledere" && (
-              <PeoplePanel
-                title="Ledere"
-                people={leaders}
-                emphasize
-                variant="leaders"
-                busyId={busyId}
-                onDemote={async (mid) => await setRole(mid, "participant")}
-              />
+              <PeoplePanel title="Ledere" people={leaders} emphasize variant="leaders" busyId={busyId} onDemote={async (mid) => await setRole(mid, "participant")} />
             )}
 
-            {tab === "frivillige" && showVolunteersTab && (
-              effectiveActivityDbId ? (
-                <VolunteersTab activityId={effectiveActivityDbId} />
-              ) : (
-                <MissingActivityDbIdNotice title="Frivillige" />
-              )
-            )}
+            {tab === "frivillige" && showVolunteersTab && (effectiveActivityDbId ? <VolunteersTab activityId={effectiveActivityDbId} /> : <MissingActivityDbIdNotice title="Frivillige" />)}
 
             {tab === "okter" && (
               <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-neutral-900">Økter</h2>
-                  <Link
-                    href={`/activities/${encodeURIComponent(preferredRouteId)}/sessions/new`}
-                    className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700"
-                  >
+                  <Link href={`/activities/${encodeURIComponent(preferredRouteId)}/sessions/new`} className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700">
                     Lag ny økt
                   </Link>
                 </div>
@@ -755,24 +672,15 @@ export default function ActivityDetailPage() {
                 ) : (
                   <ul className="mt-4 divide-y divide-neutral-200">
                     {sessions.map((s) => (
-                      <li
-                        key={s.id}
-                        className="flex items-center justify-between gap-3 py-3"
-                      >
+                      <li key={s.id} className="flex items-center justify-between gap-3 py-3">
                         <div className="min-w-0">
-                          <div className="truncate font-medium text-neutral-900">
-                            {s.title}
-                          </div>
+                          <div className="truncate font-medium text-neutral-900">{s.title}</div>
                           <div className="text-sm text-neutral-600">
-                            {new Date(s.start).toLocaleString("nb-NO")} –{" "}
-                            {new Date(s.end).toLocaleTimeString("nb-NO")}
+                            {new Date(s.start).toLocaleString("nb-NO")} – {new Date(s.end).toLocaleTimeString("nb-NO")}
                             {s.location ? <> · Sted: {s.location}</> : null}
                           </div>
                         </div>
-                        <Link
-                          href={`/sessions/${encodeURIComponent(String(s.id))}`}
-                          className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
-                        >
+                        <Link href={`/sessions/${encodeURIComponent(String(s.id))}`} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100">
                           Åpne økt
                         </Link>
                       </li>
@@ -782,34 +690,13 @@ export default function ActivityDetailPage() {
               </div>
             )}
 
-            {tab === "innsjekk" && showAttendanceTab && (
-              effectiveActivityDbId ? (
-                <AttendanceTab activityId={effectiveActivityDbId} activityName={act.name} />
-              ) : (
-                <MissingActivityDbIdNotice title="Innsjekk" />
-              )
-            )}
+            {tab === "innsjekk" && showAttendanceTab && (effectiveActivityDbId ? <AttendanceTab activityId={effectiveActivityDbId} activityName={act.name} /> : <MissingActivityDbIdNotice title="Innsjekk" />)}
+            {tab === "oppgaver" && showTasksTab && (effectiveActivityDbId ? <TasksTab activityId={effectiveActivityDbId} /> : <MissingActivityDbIdNotice title="Oppgaver" />)}
 
-            {tab === "oppgaver" && showTasksTab && (
-              effectiveActivityDbId ? (
-                <TasksTab activityId={effectiveActivityDbId} />
-              ) : (
-                <MissingActivityDbIdNotice title="Oppgaver" />
-              )
-            )}
-
-            {tab === "filer" && (
-              <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm text-neutral-700">
-                Her kan vi senere legge opplasting/visning av filer (Bilder/Tekst/Musikk/Annet).
-              </div>
-            )}
-
-            {tab === "meldinger" && (
-              <MessagesPanel activityId={preferredRouteId} hasDbId={Boolean(effectiveActivityDbId)} />
-            )}
+            {tab === "filer" && <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm text-neutral-700">Her kan vi senere legge filer.</div>}
+            {tab === "meldinger" && <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm text-neutral-700">Meldinger-modul kommer.</div>}
           </section>
 
-          {/* Høyre – Info-kort */}
           <aside className="space-y-6">
             <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm">
               <h3 className="text-sm font-semibold text-neutral-900">Info</h3>
@@ -821,14 +708,6 @@ export default function ActivityDetailPage() {
                 <div className="flex justify-between gap-4">
                   <dt>Status</dt>
                   <dd className="font-medium">{(act as any)?.archived ? "Arkivert" : "Aktiv"}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt>Start</dt>
-                  <dd className="font-medium">{(act as any)?.start_date || "—"}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt>Slutt</dt>
-                  <dd className="font-medium">{(act as any)?.end_date || "—"}</dd>
                 </div>
               </dl>
             </div>
@@ -847,7 +726,6 @@ function MissingActivityDbIdNotice({ title }: { title: string }) {
       <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
       <p className="mt-2 text-sm text-neutral-700">
         Denne funksjonen krever at aktiviteten er koblet til Supabase med en gyldig ID.
-        Ta kontakt med en administrator for å synkronisere aktiviteten dersom du forventer å se data her.
       </p>
     </div>
   );
@@ -885,17 +763,13 @@ function PeoplePanel({
         <ul className="mt-4 divide-y divide-neutral-200">
           {people.map((m) => {
             const mid = String(m?.id ?? m?.uuid ?? m?.memberId ?? m?._id);
-            const name =
-              `${m.first_name || ""} ${m.last_name || ""}`.trim() || "Uten navn";
+            const name = `${m.first_name || ""} ${m.last_name || ""}`.trim() || "Uten navn";
             const email = m.email || null;
             const phone = m.phone || m.mobile || m.telephone || null;
             const isBusy = busyId === mid;
 
             return (
-              <li
-                key={mid}
-                className="flex items-center justify-between gap-3 py-3"
-              >
+              <li key={mid} className="flex items-center justify-between gap-3 py-3">
                 <div>
                   <p className="text-[15px] font-medium text-neutral-900">{name}</p>
                   <p className="text-xs text-neutral-700">
@@ -904,35 +778,19 @@ function PeoplePanel({
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Link
-                    href={`/members/${mid}`}
-                    className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
-                  >
+                  <Link href={`/members/${mid}`} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100">
                     Åpne
                   </Link>
-                  <Link
-                    href={`/members/${mid}/edit`}
-                    className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"
-                  >
+                  <Link href={`/members/${mid}/edit`} className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700">
                     Rediger
                   </Link>
                   {variant === "participants" && onPromote ? (
-                    <button
-                      disabled={isBusy}
-                      onClick={() => onPromote(mid)}
-                      className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
-                      title="Gjør til leder"
-                    >
+                    <button disabled={isBusy} onClick={() => onPromote(mid)} className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60">
                       Gjør til leder
                     </button>
                   ) : null}
                   {variant === "leaders" && onDemote ? (
-                    <button
-                      disabled={isBusy}
-                      onClick={() => onDemote(mid)}
-                      className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 disabled:opacity-60"
-                      title="Fjern som leder"
-                    >
+                    <button disabled={isBusy} onClick={() => onDemote(mid)} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 disabled:opacity-60">
                       Fjern
                     </button>
                   ) : null}
@@ -942,182 +800,6 @@ function PeoplePanel({
           })}
         </ul>
       )}
-    </div>
-  );
-}
-
-function MessagesPanel({
-  activityId,
-  hasDbId,
-}: {
-  activityId: string;
-  hasDbId: boolean;
-}) {
-  const [target, setTarget] = useState<
-    "participants" | "leaders" | "volunteers" | "guests" | "all-members"
-  >("participants");
-  const [channel, setChannel] = useState<"both" | "messenger" | "email">(
-    "both"
-  );
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
-  const [sending, setSending] = useState(false);
-  const [info, setInfo] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setInfo(null);
-    setError(null);
-    if (!hasDbId) {
-      setError("Aktiviteten må være synkronisert med Supabase før du kan sende.");
-      return;
-    }
-    setSending(true);
-    try {
-      const res = await fetch(`/api/activities/${activityId}/broadcast`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target, channel, subject, body }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json?.error || "Kunne ikke sende meldingen.");
-      }
-      setInfo(
-        `Sendt: ${json?.emailCount || 0} e-post(er), ${
-          json?.messengerCount || 0
-        } messenger-melding(er).`
-      );
-      setSubject("");
-      setBody("");
-    } catch (err: any) {
-      setError(err?.message || "Noe gikk galt ved sending.");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const isGuestTarget = target === "guests";
-  const isVolunteerTarget = target === "volunteers";
-  const messengerAllowed = !(isGuestTarget || isVolunteerTarget);
-
-  return (
-    <div className="rounded-2xl border border-zinc-300 bg-white p-5 shadow-sm text-neutral-800">
-      <h2 className="text-lg font-semibold text-neutral-900">Send melding</h2>
-      <p className="mt-1 text-sm text-neutral-700">
-        Velg mottaker-gruppe og kanal. Meldinger til medlemmer/ledere lagres i Messenger.
-        Gjester/frivillige får e-post. SMTP-oppsett kreves for e-post.
-      </p>
-
-      {!hasDbId && (
-        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Denne aktiviteten mangler Supabase-ID. Lagre den i databasen før du kan sende.
-        </div>
-      )}
-
-      <form onSubmit={onSubmit} className="mt-4 space-y-4">
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm font-medium text-neutral-800">
-            Mottakere
-            <select
-              value={target}
-              onChange={(e) =>
-                setTarget(
-                  e.target.value as
-                    | "participants"
-                    | "leaders"
-                    | "volunteers"
-                    | "guests"
-                    | "all-members"
-                )
-              }
-              className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600"
-            >
-              <option value="participants">Deltakere/medlemmer</option>
-              <option value="leaders">Ledere</option>
-              <option value="volunteers">Frivillige</option>
-              <option value="guests">Gjester</option>
-              <option value="all-members">Alle (ledere, deltakere, frivillige)</option>
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm font-medium text-neutral-800">
-            Kanal
-            <select
-              value={channel}
-              onChange={(e) =>
-                setChannel(e.target.value as "both" | "messenger" | "email")
-              }
-              className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600"
-            >
-              <option value="both" disabled={isGuestTarget || isVolunteerTarget}>
-                Messenger + e-post (medlemmer)
-              </option>
-              <option value="messenger" disabled={!messengerAllowed}>
-                Kun Messenger (medlemmer/ledere)
-              </option>
-              <option value="email">
-                Kun e-post {isGuestTarget ? "(gjester)" : ""}
-              </option>
-            </select>
-            {(isGuestTarget || isVolunteerTarget) && (
-              <span className="text-xs text-neutral-600">
-                Gjester/frivillige støtter bare e-post.
-              </span>
-            )}
-          </label>
-        </div>
-
-        <label className="flex flex-col gap-1 text-sm font-medium text-neutral-800">
-          Emne
-          <input
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            required
-            disabled={!hasDbId || sending}
-            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:opacity-60"
-            placeholder="Emne for meldingen"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1 text-sm font-medium text-neutral-800">
-          Melding
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            required
-            disabled={!hasDbId || sending}
-            rows={6}
-            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:opacity-60"
-            placeholder="Skriv meldingen som skal sendes"
-          />
-        </label>
-
-        {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-            {error}
-          </div>
-        ) : null}
-        {info ? (
-          <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-            {info}
-          </div>
-        ) : null}
-
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={!hasDbId || sending}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
-          >
-            {sending ? "Sender…" : "Send melding"}
-          </button>
-          <span className="text-xs text-neutral-600">
-            Lagres i Messenger for medlemmer/ledere. Gjester/frivillige får e-post.
-          </span>
-        </div>
-      </form>
     </div>
   );
 }
