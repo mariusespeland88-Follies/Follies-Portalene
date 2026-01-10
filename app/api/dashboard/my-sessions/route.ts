@@ -29,8 +29,8 @@ function isValidHttpUrl(s: string) {
 }
 
 async function sb(path: string) {
-  // REST via PostgREST (service role)
-  const url = `${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/${path}`;
+  const base = SUPABASE_URL.replace(/\/+$/, "");
+  const url = `${base}/rest/v1/${path}`;
   return fetch(url, {
     method: "GET",
     headers: {
@@ -69,7 +69,10 @@ export async function GET(req: Request) {
     const email = (searchParams.get("email") || "").trim().toLowerCase();
     const memberIdParam = (searchParams.get("memberId") || "").trim();
     const daysRaw = Number(searchParams.get("days") || "30");
-    const days = Math.max(1, Math.min(90, Number.isFinite(daysRaw) ? daysRaw : 30));
+    const days = Math.max(
+      1,
+      Math.min(90, Number.isFinite(daysRaw) ? daysRaw : 30)
+    );
 
     let memberId = memberIdParam;
 
@@ -78,24 +81,32 @@ export async function GET(req: Request) {
       const r = await sb(
         `members?select=id&email=eq.${encodeURIComponent(email)}&limit=1`
       );
-      if (!r.ok) return NextResponse.json({ error: await r.text() }, { status: r.status });
+      if (!r.ok)
+        return NextResponse.json({ error: await r.text() }, { status: r.status });
       const rows = (await r.json().catch(() => [])) as any[];
       memberId = rows?.[0]?.id ? String(rows[0].id) : "";
     }
 
     if (!memberId) {
-      // Ikke error — bare ingen data
       return NextResponse.json({ sessions: [] });
     }
 
     // 2) Finn aktivitetene bruker er påmeldt (enrollments)
     const enrRes = await sb(
-      `enrollments?select=activity_id&member_id=eq.${encodeURIComponent(memberId)}`
+      `enrollments?select=activity_id&member_id=eq.${encodeURIComponent(
+        memberId
+      )}`
     );
-    if (!enrRes.ok) return NextResponse.json({ error: await enrRes.text() }, { status: enrRes.status });
+    if (!enrRes.ok)
+      return NextResponse.json(
+        { error: await enrRes.text() },
+        { status: enrRes.status }
+      );
 
     const enrRows = (await enrRes.json().catch(() => [])) as any[];
-    const activityIds = uniq((enrRows || []).map((r) => String(r?.activity_id || "")));
+    const activityIds = uniq(
+      (enrRows || []).map((r) => String(r?.activity_id || ""))
+    );
 
     if (activityIds.length === 0) {
       return NextResponse.json({ sessions: [] });
@@ -105,15 +116,9 @@ export async function GET(req: Request) {
     const { nowISO, endISO } = isoNowPlusDays(days);
     const inClause = `in.(${activityIds.map((x) => `"${x}"`).join(",")})`;
 
-    const cols = [
-      "id",
-      "activity_id",
-      "title",
-      "start_at",
-      "end_at",
-      "location",
-      "note",
-    ].join(",");
+    const cols = ["id", "activity_id", "title", "start_at", "end_at", "location", "note"].join(
+      ","
+    );
 
     const sessRes = await sb(
       `activity_sessions?select=${cols}` +
@@ -123,7 +128,11 @@ export async function GET(req: Request) {
         `&order=start_at.asc`
     );
 
-    if (!sessRes.ok) return NextResponse.json({ error: await sessRes.text() }, { status: sessRes.status });
+    if (!sessRes.ok)
+      return NextResponse.json(
+        { error: await sessRes.text() },
+        { status: sessRes.status }
+      );
 
     const rows = (await sessRes.json().catch(() => [])) as any[];
 
@@ -139,6 +148,9 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ sessions });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Ukjent feil" }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || "Ukjent feil" },
+      { status: 500 }
+    );
   }
 }
