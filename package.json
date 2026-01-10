@@ -6,8 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "postinstall": "tailwindcss -i ./app/globals.css -o ./public/tw.css || true"
+    "lint": "next lint"
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.1",
