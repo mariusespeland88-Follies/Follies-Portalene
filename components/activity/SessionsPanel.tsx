@@ -1,3 +1,4 @@
+// PATH: components/SessionsPanel.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -26,16 +27,25 @@ function saveCal(list: any[]) {
   } catch {}
 }
 
-function loadSessions(activityId: string): any[] {
+function loadSessionsLS(activityId: string): any[] {
   const all = safeJSON<Record<string, any[]>>(localStorage.getItem(SESS_LS)) ?? {};
   return all[activityId] ?? [];
 }
-function saveSessions(activityId: string, sessions: any[]) {
+function saveSessionsLS(activityId: string, sessions: any[]) {
   const all = safeJSON<Record<string, any[]>>(localStorage.getItem(SESS_LS)) ?? {};
   all[activityId] = sessions;
   try {
     localStorage.setItem(SESS_LS, JSON.stringify(all));
   } catch {}
+}
+
+// --- API helpers (bruker din eksisterende route) ---
+async function apiList(activityId: string): Promise<any[]> {
+  const res = await fetch(`/api/sessions/list?activityId=${encodeURIComponent(activityId)}`, { cache: "no-store" });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(String((json as any)?.error || "Kunne ikke hente økter"));
+  const list = Array.isArray((json as any)?.sessions) ? (json as any).sessions : [];
+  return Array.isArray(list) ? list : [];
 }
 
 export default function SessionsPanel({ activityId, activityName }: { activityId: string; activityName: string }) {
@@ -53,14 +63,46 @@ export default function SessionsPanel({ activityId, activityName }: { activityId
   const [selection, setSelection] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
+    let alive = true;
     (async () => {
       setLoading(true);
+
+      // People
       const [p, l] = await Promise.all([getParticipants(activityId), getLeaders(activityId)]);
+      if (!alive) return;
       setParticipants(p);
       setLeaders(l);
-      setSessions(loadSessions(activityId));
+
+      // Sessions: DB-first via API. Fallback LS.
+      try {
+        const rows = await apiList(activityId);
+        if (!alive) return;
+
+        // Normaliser til ditt format (start/end ISO)
+        const mapped = rows.map((r: any) => ({
+          id: String(r.id),
+          activity_id: String(r.activity_id || activityId),
+          title: String(r.title || "Økt"),
+          start: String(r.start_at),
+          end: String(r.end_at || r.start_at),
+          location: r.location ?? "",
+          note: r.note ?? "",
+          targets: Array.isArray(r.targets) ? r.targets : [],
+        }));
+
+        setSessions(mapped);
+        saveSessionsLS(activityId, mapped);
+      } catch {
+        const ls = loadSessionsLS(activityId);
+        setSessions(ls);
+      }
+
       setLoading(false);
     })();
+
+    return () => {
+      alive = false;
+    };
   }, [activityId]);
 
   const allPeople = useMemo(() => [...leaders, ...participants], [leaders, participants]);
@@ -73,16 +115,15 @@ export default function SessionsPanel({ activityId, activityName }: { activityId
 
   const onAdd = () => {
     if (!title || !date || !time) return;
+
     const isoStart = new Date(`${date}T${time}:00`).toISOString();
     const isoEnd = new Date(new Date(`${date}T${time}:00`).getTime() + duration * 60000).toISOString();
 
-    // hvem skal få denne økten i sin personlige kalender?
     const targets =
       aud === "all"
         ? allPeople.map((p) => p.id)
         : allPeople.filter((p) => selection[p.id]).map((p) => p.id);
 
-    // lagre i sessions LS for aktiviteten
     const sess = {
       id: crypto.randomUUID(),
       activity_id: activityId,
@@ -91,11 +132,12 @@ export default function SessionsPanel({ activityId, activityName }: { activityId
       end: isoEnd,
       targets,
     };
+
     const next = [sess, ...sessions];
     setSessions(next);
-    saveSessions(activityId, next);
+    saveSessionsLS(activityId, next);
 
-    // skriv til felles kalender-speil (per person)
+    // Speil til kalender-LS (så dashboard/kalender får det)
     const cal = loadCal();
     for (const memberId of targets) {
       cal.unshift({
@@ -106,11 +148,12 @@ export default function SessionsPanel({ activityId, activityName }: { activityId
         end: isoEnd,
         source: "session",
         activity_id: activityId,
+        session_id: sess.id,
       });
     }
     saveCal(cal);
 
-    // reset form
+    // reset
     setTitle("");
     setDate("");
     setTime("");
@@ -227,7 +270,7 @@ export default function SessionsPanel({ activityId, activityName }: { activityId
                   <div className="font-medium">{s.title}</div>
                   <div className="text-sm text-neutral-400">
                     {new Date(s.start).toLocaleString()} – {new Date(s.end).toLocaleTimeString()}
-                    {" · "} mottakere: {s.targets.length}
+                    {" · "} mottakere: {Array.isArray(s.targets) ? s.targets.length : 0}
                   </div>
                 </div>
               </li>
