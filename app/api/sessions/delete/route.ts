@@ -9,16 +9,21 @@ export async function POST(req: Request) {
     const supabase = getSupabaseServiceRoleClient();
     if (!supabase) {
       return NextResponse.json(
-        { error: "Service role client mangler (SUPABASE_SERVICE_ROLE_KEY er ikke satt på Vercel)." },
+        { error: "Service role client mangler." },
         { status: 500 }
       );
     }
 
     const body = await req.json().catch(() => ({}));
-    const id = S(body.id);
 
-    if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    // Godta flere navn
+    const id = S(body.id) || S(body.session_id) || S(body.sessionId);
 
+    if (!id) {
+      return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    }
+
+    // targets først (FK)
     const { error: tdel } = await supabase
       .from("activity_session_targets")
       .delete()
@@ -33,6 +38,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Unknown error" }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || "Unknown error" },
+      { status: 500 }
+    );
   }
 }
