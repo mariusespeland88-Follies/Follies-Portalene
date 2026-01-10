@@ -5,20 +5,37 @@ import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 const S = (v: any) => String(v ?? "").trim();
 
 export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const debug = S(url.searchParams.get("debug")) === "1";
+
   try {
     const supabase = getSupabaseServiceRoleClient();
     if (!supabase) {
       return NextResponse.json(
-        { error: "Service role client mangler (SUPABASE_SERVICE_ROLE_KEY er ikke satt på Vercel)." },
+        {
+          error:
+            "Service role client mangler (SUPABASE_SERVICE_ROLE_KEY er ikke satt / eller server-klienten lager ikke client).",
+          ...(debug
+            ? {
+                env: {
+                  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || null,
+                  SUPABASE_SERVICE_ROLE_KEY_SET: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+                },
+              }
+            : {}),
+        },
         { status: 500 }
       );
     }
 
-    const url = new URL(req.url);
-    const activityId = S(url.searchParams.get("activityId")) || S(url.searchParams.get("activity_id"));
+    const activityId =
+      S(url.searchParams.get("activityId")) || S(url.searchParams.get("activity_id"));
 
     if (!activityId) {
-      return NextResponse.json({ error: "Missing activityId" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing activityId" },
+        { status: 400 }
+      );
     }
 
     const { data: sessions, error: sErr } = await supabase
@@ -27,7 +44,23 @@ export async function GET(req: Request) {
       .eq("activity_id", activityId)
       .order("start_at", { ascending: true });
 
-    if (sErr) return NextResponse.json({ error: sErr.message }, { status: 500 });
+    if (sErr) {
+      return NextResponse.json(
+        {
+          error: sErr.message,
+          ...(debug
+            ? {
+                debug: {
+                  activityId,
+                  sessionsCount: 0,
+                  envUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || null,
+                },
+              }
+            : {}),
+        },
+        { status: 500 }
+      );
+    }
 
     const ids = (sessions || []).map((r: any) => S(r.id)).filter(Boolean);
 
@@ -38,11 +71,27 @@ export async function GET(req: Request) {
         .select("session_id, member_id")
         .in("session_id", ids);
 
-      if (tErr) return NextResponse.json({ error: tErr.message }, { status: 500 });
+      if (tErr) {
+        return NextResponse.json(
+          {
+            error: tErr.message,
+            ...(debug
+              ? {
+                  debug: {
+                    activityId,
+                    sessionsCount: (sessions || []).length,
+                    envUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || null,
+                  },
+                }
+              : {}),
+          },
+          { status: 500 }
+        );
+      }
 
-      for (const tr of tldr(trows)) {
-        const sid = S(tr.session_id);
-        const mid = S(tr.member_id);
+      for (const tr of Array.isArray(trows) ? trows : []) {
+        const sid = S((tr as any).session_id);
+        const mid = S((tr as any).member_id);
         if (!sid || !mid) continue;
         (targetsBySession[sid] ||= []).push(mid);
       }
@@ -62,12 +111,31 @@ export async function GET(req: Request) {
       };
     });
 
-    return NextResponse.json({ sessions: out });
+    return NextResponse.json({
+      sessions: out,
+      ...(debug
+        ? {
+            debug: {
+              activityId,
+              sessionsCount: out.length,
+              envUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || null,
+            },
+          }
+        : {}),
+    });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Unknown error" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: e?.message || "Unknown error",
+        ...(debug
+          ? {
+              debug: {
+                envUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || null,
+              },
+            }
+          : {}),
+      },
+      { status: 500 }
+    );
   }
-}
-
-function tldr(v: any) {
-  return Array.isArray(v) ? v : [];
 }
