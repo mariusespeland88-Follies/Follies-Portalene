@@ -14,11 +14,15 @@ import { createClientComponentClient } from "@/lib/supabase/browser";
  * - Kalender (30 dager) henter DB-økter via /api/dashboard/my-sessions (DB-first) med LS fallback.
  *
  * Restore:
- * - Thumbnails på “Mine aktiviteter” er tilbake (størrelse/posisjon som et ordentlig kort-thumbnail).
+ * - Thumbnails på “Mine aktiviteter” er tilbake.
  *
- * NYTT (kun små rydde-endringer):
+ * Små rydde-endringer:
  * - Fjernet “Åpne min profil” under Hurtighandlinger (duplikat)
  * - Fjernet “Info” i Påminnelser (gjorde ingenting)
+ *
+ * NYTT (kun funksjon, for å fjerne “Velkommen”/refresh-behov):
+ * - Når vi har e-post men ikke member i LS: kall /api/dashboard/ensure-member
+ *   → oppdater LS + state slik at navn og “Åpne min profil” kommer med én gang.
  */
 
 type AnyObj = Record<string, any>;
@@ -128,9 +132,7 @@ function getCurrentIdentity(members: AnyObj[]) {
 
 /* ---------- activities helpers for dashboard ---------- */
 function activityTitle(a: AnyObj): string {
-  return (
-    pick(a, ["title", "tittel", "name", "navn"], "Uten tittel") || "Uten tittel"
-  );
+  return pick(a, ["title", "tittel", "name", "navn"], "Uten tittel") || "Uten tittel";
 }
 function activityTypeLabel(a: AnyObj): string {
   const t = String(pick(a, ["type", "kategori"], "offer")).toLowerCase();
@@ -327,6 +329,60 @@ export default function DashboardPage() {
       alive = false;
     };
   }, [me.email, me.member, supabase]);
+
+  // ✅ NYTT: Ensure-member så vi får navn/profil uten refresh
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const email = (me.email || "").trim();
+      if (!email) return;
+      if (me.member) return; // allerede ok
+
+      try {
+        const displayName = ""; // vi kan sende tom – serveren håndterer det
+        const res = await fetch("/api/dashboard/ensure-member", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, displayName }),
+        });
+
+        if (!res.ok) return;
+        const j = await res.json().catch(() => ({}));
+
+        // forventer at route returnerer member (best effort)
+        const member = (j?.member ?? j?.data?.member ?? j?.result?.member ?? j?.memberRow ?? null) as AnyObj | null;
+        if (!alive || !member) return;
+
+        const memberId = toStr(member?.id);
+        if (!memberId) return;
+
+        // oppdater LS-id (slik resten av appen forventer)
+        writeLS("follies.currentMemberId", memberId);
+
+        // oppdater members store (merge)
+        const cur = readMembers();
+        const next = (() => {
+          const map = new Map<string, AnyObj>();
+          for (const m of cur) {
+            const id = toStr(m?.id ?? m?.uuid ?? m?._id ?? m?.memberId);
+            if (id) map.set(id, m);
+          }
+          map.set(memberId, member);
+          return Array.from(map.values());
+        })();
+        writeLS(MEMBERS_KEY, next);
+
+        setMembers(next);
+        setMe((prev) => ({ ...prev, id: memberId, member }));
+      } catch {
+        // ignorer – da viser vi bare "Velkommen" til LS blir fylt av andre flows
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [me.email, me.member]);
 
   // Kandidater fra LS (participants + leder-perms)
   const candidateActivityIds = React.useMemo(() => {
@@ -771,7 +827,6 @@ export default function DashboardPage() {
             <h2 className="text-lg font-semibold text-black">
               Påminnelser
             </h2>
-            {/* Info-knappen fjernet */}
           </div>
           {reminders.length === 0 ? (
             <div className="mt-3 text-gray-700">
@@ -825,8 +880,6 @@ export default function DashboardPage() {
           >
             Åpne Messenger
           </button>
-
-          {/* “Åpne min profil” under hurtighandlinger fjernet */}
         </div>
       </section>
 
@@ -898,23 +951,29 @@ export default function DashboardPage() {
                             </div>
                             <div
                               className={`mt-0.5 font-medium ${
-                                unread ? "text-black" : "text-gray-800"
+                                unread
+                                  ? "text-black"
+                                  : "text-gray-800"
                               }`}
                             >
                               {(m as any).title ||
                                 (m as any).subject ||
                                 "Beskjed"}
                             </div>
-                            {((m as any).body || (m as any).message) && (
+                            {((m as any).body ||
+                              (m as any).message) && (
                               <div className="mt-1 text-sm text-gray-700 whitespace-pre-line max-h-28 overflow-y-auto">
-                                {(m as any).body || (m as any).message}
+                                {(m as any).body ||
+                                  (m as any).message}
                               </div>
                             )}
                           </div>
                           {unread ? (
                             <button
                               onClick={() =>
-                                markMessageRead(String((m as any).id))
+                                markMessageRead(
+                                  String((m as any).id)
+                                )
                               }
                               className="shrink-0 inline-flex items-center justify-center rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
                             >
