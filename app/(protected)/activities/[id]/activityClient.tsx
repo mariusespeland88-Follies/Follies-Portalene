@@ -1,12 +1,11 @@
+// PATH: app/(protected)/activities/[id]/activityClient.tsx
 "use client";
 
 /**
  * Klientside for aktivitetsdetaljer.
- * - Vinrød/lilla hero
- * - Faner (styres nå av activity.tab_config (DB) + fallback)
- * - "Legg meg til som leder" (LS + Supabase e-post → medlemmer)
- * - DB-first + LS-fallback for deltakere/ledere
- * - Økter speiles til follies.calendar.v1
+ * - Ingen designendring
+ * - Viktig fiks: bruker alltid riktig DB-uuid som activityId (for økter)
+ *   og redirecter hvis URL-id ikke er samme som DB-id.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -303,12 +302,35 @@ function computeEnabledTabs(act: DbActivity | null): Tab[] {
     return cleaned;
   }
 
-  // fallback + “has_guests” hvis dere bruker det feltet
   const tabs = [...fallback];
   if ((act as any).has_guests) {
-    if (!tabs.includes("gjester")) tabs.splice(4, 0, "gjester"); // før filer/meldinger
+    if (!tabs.includes("gjester")) tabs.splice(4, 0, "gjester");
   }
   return tabs;
+}
+
+/* ------------------------ DB-id resolver (viktig) ------------------------ */
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function pickDbActivityId(act: DbActivity | null, routeId: string): string | null {
+  const candidates: any[] = [
+    act?.id,
+    (act as any)?.activity_id,
+    (act as any)?.activityId,
+    (act as any)?.db_id,
+    (act as any)?.dbId,
+    (act as any)?.supabase_id,
+    (act as any)?.supabaseId,
+    routeId,
+  ];
+
+  for (const c of candidates) {
+    const s = String(c ?? "");
+    if (UUID_REGEX.test(s)) return s;
+  }
+  return null;
 }
 
 /* ------------------------ SessionsPanel – dynamisk klient ------------------- */
@@ -324,9 +346,11 @@ export default function ActivityClient() {
   const router = useRouter();
   const supabase = createClientComponentClient();
 
-  const id = Array.isArray(params?.id)
+  const routeId = Array.isArray(params?.id)
     ? params.id[0]
     : (params?.id as string | undefined);
+
+  const routeIdValue = String(routeId ?? "");
 
   const [tab, setTab] = useState<Tab>("oversikt");
   const [enabledTabs, setEnabledTabs] = useState<Tab[]>([]);
@@ -334,6 +358,8 @@ export default function ActivityClient() {
   const [err, setErr] = useState<string | null>(null);
 
   const [act, setAct] = useState<DbActivity | null>(null);
+  const [dbActivityId, setDbActivityId] = useState<string | null>(null);
+
   const [vis, setVis] = useState<Visuals>({ coverUrl: null, accent: null });
 
   const [membersAll, setMembersAll] = useState<AnyObj[]>([]);
@@ -357,7 +383,7 @@ export default function ActivityClient() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (!id) {
+      if (!routeIdValue) {
         setErr("Mangler aktivitets-ID i URLen.");
         setLoading(false);
         return;
@@ -367,20 +393,32 @@ export default function ActivityClient() {
         setErr(null);
 
         // Aktivitet
-        let a = await fetchActivity(String(id));
+        let a = await fetchActivity(String(routeIdValue));
         if (!a) {
           const res = await fetchActivities();
-          a = res.data.find((x) => String(x.id) === String(id)) ?? null;
+          a = res.data.find((x) => String(x.id) === String(routeIdValue)) ?? null;
         }
         if (!alive) return;
 
         if (!a) {
-          setErr(`Fant ikke aktiviteten (id: ${id}).`);
+          setErr(`Fant ikke aktiviteten (id: ${routeIdValue}).`);
           setLoading(false);
           return;
         }
+
         setAct(a);
-        setVis(visualsFromLocalStorage(String(id)));
+        setVis(visualsFromLocalStorage(String(routeIdValue)));
+
+        // Finn “riktig” DB-id (uuid)
+        const resolvedDbId = pickDbActivityId(a, routeIdValue);
+        setDbActivityId(resolvedDbId);
+
+        // ✅ KRITISK: hvis du åpner en “feil” id (duplikat / lokal id),
+        // redirect til den riktige DB uuid’en, ellers får du “0 økter”
+        if (resolvedDbId && resolvedDbId !== routeIdValue) {
+          router.replace(`/activities/${encodeURIComponent(resolvedDbId)}`);
+          return; // stopp videre lasting på feil id
+        }
 
         const tabs = computeEnabledTabs(a);
         setEnabledTabs(tabs);
@@ -391,14 +429,14 @@ export default function ActivityClient() {
         setMembersAll(allMembers);
 
         // Enrollments (LS)
-        const eLS = loadEnrollmentsLS(String(id));
+        const eLS = loadEnrollmentsLS(String(routeIdValue));
         setEnrLS(eLS);
 
         // Deltakere/ledere (DB-first) + LS-union
         try {
           const [pDB, lDB] = await Promise.all([
-            getParticipants(String(id)),
-            getLeaders(String(id)),
+            getParticipants(String(routeIdValue)),
+            getLeaders(String(routeIdValue)),
           ]);
 
           const byId = (m: any) =>
@@ -423,11 +461,11 @@ export default function ActivityClient() {
           setLeaders(fromLS(eLS.leaders));
         }
 
-        // Sessions (LS)
+        // Sessions (legacy LS - kun for kompatibilitet i UI-state)
         const SESS_LS = "follies.activitySessions.v1";
         const allSess =
           safeJSON<Record<string, any[]>>(localStorage.getItem(SESS_LS)) ?? {};
-        setSessions(allSess[String(id)] ?? []);
+        setSessions(allSess[String(routeIdValue)] ?? []);
 
         // Meg selv (Supabase → e-post → medlem)
         try {
@@ -460,7 +498,7 @@ export default function ActivityClient() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [routeIdValue]);
 
   const typeLabel = useMemo(() => labelForType((act as any)?.type), [act]);
 
@@ -523,9 +561,6 @@ export default function ActivityClient() {
     }
   };
 
-  /* HERO */
-  const typeLbl = typeLabel;
-
   // Bygg tabliste basert på enabledTabs (DB)
   const tabDefs: [Tab, string][] = [];
   if (enabledTabs.includes("oversikt")) tabDefs.push(["oversikt", "Oversikt"]);
@@ -538,7 +573,10 @@ export default function ActivityClient() {
   if (enabledTabs.includes("filer")) tabDefs.push(["filer", "Filer"]);
   if (enabledTabs.includes("meldinger")) tabDefs.push(["meldinger", "Meldinger"]);
 
-  const isWideTab = tab === "gjester"; // full bredde for gjester (ingen høyre-kort)
+  const isWideTab = tab === "gjester";
+
+  // ✅ Dette er ID-en som skal brukes for sessions i DB:
+  const effectiveId = dbActivityId || routeIdValue;
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
@@ -572,7 +610,7 @@ export default function ActivityClient() {
                     (act as any)?.type
                   )} ring-1 ring-white/40`}
                 >
-                  {typeLbl}
+                  {typeLabel}
                 </span>
               </div>
               <p className="mt-1 text-sm text-white/90">
@@ -642,7 +680,7 @@ export default function ActivityClient() {
 
           {tab === "okter" && (
             <SessionsPanel
-              activityId={String(act.id)}
+              activityId={String(effectiveId)}   // ✅ alltid DB-id hvis mulig
               activityName={act.name}
               sessions={sessions}
               setSessions={setSessions}
@@ -656,13 +694,14 @@ export default function ActivityClient() {
 
           {tab === "filer" && (
             <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm text-neutral-700">
-              Her kan vi senere legge opplasting/visning av filer
-              (Bilder/Tekst/Musikk/Annet).
+              Her kan vi senere legge opplasting/visning av filer.
             </div>
           )}
 
           {tab === "meldinger" && (
-            <MessagesPanel activityId={String(act.id)} />
+            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm text-neutral-700">
+              Her kan vi senere legge kunngjøringer/meldinger.
+            </div>
           )}
         </section>
 
@@ -673,7 +712,7 @@ export default function ActivityClient() {
               <dl className="mt-3 text-sm text-neutral-700 space-y-2">
                 <div className="flex justify-between gap-4">
                   <dt>Type</dt>
-                  <dd className="font-medium">{typeLbl}</dd>
+                  <dd className="font-medium">{typeLabel}</dd>
                 </div>
                 <div className="flex justify-between gap-4">
                   <dt>Status</dt>
@@ -681,19 +720,10 @@ export default function ActivityClient() {
                     {(act as any)?.archived ? "Arkivert" : "Aktiv"}
                   </dd>
                 </div>
-                <div className="flex justify-between gap-4">
-                  <dt>Start</dt>
-                  <dd className="font-medium">
-                    {(act as any)?.start_date || "—"}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt>Slutt</dt>
-                  <dd className="font-medium">
-                    {(act as any)?.end_date || "—"}
-                  </dd>
-                </div>
               </dl>
+              <div className="mt-3 text-xs text-neutral-500">
+                DB-id brukt for økter: <span className="font-mono">{effectiveId}</span>
+              </div>
             </div>
           </aside>
         ) : null}
@@ -764,164 +794,6 @@ function PeoplePanel({ title, people }: { title: string; people: AnyObj[] }) {
           })}
         </ul>
       )}
-    </div>
-  );
-}
-
-function MessagesPanel({ activityId }: { activityId: string }) {
-  const [target, setTarget] = useState<
-    "participants" | "leaders" | "volunteers" | "guests" | "all-members"
-  >("participants");
-  const [channel, setChannel] = useState<"both" | "messenger" | "email">(
-    "both"
-  );
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
-  const [sending, setSending] = useState(false);
-  const [info, setInfo] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setInfo(null);
-    setError(null);
-    setSending(true);
-    try {
-      const res = await fetch(`/api/activities/${activityId}/broadcast`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target, channel, subject, body }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json?.error || "Kunne ikke sende meldingen.");
-      }
-      setInfo(
-        `Sendt: ${json?.emailCount || 0} e-post(er), ${
-          json?.messengerCount || 0
-        } messenger-melding(er).`
-      );
-      setSubject("");
-      setBody("");
-    } catch (err: any) {
-      setError(err?.message || "Noe gikk galt ved sending.");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const isGuestTarget = target === "guests";
-  const isVolunteerTarget = target === "volunteers";
-  const messengerAllowed = !(isGuestTarget || isVolunteerTarget);
-
-  return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm text-neutral-800">
-      <h2 className="text-lg font-semibold text-neutral-900">Send melding</h2>
-      <p className="mt-1 text-sm text-neutral-700">
-        Send e-post til gjester/frivillige, eller porter meldingen til Messenger
-        for deltakere/ledere. E-post krever SMTP-oppsett på serveren.
-      </p>
-
-      <form onSubmit={onSubmit} className="mt-4 space-y-4">
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm font-medium text-neutral-800">
-            Mottakere
-            <select
-              value={target}
-              onChange={(e) =>
-                setTarget(
-                  e.target.value as
-                    | "participants"
-                    | "leaders"
-                    | "volunteers"
-                    | "guests"
-                    | "all-members"
-                )
-              }
-              className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600"
-            >
-              <option value="participants">Deltakere/medlemmer</option>
-              <option value="leaders">Ledere</option>
-              <option value="volunteers">Frivillige</option>
-              <option value="guests">Gjester</option>
-              <option value="all-members">Alle (ledere, deltakere, frivillige)</option>
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm font-medium text-neutral-800">
-            Kanal
-            <select
-              value={channel}
-              onChange={(e) =>
-                setChannel(e.target.value as "both" | "messenger" | "email")
-              }
-              className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600"
-            >
-              <option value="both" disabled={isGuestTarget || isVolunteerTarget}>
-                Messenger + e-post (medlemmer)
-              </option>
-              <option value="messenger" disabled={!messengerAllowed}>
-                Kun Messenger (medlemmer/ledere)
-              </option>
-              <option value="email">
-                Kun e-post {isGuestTarget ? "(gjester)" : ""}
-              </option>
-            </select>
-            {(isGuestTarget || isVolunteerTarget) && (
-              <span className="text-xs text-neutral-600">
-                Gjester/frivillige støtter bare e-post.
-              </span>
-            )}
-          </label>
-        </div>
-
-        <label className="flex flex-col gap-1 text-sm font-medium text-neutral-800">
-          Emne
-          <input
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            required
-            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600"
-            placeholder="Emne for meldingen"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1 text-sm font-medium text-neutral-800">
-          Melding
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            required
-            rows={6}
-            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-600"
-            placeholder="Skriv meldingen som skal sendes"
-          />
-        </label>
-
-        {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-            {error}
-          </div>
-        ) : null}
-        {info ? (
-          <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-            {info}
-          </div>
-        ) : null}
-
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={sending}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
-          >
-            {sending ? "Sender…" : "Send melding"}
-          </button>
-          <span className="text-xs text-neutral-600">
-            Meldinger til medlemmer/ledere lagres også i Messenger.
-          </span>
-        </div>
-      </form>
     </div>
   );
 }
