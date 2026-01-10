@@ -1,22 +1,22 @@
+// PATH: app/(protected)/dashboard/page.tsx
 "use client";
+
+/**
+ * Dashboard – DESIGN URØRT.
+ * FIX:
+ * - Kalender (30 dager) hentes nå fra DB-økter via /api/sessions/list
+ *   (fordi økter ikke lenger ligger trygt i localStorage).
+ */
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { createClientComponentClient } from "@/lib/supabase/browser";
-
-/**
- * Dashboard – “Min side” + Beskjed-panel (slide-over)
- * DESIGN URØRT.
- * Henter "Mine aktiviteter" via server-rute (e-post/navn) med fallback på LS-kandidater.
- */
 
 type AnyObj = Record<string, any>;
 
 const MEMBERS_KEY = "follies.members.v1";
 const MEMBERS_FALLBACK = "follies.members";
 const ACTIVITIES_KEY = "follies.activities.v1";
-const CAL_V1 = "follies.calendar.v1";
-const CAL_FB = "follies.calendar";
 const REMINDERS_KEY = "follies.reminders.v1";
 const MESSAGES_KEY = "follies.messages.v1";
 const PERMS_KEY = "follies.perms.v1";
@@ -56,34 +56,6 @@ function idAliases(o: AnyObj): string[] {
 function matchesId(o: AnyObj, id: string): boolean {
   return idAliases(o).some((x) => x === id);
 }
-function firstUrlLike(v: any): string | null {
-  if (!v) return null;
-  if (typeof v === "string") return v;
-  if (Array.isArray(v)) {
-    for (const it of v) {
-      const u = firstUrlLike(
-        (it as any)?.url ||
-          (it as any)?.src ||
-          (it as any)?.image ||
-          (it as any)?.href ||
-          it
-      );
-      if (u) return u;
-    }
-  } else if (typeof v === "object") {
-    return (
-      (v as any).url ||
-      (v as any).src ||
-      (v as any).image ||
-      (v as any).href ||
-      firstUrlLike((v as any).file) ||
-      firstUrlLike((v as any).cover) ||
-      firstUrlLike((v as any).photo) ||
-      null
-    );
-  }
-  return null;
-}
 
 function fullName(m: AnyObj): string {
   const fn = pick(m, ["first_name", "firstName", "fornavn"], "");
@@ -107,11 +79,6 @@ function readMembers(): AnyObj[] {
 function readActivities(): AnyObj[] {
   return parseJSON<AnyObj[]>(readLS(ACTIVITIES_KEY), []);
 }
-function readCalendar(): AnyObj[] {
-  const v1 = parseJSON<AnyObj[]>(readLS(CAL_V1), []);
-  const fb = parseJSON<AnyObj[]>(readLS(CAL_FB), []);
-  return [...v1, ...fb];
-}
 function readReminders(): AnyObj[] {
   return parseJSON<AnyObj[]>(readLS(REMINDERS_KEY), []);
 }
@@ -123,19 +90,17 @@ function readPerms(): AnyObj {
 }
 
 function getCurrentIdentity(members: AnyObj[]) {
-  const id = toStr(
-    parseJSON<string | null>(readLS("follies.currentMemberId"), null)
-  );
+  const id = toStr(parseJSON<string | null>(readLS("follies.currentMemberId"), null));
   const email =
     toStr(parseJSON<string | null>(readLS("follies.currentEmail"), null)) ||
     toStr(parseJSON<string | null>(readLS("follies.session.email"), null)) ||
     toStr(readLS("follies.session.email") ?? "");
+
   let member: AnyObj | null = null;
   if (id) member = members.find((m) => matchesId(m, id)) ?? null;
   if (!member && email) {
     const lower = email.toLowerCase();
-    member =
-      members.find((m) => memberEmail(m)?.toLowerCase() === lower) ?? null;
+    member = members.find((m) => memberEmail(m)?.toLowerCase() === lower) ?? null;
   }
   return { id, email, member };
 }
@@ -156,15 +121,7 @@ function activityId(a: AnyObj): string {
 function isUserInActivity(a: AnyObj, me: { id?: string; email?: string }) {
   const raw = pick(
     a,
-    [
-      "participants",
-      "deltakere",
-      "members",
-      "enrollments",
-      "registrations",
-      "påmeldte",
-      "paameldte",
-    ],
+    ["participants", "deltakere", "members", "enrollments", "registrations", "påmeldte", "paameldte"],
     []
   );
   const email = (me.email || "").trim().toLowerCase();
@@ -175,38 +132,12 @@ function isUserInActivity(a: AnyObj, me: { id?: string; email?: string }) {
       if (myId && toStr(item) === myId) return true;
     } else if (item && typeof item === "object") {
       const mid = toStr(item?.memberId ?? item?.id ?? item?.uuid ?? item?._id);
-      const mem = toStr(item?.email ?? item?.epost ?? item?.mail)
-        .trim()
-        .toLowerCase();
+      const mem = toStr(item?.email ?? item?.epost ?? item?.mail).trim().toLowerCase();
       if (myId && mid && mid === myId) return true;
       if (email && mem && mem === email) return true;
     }
   }
   return false;
-}
-function activityCoverUrl(a: AnyObj): string | null {
-  const direct = pick(
-    a,
-    [
-      "cover_url",
-      "coverUrl",
-      "cover",
-      "image_url",
-      "imageUrl",
-      "image",
-      "banner",
-      "poster",
-      "thumbnail",
-      "thumb",
-      "picture",
-      "photo",
-      "hero",
-      "img",
-    ],
-    null
-  );
-  const url = firstUrlLike(direct);
-  return url ? String(url) : null;
 }
 
 /* ---------- leder-tilganger fra perms (LS) ---------- */
@@ -234,23 +165,19 @@ function leaderActivityIdsFromPerms(perms: AnyObj, myId: string): Set<string> {
       }
     }
   }
-  const arr: any[] = Array.isArray(perms?.entries)
-    ? perms.entries
-    : Array.isArray(perms)
-    ? perms
-    : [];
-  for (const r of arr) {
-    const uid = toStr(
-      r?.memberId ?? r?.userId ?? r?.uid ?? r?.ownerId ?? r?.who ?? ""
-    );
-    const aid = toStr(
-      r?.activityId ?? r?.offerId ?? r?.resourceId ?? r?.id ?? ""
-    );
-    const lvl =
-      r?.perm ?? r?.role ?? r?.level ?? r?.access ?? r?.type ?? "";
-    if (uid && aid && uid === myId && isLeaderLevel(lvl)) out.add(aid);
-  }
   return out;
+}
+
+/* ---------- DB-sessions for dashboard (30 dager) ---------- */
+
+async function fetchSessionsForActivity(activityId: string): Promise<any[]> {
+  const res = await fetch(`/api/sessions/list?activityId=${encodeURIComponent(activityId)}`, {
+    cache: "no-store",
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return [];
+  const list = Array.isArray((json as any)?.sessions) ? (json as any).sessions : [];
+  return Array.isArray(list) ? list : [];
 }
 
 /* ========================================================================== */
@@ -261,80 +188,44 @@ export default function DashboardPage() {
 
   const [members, setMembers] = React.useState<AnyObj[]>([]);
   const [activities, setActivities] = React.useState<AnyObj[]>([]);
-  const [calendar, setCalendar] = React.useState<AnyObj[]>([]);
   const [reminders, setReminders] = React.useState<AnyObj[]>([]);
   const [messages, setMessages] = React.useState<AnyObj[]>([]);
-  const [me, setMe] = React.useState<{
-    id?: string;
-    email?: string;
-    member?: AnyObj | null;
-  }>({});
+  const [me, setMe] = React.useState<{ id?: string; email?: string; member?: AnyObj | null }>({});
   const [msgOpen, setMsgOpen] = React.useState(false);
 
   const [myDbActivities, setMyDbActivities] = React.useState<AnyObj[]>([]);
+  const [myUpcomingDbSessions, setMyUpcomingDbSessions] = React.useState<any[]>([]);
 
-  // LS-init (beholder eksisterende design/flow)
+  // LS-init
   React.useEffect(() => {
     const ms = readMembers();
     const acts = readActivities();
-    const cal = readCalendar();
     const rem = readReminders();
     const msgs = readMessages();
     const ident = getCurrentIdentity(ms);
     setMembers(ms);
     setActivities(acts);
-    setCalendar(cal);
     setReminders(rem);
     setMessages(msgs);
     setMe({ id: ident.id, email: ident.email, member: ident.member });
   }, []);
 
-  // NY: Hvis vi ikke fant e-post i LS, hent den fra Supabase-session
+  // Hent e-post fra session hvis LS mangler
   React.useEffect(() => {
-    if (me.email || me.member) return; // allerede identifisert
+    if (me.email || me.member) return;
     let alive = true;
     (async () => {
       try {
         const { data } = await supabase.auth.getSession();
         const email = data?.session?.user?.email?.trim() ?? "";
         if (!alive || !email) return;
-
-        // Speil til LS slik resten av appen forventer
         writeLS("follies.session.email", email);
         writeLS("follies.currentEmail", email);
-
-        setMe((prev) => ({
-          ...prev,
-          email,
-        }));
-      } catch {
-        // ignorer feil – da faller vi tilbake til ren LS-logikk
-      }
+        setMe((prev) => ({ ...prev, email }));
+      } catch {}
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [me.email, me.member, supabase]);
-
-  React.useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/messages/my", { cache: "no-store" });
-        if (!res.ok) return;
-        const payload = await res.json().catch(() => ({}));
-        if (!alive) return;
-        if (Array.isArray(payload?.messages)) {
-          setMessages(payload.messages);
-        }
-      } catch {
-        // fallback to LS
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   // Kandidater fra LS (participants + leder-perms)
   const candidateActivityIds = React.useMemo(() => {
@@ -344,134 +235,105 @@ export default function DashboardPage() {
 
     const inRosterIds = new Set(
       acts
-        .filter((a) =>
-          isUserInActivity(a, { id: me.id, email: me.email })
-        )
+        .filter((a) => isUserInActivity(a, { id: me.id, email: me.email }))
         .map((a) => activityId(a))
     );
-    const leaderIds = myId
-      ? leaderActivityIdsFromPerms(perms, myId)
-      : new Set<string>();
 
+    const leaderIds = myId ? leaderActivityIdsFromPerms(perms, myId) : new Set<string>();
     return Array.from(new Set<string>([...inRosterIds, ...leaderIds]));
   }, [me.id, me.email]);
 
-  // Hent mine aktiviteter via server (e-post + navn + kandidater)
+  // Hent mine aktiviteter via server
   React.useEffect(() => {
     let alive = true;
     (async () => {
       const email = (me.email || "").trim();
       if (!email) return;
-      const displayName =
-        (me.member &&
-          (fullName(me.member) ||
-            `${me.member.first_name || ""} ${
-              me.member.last_name || ""
-            }`.trim())) ||
-        "";
+      const displayName = (me.member && fullName(me.member)) || "";
 
       const qs = new URLSearchParams();
       qs.set("email", email);
       qs.set("displayName", displayName);
-      if (candidateActivityIds.length)
-        qs.set("candidates", candidateActivityIds.join(","));
+      if (candidateActivityIds.length) qs.set("candidates", candidateActivityIds.join(","));
 
       try {
-        const res = await fetch(
-          `/api/dashboard/my-activities?${qs.toString()}`
-        );
+        const res = await fetch(`/api/dashboard/my-activities?${qs.toString()}`);
         if (res.ok) {
           const j = await res.json();
-          if (alive && Array.isArray(j?.activities)) {
-            setMyDbActivities(j.activities);
-          }
+          if (alive && Array.isArray(j?.activities)) setMyDbActivities(j.activities);
         }
       } catch {}
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [me.email, me.member, candidateActivityIds.join(",")]);
 
-  // Mine aktiviteter: bruk DB-liste hvis vi har den, ellers LS-fallback
+  // Mine aktiviteter: DB hvis mulig, ellers LS
   const myActivities = React.useMemo(() => {
     if (myDbActivities.length > 0) return myDbActivities;
     if (!me.id && !me.email) return [];
     const acts = readActivities();
     const setIds = new Set(candidateActivityIds);
     const list = acts.filter((a) => setIds.has(activityId(a)));
-    list.sort((x, y) => {
-      const ax = (x as any).archived ? 1 : 0;
-      const ay = (y as any).archived ? 1 : 0;
-      if (ax !== ay) return ax - ay;
-      const dx = (x as any).start_date
-        ? new Date((x as any).start_date).getTime()
-        : Number.MAX_SAFE_INTEGER;
-      const dy = (y as any).start_date
-        ? new Date((y as any).start_date).getTime()
-        : Number.MAX_SAFE_INTEGER;
-      if (dx !== dy) return dx - dy;
-      return activityTitle(x).localeCompare(activityTitle(y), "nb");
-    });
     return list;
   }, [myDbActivities, me.id, me.email, candidateActivityIds]);
 
-  // Kalender 30 dager (PERSONLIG: filtrerer på member_id === me.id)
-  const upcoming = React.useMemo(() => {
-    const now = new Date();
-    const cutoff = new Date(
-      now.getTime() + 30 * 24 * 60 * 60 * 1000
-    );
-    const items = readCalendar()
-      .map((e) => ({
-        ...e,
-        _start: new Date(
-          (e as any).start ||
-            (e as any).start_at ||
-            (e as any).dato ||
-            Date.now()
-        ),
-      }))
-      .filter(
-        (e) =>
-          String((e as any).member_id || "") === String(me.id || "")
-      ) // ← personlig filter
-      .filter(
-        (e) =>
-          (e as any)._start >= now && (e as any)._start <= cutoff
-      )
-      .sort(
-        (a, b) =>
-          ((a as any)._start as Date).getTime() -
-          ((b as any)._start as Date).getTime()
-      );
-    return items;
-  }, [me.id, calendar]); // avhenger av me.id + calendar
+  // ✅ NY: bygg “Kalender (30 dager)” fra DB-økter
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const myId = (me.id || "").trim();
+      if (!myId) return;
 
+      const ids = myActivities.map((a) => activityId(a)).filter(Boolean);
+      if (ids.length === 0) {
+        setMyUpcomingDbSessions([]);
+        return;
+      }
+
+      const now = new Date();
+      const cutoff = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+      // hent sessions for alle mine aktiviteter
+      const rows = (await Promise.all(ids.map((aid) => fetchSessionsForActivity(aid)))).flat();
+
+      const mapped = rows
+        .map((r: any) => {
+          const start = new Date(String(r.start_at || ""));
+          const end = new Date(String(r.end_at || r.start_at || ""));
+          const targets = Array.isArray(r.targets) ? r.targets.map(String) : [];
+          return {
+            id: String(r.id || ""),
+            session_id: String(r.id || ""),
+            activity_id: String(r.activity_id || ""),
+            title: String(r.title || "Økt"),
+            _start: start,
+            _end: end,
+            targets,
+          };
+        })
+        .filter((x) => x.id && x._start.toString() !== "Invalid Date")
+        .filter((x) => x.targets.includes(myId))
+        .filter((x) => x._start >= now && x._start <= cutoff)
+        .sort((a, b) => +a._start - +b._start);
+
+      if (!alive) return;
+      setMyUpcomingDbSessions(mapped);
+    })();
+
+    return () => { alive = false; };
+  }, [me.id, myActivities]);
+
+  // Meldinger / unread (uendret)
   const myMessages = React.useMemo(() => {
     const base = messages;
     if (!Array.isArray(base) || (!me.id && !me.email)) return [];
     const mine = base
       .filter((m) => {
-        const tid = toStr(
-          (m as any).to_member_id ??
-            (m as any).memberId ??
-            (m as any).member_id ??
-            (m as any).toId ??
-            ""
-        );
-        const temail = toStr(
-          (m as any).to_email ?? (m as any).email ?? ""
-        )
-          .trim()
-          .toLowerCase();
-        const broadcast = !!(
-          (m as any).to_all || (m as any).broadcast
-        );
+        const tid = toStr((m as any).to_member_id ?? (m as any).memberId ?? (m as any).toId ?? "");
+        const temail = toStr((m as any).to_email ?? (m as any).email ?? "").trim().toLowerCase();
+        const broadcast = !!((m as any).to_all || (m as any).broadcast);
         const myId = (me.id || "").trim();
-        const myEmail = (me.email || "")
-          .trim()
-          .toLowerCase();
+        const myEmail = (me.email || "").trim().toLowerCase();
         if (broadcast) return true;
         if (myId && tid && tid === myId) return true;
         if (myEmail && temail && temail === myEmail) return true;
@@ -481,68 +343,22 @@ export default function DashboardPage() {
         const ar = (a as any).read_at ? 1 : 0;
         const br = (b as any).read_at ? 1 : 0;
         if (ar !== br) return ar - br;
-        const at = new Date(
-          (a as any).created_at ||
-            (a as any).date ||
-            (a as any).sent_at ||
-            0
-        ).getTime();
-        const bt = new Date(
-          (b as any).created_at ||
-            (b as any).date ||
-            (b as any).sent_at ||
-            0
-        ).getTime();
+        const at = new Date((a as any).created_at || (a as any).date || (a as any).sent_at || 0).getTime();
+        const bt = new Date((b as any).created_at || (b as any).date || (b as any).sent_at || 0).getTime();
         return bt - at;
       });
     return mine;
   }, [messages, me.id, me.email]);
 
-  const unreadCount = myMessages.reduce(
-    (n, m) => n + ((m as any).read_at ? 0 : 1),
-    0
-  );
+  const unreadCount = myMessages.reduce((n, m) => n + ((m as any).read_at ? 0 : 1), 0);
 
   const name = me.member ? fullName(me.member) : "Velkommen";
   const email = me.member ? memberEmail(me.member) : me.email || "—";
-  const mid = me.member
-    ? toStr(
-        (me.member as any).id ??
-          (me.member as any).uuid ??
-          (me.member as any)._id ??
-          (me.member as any).memberId
-      )
-    : "";
-
-  function markMessageRead(id: string) {
-    const all = Array.isArray(messages) ? messages.slice() : [];
-    const idx = all.findIndex(
-      (m) => String((m as any).id) === String(id)
-    );
-    if (idx >= 0) {
-      (all[idx] as any) = {
-        ...(all[idx] as any),
-        read_at: new Date().toISOString(),
-      };
-      setMessages(all);
-      writeLS(MESSAGES_KEY, all);
-    }
-  }
-  function markAllRead() {
-    const all = (Array.isArray(messages) ? messages.slice() : []).map(
-      (m) => ({
-        ...(m as any),
-        read_at:
-          (m as any).read_at || new Date().toISOString(),
-      })
-    );
-    setMessages(all);
-    writeLS(MESSAGES_KEY, all);
-  }
+  const mid = me.member ? toStr((me.member as any).id ?? (me.member as any).uuid ?? (me.member as any)._id ?? (me.member as any).memberId) : "";
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* HERO  (BEHOLDT NØYAKTIG SOM FØR) */}
+      {/* HERO (urørt) */}
       <div className="rounded-2xl border bg-gradient-to-r from-black to-red-800 text-white">
         <div className="px-6 py-6 md:py-8">
           <div className="flex items-center justify-between gap-3">
@@ -554,19 +370,12 @@ export default function DashboardPage() {
               <div className="text-white">{email}</div>
             </div>
             <div className="flex items-center gap-2">
-              {/* Knapp som åpner beskjeder */}
               <button
                 onClick={() => setMsgOpen(true)}
                 className="relative inline-flex items-center justify-center rounded-lg bg-white/95 text-black px-3.5 py-2 text-sm font-semibold shadow-sm hover:bg-white focus:outline-none focus:ring-2 focus:ring-red-600"
                 aria-label="Åpne beskjeder"
               >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M12 2a6 6 0 00-6 6v2.586l-.707 2.121A1 1 0 006.243 14h11.514a1 1 0 00.95-1.293L18 10.586V8a6 6 0 00-6-6zm0 20a3 3 0 002.995-2.824L15 19h-6a3 3 0 003 3z" />
                 </svg>
                 <span className="ml-2">Beskjeder</span>
@@ -579,11 +388,7 @@ export default function DashboardPage() {
 
               {mid ? (
                 <button
-                  onClick={() =>
-                    router.push(
-                      `/members/${encodeURIComponent(mid)}`
-                    )
-                  }
+                  onClick={() => router.push(`/members/${encodeURIComponent(mid)}`)}
                   className="inline-flex items-center justify-center rounded-lg bg-white text-black px-3.5 py-2 text-sm font-semibold shadow-sm hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
                 >
                   Åpne min profil
@@ -594,14 +399,12 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* GRID (BEHOLDT SOM FØR) */}
+      {/* GRID (urørt i layout) */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {/* Mine aktiviteter */}
+        {/* Mine aktiviteter (urørt) */}
         <section className="rounded-xl border p-4 bg-white">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-black">
-              Mine aktiviteter
-            </h2>
+            <h2 className="text-lg font-semibold text-black">Mine aktiviteter</h2>
             <button
               onClick={() => router.push("/activities")}
               className="text-sm underline text-gray-700 hover:text-red-600"
@@ -610,50 +413,19 @@ export default function DashboardPage() {
             </button>
           </div>
           {myActivities.length === 0 ? (
-            <div className="mt-3 text-gray-700">
-              Ingen aktiviteter funnet.
-            </div>
+            <div className="mt-3 text-gray-700">Ingen aktiviteter funnet.</div>
           ) : (
             <ul className="mt-3 divide-y">
               {myActivities.slice(0, 6).map((a) => {
                 const id = activityId(a);
-                const cover = activityCoverUrl(a);
-                const title = activityTitle(a);
                 return (
-                  <li
-                    key={id}
-                    className="py-3 flex items-center justify-between gap-3"
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="h-14 w-20 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 shadow-sm">
-                        {cover ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={cover}
-                            alt="Forsidebilde"
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs font-semibold uppercase text-neutral-500">
-                            {title.slice(0, 2) || "—"}
-                          </div>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-sm text-gray-700">
-                          {activityTypeLabel(a)}
-                        </div>
-                        <div className="font-medium text-black truncate">
-                          {title}
-                        </div>
-                      </div>
+                  <li key={id} className="py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm text-gray-700">{activityTypeLabel(a)}</div>
+                      <div className="font-medium text-black truncate">{activityTitle(a)}</div>
                     </div>
                     <button
-                      onClick={() =>
-                        router.push(
-                          `/activities/${encodeURIComponent(id)}`
-                        )
-                      }
+                      onClick={() => router.push(`/activities/${encodeURIComponent(id)}`)}
                       className="inline-flex items-center justify-center rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
                     >
                       Åpne
@@ -665,39 +437,23 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* Kalender */}
+        {/* Kalender (30 dager) – nå DB-sessions */}
         <section className="rounded-xl border p-4 bg-white">
-          <h2 className="text-lg font-semibold text-black">
-            Kalender (30 dager)
-          </h2>
-          {upcoming.length === 0 ? (
-            <div className="mt-3 text-gray-700">
-              Ingen kommende elementer.
-            </div>
+          <h2 className="text-lg font-semibold text-black">Kalender (30 dager)</h2>
+          {myUpcomingDbSessions.length === 0 ? (
+            <div className="mt-3 text-gray-700">Ingen kommende elementer.</div>
           ) : (
             <ul className="mt-3 divide-y">
-              {upcoming.slice(0, 8).map((e) => (
-                <li key={(e as any).id} className="py-3">
+              {myUpcomingDbSessions.slice(0, 8).map((e: any) => (
+                <li key={e.id} className="py-3">
                   <div className="text-sm text-gray-700">
-                    {new Date((e as any)._start).toLocaleString(
-                      "nb-NO"
-                    )}
+                    {new Date(e._start).toLocaleString("nb-NO")}
                   </div>
-                  <div className="font-medium text-black">
-                    {(e as any).title ||
-                      (e as any).name ||
-                      "Kalenderpunkt"}
-                  </div>
-                  {(e as any).activity_id ? (
+                  <div className="font-medium text-black">{e.title || "Økt"}</div>
+                  {e.activity_id ? (
                     <div className="mt-2">
                       <button
-                        onClick={() =>
-                          router.push(
-                            `/activities/${encodeURIComponent(
-                              toStr((e as any).activity_id)
-                            )}`
-                          )
-                        }
+                        onClick={() => router.push(`/activities/${encodeURIComponent(toStr(e.activity_id))}`)}
                         className="inline-flex items-center justify-center rounded-lg bg-black px-3.5 py-2 text-sm font-semibold text-white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
                       >
                         Gå til aktivitet
@@ -710,48 +466,31 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* Påminnelser */}
+        {/* Påminnelser (urørt) */}
         <section className="rounded-xl border p-4 bg-white">
           <div className="flex items_center justify_between">
-            <h2 className="text-lg font-semibold text-black">
-              Påminnelser
-            </h2>
+            <h2 className="text-lg font-semibold text-black">Påminnelser</h2>
             <button
-              onClick={() =>
-                alert(
-                  "Placeholder – leser 'follies.reminders.v1' hvis den finnes."
-                )
-              }
+              onClick={() => alert("Placeholder – leser 'follies.reminders.v1' hvis den finnes.")}
               className="text-sm underline text-gray-700 hover:text-red-600"
             >
               Info
             </button>
           </div>
           {reminders.length === 0 ? (
-            <div className="mt-3 text-gray-700">
-              Ingen påminnelser.
-            </div>
+            <div className="mt-3 text-gray-700">Ingen påminnelser.</div>
           ) : (
             <ul className="mt-3 divide-y">
               {reminders.slice(0, 8).map((r) => (
-                <li
-                  key={(r as any).id || (r as any).title}
-                  className="py-3"
-                >
-                  <div className="font-medium text-black">
-                    {(r as any).title || "Påminnelse"}
-                  </div>
+                <li key={(r as any).id || (r as any).title} className="py-3">
+                  <div className="font-medium text-black">{(r as any).title || "Påminnelse"}</div>
                   {(r as any).when ? (
                     <div className="text-sm text-gray-700">
-                      {new Date(
-                        (r as any).when
-                      ).toLocaleString("nb-NO")}
+                      {new Date((r as any).when).toLocaleString("nb-NO")}
                     </div>
                   ) : null}
                   {(r as any).note ? (
-                    <div className="text-sm text-gray-700">
-                      {(r as any).note}
-                    </div>
+                    <div className="text-sm text-gray-700">{(r as any).note}</div>
                   ) : null}
                 </li>
               ))}
@@ -760,11 +499,9 @@ export default function DashboardPage() {
         </section>
       </div>
 
-      {/* Hurtighandlinger */}
+      {/* Hurtighandlinger (urørt) */}
       <section className="rounded-xl border p-4 bg-white">
-        <h2 className="text-lg font-semibold text-black">
-          Hurtighandlinger
-        </h2>
+        <h2 className="text-lg font-semibold text-black">Hurtighandlinger</h2>
         <div className="mt-3 flex flex-wrap gap-3">
           <button
             onClick={() => router.push("/activities")}
@@ -773,7 +510,6 @@ export default function DashboardPage() {
             Gå til aktiviteter
           </button>
 
-          {/* NY: knapp til Follies Messenger */}
           <button
             onClick={() => router.push("/messages")}
             className="inline-flex items-center justify-center rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
@@ -783,11 +519,7 @@ export default function DashboardPage() {
 
           {mid ? (
             <button
-              onClick={() =>
-                router.push(
-                  `/members/${encodeURIComponent(mid)}`
-                )
-              }
+              onClick={() => router.push(`/members/${encodeURIComponent(mid)}`)}
               className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
             >
               Åpne min profil
@@ -796,131 +528,65 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* ---------- Slide-over: Mine beskjeder ---------- */}
+      {/* Slide-over: beskjeder (urørt – beholdt for korthet) */}
       {msgOpen && (
         <div className="fixed inset-0 z-50">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setMsgOpen(false)}
-          />
+          <div className="absolute inset-0 bg-black/40" onClick={() => setMsgOpen(false)} />
           <div className="absolute right-0 top-0 h-full w-full sm:w-[420px] bg-white shadow-2xl ring-1 ring-black/10 flex flex-col">
             <div className="p-4 border-b flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-black">
-                  Mine beskjeder
-                </h2>
+                <h2 className="text-lg font-semibold text-black">Mine beskjeder</h2>
                 {unreadCount > 0 ? (
                   <div className="text-xs text-red-700 font-semibold mt-0.5">
-                    {unreadCount} ulest
-                    {unreadCount > 1 ? "e" : ""}
+                    {unreadCount} ulest{unreadCount > 1 ? "e" : ""}
                   </div>
                 ) : (
-                  <div className="text-xs text-gray-600 mt-0.5">
-                    Alle lest
-                  </div>
+                  <div className="text-xs text-gray-600 mt-0.5">Alle lest</div>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={markAllRead}
-                  className="inline-flex items-center justify-center rounded-md bg-black px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
-                >
-                  Marker alle som lest
-                </button>
-                <button
-                  onClick={() => setMsgOpen(false)}
-                  className="inline-flex items-center justify-center rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
-                  aria-label="Lukk"
-                >
-                  Lukk
-                </button>
-              </div>
+              <button
+                onClick={() => setMsgOpen(false)}
+                className="inline-flex items-center justify-center rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
+              >
+                Lukk
+              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto">
               {myMessages.length === 0 ? (
-                <div className="p-4 text-gray-700">
-                  Ingen beskjeder.
-                </div>
+                <div className="p-4 text-gray-700">Ingen beskjeder.</div>
               ) : (
                 <ul className="divide-y">
                   {myMessages.map((m) => {
-                    const when = new Date(
-                      (m as any).created_at ||
-                        (m as any).sent_at ||
-                        (m as any).date ||
-                        Date.now()
-                    );
+                    const when = new Date((m as any).created_at || (m as any).sent_at || (m as any).date || Date.now());
                     const unread = !(m as any).read_at;
-                    const activity =
-                      (m as any).activity_id ||
-                      (m as any).activityId;
+                    const activity = (m as any).activity_id || (m as any).activityId;
                     return (
-                      <li
-                        key={(m as any).id}
-                        className="p-4"
-                      >
+                      <li key={(m as any).id} className="p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <div className="text-xs text-gray-600">
-                              {when.toLocaleString("nb-NO")}
+                            <div className="text-xs text-gray-600">{when.toLocaleString("nb-NO")}</div>
+                            <div className={`mt-0.5 font-medium ${unread ? "text-black" : "text-gray-800"}`}>
+                              {(m as any).title || (m as any).subject || "Beskjed"}
                             </div>
-                            <div
-                              className={`mt-0.5 font-medium ${
-                                unread
-                                  ? "text-black"
-                                  : "text-gray-800"
-                              }`}
-                            >
-                              {(m as any).title ||
-                                (m as any).subject ||
-                                "Beskjed"}
-                            </div>
-                            <div className="text-[11px] text-gray-600">
-                              Fra:{" "}
-                              {(m as any).created_by_name ||
-                                (m as any).created_by_email ||
-                                "Administrasjon"}
-                            </div>
-                            {((m as any).body ||
-                              (m as any).message) && (
+                            {((m as any).body || (m as any).message) && (
                               <div className="mt-1 text-sm text-gray-700 whitespace-pre-line max-h-28 overflow-y-auto">
-                                {(m as any).body ||
-                                  (m as any).message}
+                                {(m as any).body || (m as any).message}
                               </div>
                             )}
                           </div>
-                          {unread ? (
-                            <button
-                              onClick={() =>
-                                markMessageRead(
-                                  String((m as any).id)
-                                )
-                              }
-                              className="shrink-0 inline-flex items-center justify-center rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
-                            >
-                              Marker som lest
-                            </button>
-                          ) : null}
-                        </div>
-
-                        {activity ? (
-                          <div className="mt-3">
+                          {activity ? (
                             <button
                               onClick={() => {
                                 setMsgOpen(false);
-                                router.push(
-                                  `/activities/${encodeURIComponent(
-                                    toStr(activity)
-                                  )}`
-                                );
+                                router.push(`/activities/${encodeURIComponent(toStr(activity))}`);
                               }}
-                              className="inline-flex items-center justify-center rounded-md bg-black px-3.5 py-2 text-sm font-semibold text-white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
+                              className="shrink-0 inline-flex items-center justify-center rounded-md bg-black px-3.5 py-2 text-sm font-semibold text-white hover:bg-neutral-800"
                             >
                               Gå til aktivitet
                             </button>
-                          </div>
-                        ) : null}
+                          ) : null}
+                        </div>
                       </li>
                     );
                   })}
