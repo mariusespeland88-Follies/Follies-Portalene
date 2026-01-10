@@ -7,7 +7,7 @@ export type ActivitySessionRow = {
   id: string;
   activity_id: string;
   title: string;
-  start_at: string; // timestamptz -> ISO string
+  start_at: string;
   end_at: string | null;
   location: string | null;
   note: string | null;
@@ -22,7 +22,7 @@ export type ActivitySession = {
   end_at: string;
   location: string;
   note: string;
-  targets: string[]; // member_id[]
+  targets: string[];
 };
 
 function toStr(v: any): string {
@@ -36,43 +36,22 @@ function safeISO(v: any, fallback: string): string {
   return Number.isNaN(+d) ? fallback : d.toISOString();
 }
 
+/**
+ * DB-first via server-route (service role) → så portalen får samme sessions som finnes i DB
+ * selv om RLS på klienten begrenser SELECT.
+ */
 export async function fetchActivitySessions(activityId: string): Promise<ActivitySession[]> {
-  const supabase = createClientComponentClient();
+  const res = await fetch(`/api/activity-sessions?activityId=${encodeURIComponent(activityId)}`, {
+    cache: "no-store",
+  });
 
-  const { data: rows, error } = await supabase
-    .from("activity_sessions")
-    .select("id, activity_id, title, start_at, end_at, location, note, created_at")
-    .eq("activity_id", activityId)
-    .order("start_at", { ascending: true });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error || "Kunne ikke hente økter");
 
-  if (error) throw error;
-
-  const base: ActivitySessionRow[] = Array.isArray(rows) ? (rows as any[]) : [];
-  const sessionIds = base.map((r) => toStr(r.id)).filter(Boolean);
-
-  // Targets i én query
-  let targetsBySession: Record<string, string[]> = {};
-  if (sessionIds.length > 0) {
-    const { data: trows, error: terr } = await supabase
-      .from("activity_session_targets")
-      .select("session_id, member_id")
-      .in("session_id", sessionIds);
-
-    if (terr) throw terr;
-
-    targetsBySession = {};
-    for (const tr of (trows as any[]) ?? []) {
-      const sid = toStr(tr.session_id);
-      const mid = toStr(tr.member_id);
-      if (!sid || !mid) continue;
-      (targetsBySession[sid] ||= []).push(mid);
-    }
-  }
-
-  return base.map((r) => {
+  const list = Array.isArray(json?.sessions) ? (json.sessions as any[]) : [];
+  return list.map((r) => {
     const startISO = safeISO(r.start_at, new Date().toISOString());
     const endISO = safeISO(r.end_at, startISO);
-
     return {
       id: toStr(r.id),
       activity_id: toStr(r.activity_id),
@@ -81,10 +60,12 @@ export async function fetchActivitySessions(activityId: string): Promise<Activit
       end_at: endISO,
       location: toStr(r.location),
       note: toStr(r.note),
-      targets: Array.from(new Set(targetsBySession[toStr(r.id)] || [])),
+      targets: Array.isArray(r.targets) ? r.targets.map(toStr) : [],
     };
   });
 }
+
+/* --- resten er uendret (create/update/delete går fortsatt direkte via client) --- */
 
 export async function createActivitySession(input: Omit<ActivitySession, "id">): Promise<ActivitySession> {
   const supabase = createClientComponentClient();
@@ -105,7 +86,6 @@ export async function createActivitySession(input: Omit<ActivitySession, "id">):
   if (error) throw error;
   const sessionId = toStr((data as any)?.id);
 
-  // targets
   const targets = Array.from(new Set((input.targets || []).map(toStr).filter(Boolean)));
   if (targets.length > 0) {
     const { error: terr } = await supabase
@@ -126,10 +106,7 @@ export async function createActivitySession(input: Omit<ActivitySession, "id">):
   };
 }
 
-export async function updateActivitySession(
-  sessionId: string,
-  patch: Omit<ActivitySession, "id">
-): Promise<void> {
+export async function updateActivitySession(sessionId: string, patch: Omit<ActivitySession, "id">): Promise<void> {
   const supabase = createClientComponentClient();
 
   const { error } = await supabase
@@ -145,7 +122,6 @@ export async function updateActivitySession(
 
   if (error) throw error;
 
-  // Replace targets (enklest og tryggest)
   const { error: delErr } = await supabase
     .from("activity_session_targets")
     .delete()
@@ -165,7 +141,6 @@ export async function updateActivitySession(
 export async function deleteActivitySession(sessionId: string): Promise<void> {
   const supabase = createClientComponentClient();
 
-  // targets først (FK)
   const { error: tdel } = await supabase
     .from("activity_session_targets")
     .delete()
