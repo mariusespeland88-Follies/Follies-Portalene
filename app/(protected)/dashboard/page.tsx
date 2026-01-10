@@ -9,6 +9,10 @@ import { createClientComponentClient } from "@/lib/supabase/browser";
  * Dashboard – “Min side” + Beskjed-panel (slide-over)
  * DESIGN URØRT.
  * Henter "Mine aktiviteter" via server-rute (e-post/navn) med fallback på LS-kandidater.
+ *
+ * NYTT (kun datakilde):
+ * - Kalender (30 dager) hentes DB-first via /api/dashboard/my-sessions
+ * - Faller tilbake til LS-kalender hvis API feiler
  */
 
 type AnyObj = Record<string, any>;
@@ -56,34 +60,6 @@ function idAliases(o: AnyObj): string[] {
 }
 function matchesId(o: AnyObj, id: string): boolean {
   return idAliases(o).some((x) => x === id);
-}
-function firstUrlLike(v: any): string | null {
-  if (!v) return null;
-  if (typeof v === "string") return v;
-  if (Array.isArray(v)) {
-    for (const it of v) {
-      const u = firstUrlLike(
-        (it as any)?.url ||
-          (it as any)?.src ||
-          (it as any)?.image ||
-          (it as any)?.href ||
-          it
-      );
-      if (u) return u;
-    }
-  } else if (typeof v === "object") {
-    return (
-      (v as any).url ||
-      (v as any).src ||
-      (v as any).image ||
-      (v as any).href ||
-      firstUrlLike((v as any).file) ||
-      firstUrlLike((v as any).cover) ||
-      firstUrlLike((v as any).photo) ||
-      null
-    );
-  }
-  return null;
 }
 
 function fullName(m: AnyObj): string {
@@ -143,7 +119,9 @@ function getCurrentIdentity(members: AnyObj[]) {
 
 /* ---------- activities helpers for dashboard ---------- */
 function activityTitle(a: AnyObj): string {
-  return pick(a, ["title", "tittel", "name", "navn"], "Uten tittel") || "Uten tittel";
+  return (
+    pick(a, ["title", "tittel", "name", "navn"], "Uten tittel") || "Uten tittel"
+  );
 }
 function activityTypeLabel(a: AnyObj): string {
   const t = String(pick(a, ["type", "kategori"], "offer")).toLowerCase();
@@ -184,30 +162,6 @@ function isUserInActivity(a: AnyObj, me: { id?: string; email?: string }) {
     }
   }
   return false;
-}
-function activityCoverUrl(a: AnyObj): string | null {
-  const direct = pick(
-    a,
-    [
-      "cover_url",
-      "coverUrl",
-      "cover",
-      "image_url",
-      "imageUrl",
-      "image",
-      "banner",
-      "poster",
-      "thumbnail",
-      "thumb",
-      "picture",
-      "photo",
-      "hero",
-      "img",
-    ],
-    null
-  );
-  const url = firstUrlLike(direct);
-  return url ? String(url) : null;
 }
 
 /* ---------- leder-tilganger fra perms (LS) ---------- */
@@ -256,6 +210,16 @@ function leaderActivityIdsFromPerms(perms: AnyObj, myId: string): Set<string> {
 
 /* ========================================================================== */
 
+type DbSession = {
+  id: string;
+  activity_id: string;
+  title: string;
+  start_at: string;
+  end_at: string;
+  location?: string;
+  note?: string;
+};
+
 export default function DashboardPage() {
   const router = useRouter();
   const supabase = React.useMemo(() => createClientComponentClient(), []);
@@ -273,6 +237,12 @@ export default function DashboardPage() {
   const [msgOpen, setMsgOpen] = React.useState(false);
 
   const [myDbActivities, setMyDbActivities] = React.useState<AnyObj[]>([]);
+
+  // NYTT: DB-økter for dashboard
+  const [dbSessions, setDbSessions] = React.useState<DbSession[]>([]);
+  const [sessionsStatus, setSessionsStatus] = React.useState<
+    "idle" | "loading" | "ok" | "fail"
+  >("idle");
 
   // LS-init (beholder eksisterende design/flow)
   React.useEffect(() => {
@@ -317,26 +287,6 @@ export default function DashboardPage() {
     };
   }, [me.email, me.member, supabase]);
 
-  React.useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/messages/my", { cache: "no-store" });
-        if (!res.ok) return;
-        const payload = await res.json().catch(() => ({}));
-        if (!alive) return;
-        if (Array.isArray(payload?.messages)) {
-          setMessages(payload.messages);
-        }
-      } catch {
-        // fallback to LS
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
   // Kandidater fra LS (participants + leder-perms)
   const candidateActivityIds = React.useMemo(() => {
     const acts = readActivities();
@@ -345,9 +295,7 @@ export default function DashboardPage() {
 
     const inRosterIds = new Set(
       acts
-        .filter((a) =>
-          isUserInActivity(a, { id: me.id, email: me.email })
-        )
+        .filter((a) => isUserInActivity(a, { id: me.id, email: me.email }))
         .map((a) => activityId(a))
     );
     const leaderIds = myId
@@ -366,21 +314,16 @@ export default function DashboardPage() {
       const displayName =
         (me.member &&
           (fullName(me.member) ||
-            `${me.member.first_name || ""} ${
-              me.member.last_name || ""
-            }`.trim())) ||
+            `${me.member.first_name || ""} ${me.member.last_name || ""}`.trim())) ||
         "";
 
       const qs = new URLSearchParams();
       qs.set("email", email);
       qs.set("displayName", displayName);
-      if (candidateActivityIds.length)
-        qs.set("candidates", candidateActivityIds.join(","));
+      if (candidateActivityIds.length) qs.set("candidates", candidateActivityIds.join(","));
 
       try {
-        const res = await fetch(
-          `/api/dashboard/my-activities?${qs.toString()}`
-        );
+        const res = await fetch(`/api/dashboard/my-activities?${qs.toString()}`);
         if (res.ok) {
           const j = await res.json();
           if (alive && Array.isArray(j?.activities)) {
@@ -393,6 +336,41 @@ export default function DashboardPage() {
       alive = false;
     };
   }, [me.email, me.member, candidateActivityIds.join(",")]);
+
+  // NYTT: Hent kommende økter DB-first (30 dager) – fall tilbake til LS hvis API feiler
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const email = (me.email || "").trim();
+      const memberId = (me.id || "").trim();
+      if (!email && !memberId) return;
+
+      setSessionsStatus("loading");
+      try {
+        const qs = new URLSearchParams();
+        if (email) qs.set("email", email);
+        if (memberId) qs.set("memberId", memberId);
+        qs.set("days", "30");
+
+        const res = await fetch(`/api/dashboard/my-sessions?${qs.toString()}`);
+        if (!res.ok) throw new Error(await res.text());
+        const j = await res.json().catch(() => ({}));
+        const list = Array.isArray(j?.sessions) ? (j.sessions as DbSession[]) : [];
+
+        if (!alive) return;
+        setDbSessions(list);
+        setSessionsStatus("ok");
+      } catch {
+        if (!alive) return;
+        setDbSessions([]);
+        setSessionsStatus("fail");
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [me.email, me.id]);
 
   // Mine aktiviteter: bruk DB-liste hvis vi har den, ellers LS-fallback
   const myActivities = React.useMemo(() => {
@@ -417,12 +395,10 @@ export default function DashboardPage() {
     return list;
   }, [myDbActivities, me.id, me.email, candidateActivityIds]);
 
-  // Kalender 30 dager (PERSONLIG: filtrerer på member_id === me.id)
-  const upcoming = React.useMemo(() => {
+  // LS fallback (samme som før)
+  const upcomingFromLS = React.useMemo(() => {
     const now = new Date();
-    const cutoff = new Date(
-      now.getTime() + 30 * 24 * 60 * 60 * 1000
-    );
+    const cutoff = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
     const items = readCalendar()
       .map((e) => ({
         ...e,
@@ -433,21 +409,31 @@ export default function DashboardPage() {
             Date.now()
         ),
       }))
-      .filter(
-        (e) =>
-          String((e as any).member_id || "") === String(me.id || "")
-      ) // ← personlig filter
-      .filter(
-        (e) =>
-          (e as any)._start >= now && (e as any)._start <= cutoff
-      )
+      .filter((e) => String((e as any).member_id || "") === String(me.id || ""))
+      .filter((e) => (e as any)._start >= now && (e as any)._start <= cutoff)
       .sort(
         (a, b) =>
           ((a as any)._start as Date).getTime() -
           ((b as any)._start as Date).getTime()
       );
     return items;
-  }, [me.id, calendar]); // avhenger av me.id + calendar
+  }, [me.id, calendar]);
+
+  // DB-first upcoming (mapper DB-økter inn i samme “shape” som UI allerede bruker)
+  const upcoming = React.useMemo(() => {
+    if (sessionsStatus === "ok") {
+      return (dbSessions || [])
+        .map((s) => ({
+          id: s.id,
+          activity_id: s.activity_id,
+          title: s.title,
+          _start: new Date(s.start_at),
+        }))
+        .sort((a, b) => +new Date(a._start) - +new Date(b._start));
+    }
+    // hvis API feiler eller ikke er klart enda → fallback til LS
+    return upcomingFromLS;
+  }, [sessionsStatus, dbSessions, upcomingFromLS]);
 
   const myMessages = React.useMemo(() => {
     const base = messages;
@@ -457,22 +443,15 @@ export default function DashboardPage() {
         const tid = toStr(
           (m as any).to_member_id ??
             (m as any).memberId ??
-            (m as any).member_id ??
             (m as any).toId ??
             ""
         );
-        const temail = toStr(
-          (m as any).to_email ?? (m as any).email ?? ""
-        )
+        const temail = toStr((m as any).to_email ?? (m as any).email ?? "")
           .trim()
           .toLowerCase();
-        const broadcast = !!(
-          (m as any).to_all || (m as any).broadcast
-        );
+        const broadcast = !!((m as any).to_all || (m as any).broadcast);
         const myId = (me.id || "").trim();
-        const myEmail = (me.email || "")
-          .trim()
-          .toLowerCase();
+        const myEmail = (me.email || "").trim().toLowerCase();
         if (broadcast) return true;
         if (myId && tid && tid === myId) return true;
         if (myEmail && temail && temail === myEmail) return true;
@@ -483,16 +462,10 @@ export default function DashboardPage() {
         const br = (b as any).read_at ? 1 : 0;
         if (ar !== br) return ar - br;
         const at = new Date(
-          (a as any).created_at ||
-            (a as any).date ||
-            (a as any).sent_at ||
-            0
+          (a as any).created_at || (a as any).date || (a as any).sent_at || 0
         ).getTime();
         const bt = new Date(
-          (b as any).created_at ||
-            (b as any).date ||
-            (b as any).sent_at ||
-            0
+          (b as any).created_at || (b as any).date || (b as any).sent_at || 0
         ).getTime();
         return bt - at;
       });
@@ -517,26 +490,18 @@ export default function DashboardPage() {
 
   function markMessageRead(id: string) {
     const all = Array.isArray(messages) ? messages.slice() : [];
-    const idx = all.findIndex(
-      (m) => String((m as any).id) === String(id)
-    );
+    const idx = all.findIndex((m) => String((m as any).id) === String(id));
     if (idx >= 0) {
-      (all[idx] as any) = {
-        ...(all[idx] as any),
-        read_at: new Date().toISOString(),
-      };
+      (all[idx] as any) = { ...(all[idx] as any), read_at: new Date().toISOString() };
       setMessages(all);
       writeLS(MESSAGES_KEY, all);
     }
   }
   function markAllRead() {
-    const all = (Array.isArray(messages) ? messages.slice() : []).map(
-      (m) => ({
-        ...(m as any),
-        read_at:
-          (m as any).read_at || new Date().toISOString(),
-      })
-    );
+    const all = (Array.isArray(messages) ? messages.slice() : []).map((m) => ({
+      ...(m as any),
+      read_at: (m as any).read_at || new Date().toISOString(),
+    }));
     setMessages(all);
     writeLS(MESSAGES_KEY, all);
   }
@@ -580,11 +545,7 @@ export default function DashboardPage() {
 
               {mid ? (
                 <button
-                  onClick={() =>
-                    router.push(
-                      `/members/${encodeURIComponent(mid)}`
-                    )
-                  }
+                  onClick={() => router.push(`/members/${encodeURIComponent(mid)}`)}
                   className="inline-flex items-center justify-center rounded-lg bg-white text-black px-3.5 py-2 text-sm font-semibold shadow-sm hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
                 >
                   Åpne min profil
@@ -600,9 +561,7 @@ export default function DashboardPage() {
         {/* Mine aktiviteter */}
         <section className="rounded-xl border p-4 bg-white">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-black">
-              Mine aktiviteter
-            </h2>
+            <h2 className="text-lg font-semibold text-black">Mine aktiviteter</h2>
             <button
               onClick={() => router.push("/activities")}
               className="text-sm underline text-gray-700 hover:text-red-600"
@@ -611,50 +570,19 @@ export default function DashboardPage() {
             </button>
           </div>
           {myActivities.length === 0 ? (
-            <div className="mt-3 text-gray-700">
-              Ingen aktiviteter funnet.
-            </div>
+            <div className="mt-3 text-gray-700">Ingen aktiviteter funnet.</div>
           ) : (
             <ul className="mt-3 divide-y">
               {myActivities.slice(0, 6).map((a) => {
                 const id = activityId(a);
-                const cover = activityCoverUrl(a);
-                const title = activityTitle(a);
                 return (
-                  <li
-                    key={id}
-                    className="py-3 flex items-center justify-between gap-3"
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="h-14 w-20 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100 shadow-sm">
-                        {cover ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={cover}
-                            alt="Forsidebilde"
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs font-semibold uppercase text-neutral-500">
-                            {title.slice(0, 2) || "—"}
-                          </div>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-sm text-gray-700">
-                          {activityTypeLabel(a)}
-                        </div>
-                        <div className="font-medium text-black truncate">
-                          {title}
-                        </div>
-                      </div>
+                  <li key={id} className="py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm text-gray-700">{activityTypeLabel(a)}</div>
+                      <div className="font-medium text-black truncate">{activityTitle(a)}</div>
                     </div>
                     <button
-                      onClick={() =>
-                        router.push(
-                          `/activities/${encodeURIComponent(id)}`
-                        )
-                      }
+                      onClick={() => router.push(`/activities/${encodeURIComponent(id)}`)}
                       className="inline-flex items-center justify-center rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
                     >
                       Åpne
@@ -668,26 +596,18 @@ export default function DashboardPage() {
 
         {/* Kalender */}
         <section className="rounded-xl border p-4 bg-white">
-          <h2 className="text-lg font-semibold text-black">
-            Kalender (30 dager)
-          </h2>
+          <h2 className="text-lg font-semibold text-black">Kalender (30 dager)</h2>
           {upcoming.length === 0 ? (
-            <div className="mt-3 text-gray-700">
-              Ingen kommende elementer.
-            </div>
+            <div className="mt-3 text-gray-700">Ingen kommende elementer.</div>
           ) : (
             <ul className="mt-3 divide-y">
-              {upcoming.slice(0, 8).map((e) => (
-                <li key={(e as any).id} className="py-3">
+              {upcoming.slice(0, 8).map((e: any) => (
+                <li key={String((e as any).id)} className="py-3">
                   <div className="text-sm text-gray-700">
-                    {new Date((e as any)._start).toLocaleString(
-                      "nb-NO"
-                    )}
+                    {new Date((e as any)._start).toLocaleString("nb-NO")}
                   </div>
                   <div className="font-medium text-black">
-                    {(e as any).title ||
-                      (e as any).name ||
-                      "Kalenderpunkt"}
+                    {(e as any).title || (e as any).name || "Kalenderpunkt"}
                   </div>
                   {(e as any).activity_id ? (
                     <div className="mt-2">
@@ -714,14 +634,10 @@ export default function DashboardPage() {
         {/* Påminnelser */}
         <section className="rounded-xl border p-4 bg-white">
           <div className="flex items_center justify_between">
-            <h2 className="text-lg font-semibold text-black">
-              Påminnelser
-            </h2>
+            <h2 className="text-lg font-semibold text-black">Påminnelser</h2>
             <button
               onClick={() =>
-                alert(
-                  "Placeholder – leser 'follies.reminders.v1' hvis den finnes."
-                )
+                alert("Placeholder – leser 'follies.reminders.v1' hvis den finnes.")
               }
               className="text-sm underline text-gray-700 hover:text-red-600"
             >
@@ -729,30 +645,21 @@ export default function DashboardPage() {
             </button>
           </div>
           {reminders.length === 0 ? (
-            <div className="mt-3 text-gray-700">
-              Ingen påminnelser.
-            </div>
+            <div className="mt-3 text-gray-700">Ingen påminnelser.</div>
           ) : (
             <ul className="mt-3 divide-y">
               {reminders.slice(0, 8).map((r) => (
-                <li
-                  key={(r as any).id || (r as any).title}
-                  className="py-3"
-                >
+                <li key={(r as any).id || (r as any).title} className="py-3">
                   <div className="font-medium text-black">
                     {(r as any).title || "Påminnelse"}
                   </div>
                   {(r as any).when ? (
                     <div className="text-sm text-gray-700">
-                      {new Date(
-                        (r as any).when
-                      ).toLocaleString("nb-NO")}
+                      {new Date((r as any).when).toLocaleString("nb-NO")}
                     </div>
                   ) : null}
                   {(r as any).note ? (
-                    <div className="text-sm text-gray-700">
-                      {(r as any).note}
-                    </div>
+                    <div className="text-sm text-gray-700">{(r as any).note}</div>
                   ) : null}
                 </li>
               ))}
@@ -763,9 +670,7 @@ export default function DashboardPage() {
 
       {/* Hurtighandlinger */}
       <section className="rounded-xl border p-4 bg-white">
-        <h2 className="text-lg font-semibold text-black">
-          Hurtighandlinger
-        </h2>
+        <h2 className="text-lg font-semibold text-black">Hurtighandlinger</h2>
         <div className="mt-3 flex flex-wrap gap-3">
           <button
             onClick={() => router.push("/activities")}
@@ -784,11 +689,7 @@ export default function DashboardPage() {
 
           {mid ? (
             <button
-              onClick={() =>
-                router.push(
-                  `/members/${encodeURIComponent(mid)}`
-                )
-              }
+              onClick={() => router.push(`/members/${encodeURIComponent(mid)}`)}
               className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
             >
               Åpne min profil
@@ -800,25 +701,17 @@ export default function DashboardPage() {
       {/* ---------- Slide-over: Mine beskjeder ---------- */}
       {msgOpen && (
         <div className="fixed inset-0 z-50">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setMsgOpen(false)}
-          />
+          <div className="absolute inset-0 bg-black/40" onClick={() => setMsgOpen(false)} />
           <div className="absolute right-0 top-0 h-full w-full sm:w-[420px] bg-white shadow-2xl ring-1 ring-black/10 flex flex-col">
             <div className="p-4 border-b flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-black">
-                  Mine beskjeder
-                </h2>
+                <h2 className="text-lg font-semibold text-black">Mine beskjeder</h2>
                 {unreadCount > 0 ? (
                   <div className="text-xs text-red-700 font-semibold mt-0.5">
-                    {unreadCount} ulest
-                    {unreadCount > 1 ? "e" : ""}
+                    {unreadCount} ulest{unreadCount > 1 ? "e" : ""}
                   </div>
                 ) : (
-                  <div className="text-xs text-gray-600 mt-0.5">
-                    Alle lest
-                  </div>
+                  <div className="text-xs text-gray-600 mt-0.5">Alle lest</div>
                 )}
               </div>
               <div className="flex items-center gap-2">
@@ -840,9 +733,7 @@ export default function DashboardPage() {
 
             <div className="flex-1 overflow-y-auto">
               {myMessages.length === 0 ? (
-                <div className="p-4 text-gray-700">
-                  Ingen beskjeder.
-                </div>
+                <div className="p-4 text-gray-700">Ingen beskjeder.</div>
               ) : (
                 <ul className="divide-y">
                   {myMessages.map((m) => {
@@ -853,51 +744,24 @@ export default function DashboardPage() {
                         Date.now()
                     );
                     const unread = !(m as any).read_at;
-                    const activity =
-                      (m as any).activity_id ||
-                      (m as any).activityId;
+                    const activity = (m as any).activity_id || (m as any).activityId;
                     return (
-                      <li
-                        key={(m as any).id}
-                        className="p-4"
-                      >
+                      <li key={(m as any).id} className="p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <div className="text-xs text-gray-600">
-                              {when.toLocaleString("nb-NO")}
+                            <div className="text-xs text-gray-600">{when.toLocaleString("nb-NO")}</div>
+                            <div className={`mt-0.5 font-medium ${unread ? "text-black" : "text-gray-800"}`}>
+                              {(m as any).title || (m as any).subject || "Beskjed"}
                             </div>
-                            <div
-                              className={`mt-0.5 font-medium ${
-                                unread
-                                  ? "text-black"
-                                  : "text-gray-800"
-                              }`}
-                            >
-                              {(m as any).title ||
-                                (m as any).subject ||
-                                "Beskjed"}
-                            </div>
-                            <div className="text-[11px] text-gray-600">
-                              Fra:{" "}
-                              {(m as any).created_by_name ||
-                                (m as any).created_by_email ||
-                                "Administrasjon"}
-                            </div>
-                            {((m as any).body ||
-                              (m as any).message) && (
+                            {((m as any).body || (m as any).message) && (
                               <div className="mt-1 text-sm text-gray-700 whitespace-pre-line max-h-28 overflow-y-auto">
-                                {(m as any).body ||
-                                  (m as any).message}
+                                {(m as any).body || (m as any).message}
                               </div>
                             )}
                           </div>
                           {unread ? (
                             <button
-                              onClick={() =>
-                                markMessageRead(
-                                  String((m as any).id)
-                                )
-                              }
+                              onClick={() => markMessageRead(String((m as any).id))}
                               className="shrink-0 inline-flex items-center justify-center rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
                             >
                               Marker som lest
@@ -910,11 +774,7 @@ export default function DashboardPage() {
                             <button
                               onClick={() => {
                                 setMsgOpen(false);
-                                router.push(
-                                  `/activities/${encodeURIComponent(
-                                    toStr(activity)
-                                  )}`
-                                );
+                                router.push(`/activities/${encodeURIComponent(toStr(activity))}`);
                               }}
                               className="inline-flex items-center justify-center rounded-md bg-black px-3.5 py-2 text-sm font-semibold text-white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
                             >
