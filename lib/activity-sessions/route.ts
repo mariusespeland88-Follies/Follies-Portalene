@@ -1,4 +1,4 @@
-// PATH: app/api/activity-sessions/route.ts
+// PATH: lib/activity-sessions/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
