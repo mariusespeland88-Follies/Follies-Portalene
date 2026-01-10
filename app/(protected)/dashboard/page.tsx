@@ -13,6 +13,9 @@ import { createClientComponentClient } from "@/lib/supabase/browser";
  * NYTT (kun datakilde):
  * - Kalender (30 dager) hentes DB-first via /api/dashboard/my-sessions
  * - Faller tilbake til LS-kalender hvis API feiler
+ *
+ * RESTORE:
+ * - Bilder/thumbnails på “Mine aktiviteter” er tilbake (henter fra LS covers + fallback)
  */
 
 type AnyObj = Record<string, any>;
@@ -25,6 +28,9 @@ const CAL_FB = "follies.calendar";
 const REMINDERS_KEY = "follies.reminders.v1";
 const MESSAGES_KEY = "follies.messages.v1";
 const PERMS_KEY = "follies.perms.v1";
+
+// Covers store (samme nøkkel som ActivitiesPage bruker)
+const LS_COVERS = "follies.activityCovers.v1";
 
 /* ---------- utils ---------- */
 function parseJSON<T>(raw: string | null, fallback: T): T {
@@ -99,10 +105,53 @@ function readPerms(): AnyObj {
   return parseJSON<AnyObj>(readLS(PERMS_KEY), {});
 }
 
-function getCurrentIdentity(members: AnyObj[]) {
-  const id = toStr(
-    parseJSON<string | null>(readLS("follies.currentMemberId"), null)
+/* ---------- covers (for thumbnails) ---------- */
+function readCoverStore(): Record<
+  string,
+  { dataUrl: string; mime: string; updated_at: string }
+> {
+  return parseJSON<
+    Record<string, { dataUrl: string; mime: string; updated_at: string }>
+  >(readLS(LS_COVERS), {});
+}
+
+function pickImageFlexible(a: any): string | null {
+  return (
+    a?.coverUrl ||
+    a?.cover_url ||
+    a?.cover ||
+    a?.image_url ||
+    a?.image ||
+    a?.bannerUrl ||
+    a?.banner_url ||
+    a?.thumb ||
+    a?.thumbnail ||
+    a?.avatar ||
+    a?.logo ||
+    a?.icon ||
+    a?.media?.cover ||
+    a?.media?.image ||
+    a?.image?.url ||
+    a?.cover?.url ||
+    a?.assets?.cover ||
+    a?.assets?.image ||
+    null
   );
+}
+
+function coverOfActivity(a: AnyObj): string {
+  const id = activityId(a);
+  const covers = readCoverStore();
+  const entry = covers[id];
+  if (entry?.dataUrl) return entry.dataUrl;
+
+  const url = pickImageFlexible(a);
+  return url || "/Images/follies-logo.jpg";
+}
+
+/* ---------- identity ---------- */
+function getCurrentIdentity(members: AnyObj[]) {
+  const id = toStr(parseJSON<string | null>(readLS("follies.currentMemberId"), null));
   const email =
     toStr(parseJSON<string | null>(readLS("follies.currentEmail"), null)) ||
     toStr(parseJSON<string | null>(readLS("follies.session.email"), null)) ||
@@ -111,17 +160,14 @@ function getCurrentIdentity(members: AnyObj[]) {
   if (id) member = members.find((m) => matchesId(m, id)) ?? null;
   if (!member && email) {
     const lower = email.toLowerCase();
-    member =
-      members.find((m) => memberEmail(m)?.toLowerCase() === lower) ?? null;
+    member = members.find((m) => memberEmail(m)?.toLowerCase() === lower) ?? null;
   }
   return { id, email, member };
 }
 
 /* ---------- activities helpers for dashboard ---------- */
 function activityTitle(a: AnyObj): string {
-  return (
-    pick(a, ["title", "tittel", "name", "navn"], "Uten tittel") || "Uten tittel"
-  );
+  return pick(a, ["title", "tittel", "name", "navn"], "Uten tittel") || "Uten tittel";
 }
 function activityTypeLabel(a: AnyObj): string {
   const t = String(pick(a, ["type", "kategori"], "offer")).toLowerCase();
@@ -154,9 +200,7 @@ function isUserInActivity(a: AnyObj, me: { id?: string; email?: string }) {
       if (myId && toStr(item) === myId) return true;
     } else if (item && typeof item === "object") {
       const mid = toStr(item?.memberId ?? item?.id ?? item?.uuid ?? item?._id);
-      const mem = toStr(item?.email ?? item?.epost ?? item?.mail)
-        .trim()
-        .toLowerCase();
+      const mem = toStr(item?.email ?? item?.epost ?? item?.mail).trim().toLowerCase();
       if (myId && mid && mid === myId) return true;
       if (email && mem && mem === email) return true;
     }
@@ -195,14 +239,9 @@ function leaderActivityIdsFromPerms(perms: AnyObj, myId: string): Set<string> {
     ? perms
     : [];
   for (const r of arr) {
-    const uid = toStr(
-      r?.memberId ?? r?.userId ?? r?.uid ?? r?.ownerId ?? r?.who ?? ""
-    );
-    const aid = toStr(
-      r?.activityId ?? r?.offerId ?? r?.resourceId ?? r?.id ?? ""
-    );
-    const lvl =
-      r?.perm ?? r?.role ?? r?.level ?? r?.access ?? r?.type ?? "";
+    const uid = toStr(r?.memberId ?? r?.userId ?? r?.uid ?? r?.ownerId ?? r?.who ?? "");
+    const aid = toStr(r?.activityId ?? r?.offerId ?? r?.resourceId ?? r?.id ?? "");
+    const lvl = r?.perm ?? r?.role ?? r?.level ?? r?.access ?? r?.type ?? "";
     if (uid && aid && uid === myId && isLeaderLevel(lvl)) out.add(aid);
   }
   return out;
@@ -238,13 +277,13 @@ export default function DashboardPage() {
 
   const [myDbActivities, setMyDbActivities] = React.useState<AnyObj[]>([]);
 
-  // NYTT: DB-økter for dashboard
+  // DB-økter for dashboard
   const [dbSessions, setDbSessions] = React.useState<DbSession[]>([]);
   const [sessionsStatus, setSessionsStatus] = React.useState<
     "idle" | "loading" | "ok" | "fail"
   >("idle");
 
-  // LS-init (beholder eksisterende design/flow)
+  // LS-init
   React.useEffect(() => {
     const ms = readMembers();
     const acts = readActivities();
@@ -260,9 +299,9 @@ export default function DashboardPage() {
     setMe({ id: ident.id, email: ident.email, member: ident.member });
   }, []);
 
-  // NY: Hvis vi ikke fant e-post i LS, hent den fra Supabase-session
+  // Hvis vi ikke fant e-post i LS, hent den fra Supabase-session
   React.useEffect(() => {
-    if (me.email || me.member) return; // allerede identifisert
+    if (me.email || me.member) return;
     let alive = true;
     (async () => {
       try {
@@ -270,17 +309,11 @@ export default function DashboardPage() {
         const email = data?.session?.user?.email?.trim() ?? "";
         if (!alive || !email) return;
 
-        // Speil til LS slik resten av appen forventer
         writeLS("follies.session.email", email);
         writeLS("follies.currentEmail", email);
 
-        setMe((prev) => ({
-          ...prev,
-          email,
-        }));
-      } catch {
-        // ignorer feil – da faller vi tilbake til ren LS-logikk
-      }
+        setMe((prev) => ({ ...prev, email }));
+      } catch {}
     })();
     return () => {
       alive = false;
@@ -305,7 +338,7 @@ export default function DashboardPage() {
     return Array.from(new Set<string>([...inRosterIds, ...leaderIds]));
   }, [me.id, me.email]);
 
-  // Hent mine aktiviteter via server (e-post + navn + kandidater)
+  // Hent mine aktiviteter via server
   React.useEffect(() => {
     let alive = true;
     (async () => {
@@ -337,7 +370,7 @@ export default function DashboardPage() {
     };
   }, [me.email, me.member, candidateActivityIds.join(",")]);
 
-  // NYTT: Hent kommende økter DB-first (30 dager) – fall tilbake til LS hvis API feiler
+  // Hent kommende økter DB-first (30 dager) – fall tilbake til LS hvis API feiler
   React.useEffect(() => {
     let alive = true;
     (async () => {
@@ -403,10 +436,7 @@ export default function DashboardPage() {
       .map((e) => ({
         ...e,
         _start: new Date(
-          (e as any).start ||
-            (e as any).start_at ||
-            (e as any).dato ||
-            Date.now()
+          (e as any).start || (e as any).start_at || (e as any).dato || Date.now()
         ),
       }))
       .filter((e) => String((e as any).member_id || "") === String(me.id || ""))
@@ -431,7 +461,6 @@ export default function DashboardPage() {
         }))
         .sort((a, b) => +new Date(a._start) - +new Date(b._start));
     }
-    // hvis API feiler eller ikke er klart enda → fallback til LS
     return upcomingFromLS;
   }, [sessionsStatus, dbSessions, upcomingFromLS]);
 
@@ -441,10 +470,7 @@ export default function DashboardPage() {
     const mine = base
       .filter((m) => {
         const tid = toStr(
-          (m as any).to_member_id ??
-            (m as any).memberId ??
-            (m as any).toId ??
-            ""
+          (m as any).to_member_id ?? (m as any).memberId ?? (m as any).toId ?? ""
         );
         const temail = toStr((m as any).to_email ?? (m as any).email ?? "")
           .trim()
@@ -526,13 +552,7 @@ export default function DashboardPage() {
                 className="relative inline-flex items-center justify-center rounded-lg bg-white/95 text-black px-3.5 py-2 text-sm font-semibold shadow-sm hover:bg-white focus:outline-none focus:ring-2 focus:ring-red-600"
                 aria-label="Åpne beskjeder"
               >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M12 2a6 6 0 00-6 6v2.586l-.707 2.121A1 1 0 006.243 14h11.514a1 1 0 00.95-1.293L18 10.586V8a6 6 0 00-6-6zm0 20a3 3 0 002.995-2.824L15 19h-6a3 3 0 003 3z" />
                 </svg>
                 <span className="ml-2">Beskjeder</span>
@@ -569,18 +589,38 @@ export default function DashboardPage() {
               Se alle
             </button>
           </div>
+
           {myActivities.length === 0 ? (
             <div className="mt-3 text-gray-700">Ingen aktiviteter funnet.</div>
           ) : (
             <ul className="mt-3 divide-y">
               {myActivities.slice(0, 6).map((a) => {
                 const id = activityId(a);
+                const img = coverOfActivity(a);
+
                 return (
                   <li key={id} className="py-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm text-gray-700">{activityTypeLabel(a)}</div>
-                      <div className="font-medium text-black truncate">{activityTitle(a)}</div>
+                    <div className="min-w-0 flex items-center gap-3">
+                      {/* RESTORE: thumbnail */}
+                      <div className="h-10 w-10 rounded-full overflow-hidden ring-1 ring-neutral-200 bg-neutral-100 shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={img}
+                          alt=""
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            // fallback til logo hvis URL feiler
+                            (e.currentTarget as HTMLImageElement).src = "/Images/follies-logo.jpg";
+                          }}
+                        />
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="text-sm text-gray-700">{activityTypeLabel(a)}</div>
+                        <div className="font-medium text-black truncate">{activityTitle(a)}</div>
+                      </div>
                     </div>
+
                     <button
                       onClick={() => router.push(`/activities/${encodeURIComponent(id)}`)}
                       className="inline-flex items-center justify-center rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
@@ -609,22 +649,47 @@ export default function DashboardPage() {
                   <div className="font-medium text-black">
                     {(e as any).title || (e as any).name || "Kalenderpunkt"}
                   </div>
-                  {(e as any).activity_id ? (
-                    <div className="mt-2">
+
+                  {/* DB-first sessions har id = sessionId → lenk direkte */}
+                  {(sessionsStatus === "ok" && (e as any).id) ? (
+                    <div className="mt-2 flex flex-wrap gap-2">
                       <button
                         onClick={() =>
-                          router.push(
-                            `/activities/${encodeURIComponent(
-                              toStr((e as any).activity_id)
-                            )}`
-                          )
+                          router.push(`/sessions/${encodeURIComponent(String((e as any).id))}`)
                         }
                         className="inline-flex items-center justify-center rounded-lg bg-black px-3.5 py-2 text-sm font-semibold text-white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
                       >
-                        Gå til aktivitet
+                        Gå til økt
                       </button>
+
+                      {(e as any).activity_id ? (
+                        <button
+                          onClick={() =>
+                            router.push(`/activities/${encodeURIComponent(toStr((e as any).activity_id))}`)
+                          }
+                          className="inline-flex items-center justify-center rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-600"
+                        >
+                          Gå til aktivitet
+                        </button>
+                      ) : null}
                     </div>
-                  ) : null}
+                  ) : (
+                    // LS fallback (som før)
+                    (e as any).activity_id ? (
+                      <div className="mt-2">
+                        <button
+                          onClick={() =>
+                            router.push(
+                              `/activities/${encodeURIComponent(toStr((e as any).activity_id))}`
+                            )
+                          }
+                          className="inline-flex items-center justify-center rounded-lg bg-black px-3.5 py-2 text-sm font-semibold text-white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
+                        >
+                          Gå til aktivitet
+                        </button>
+                      </div>
+                    ) : null
+                  )}
                 </li>
               ))}
             </ul>
@@ -679,7 +744,6 @@ export default function DashboardPage() {
             Gå til aktiviteter
           </button>
 
-          {/* NY: knapp til Follies Messenger */}
           <button
             onClick={() => router.push("/messages")}
             className="inline-flex items-center justify-center rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
