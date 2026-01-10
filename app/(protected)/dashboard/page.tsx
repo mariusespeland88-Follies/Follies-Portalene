@@ -20,9 +20,9 @@ import { createClientComponentClient } from "@/lib/supabase/browser";
  * - Fjernet “Åpne min profil” under Hurtighandlinger (duplikat)
  * - Fjernet “Info” i Påminnelser (gjorde ingenting)
  *
- * NYTT (kun funksjon, for å fjerne “Velkommen”/refresh-behov):
- * - Når vi har e-post men ikke member i LS: kall /api/dashboard/ensure-member
- *   → oppdater LS + state slik at navn og “Åpne min profil” kommer med én gang.
+ * NYTT (kun funksjon):
+ * - Identitet “hydration” (kort polling) for å fange at LS blir fylt etter første render,
+ *   så du slipper å trykke refresh for å få Marius + Åpne min profil i hero.
  */
 
 type AnyObj = Record<string, any>;
@@ -132,7 +132,9 @@ function getCurrentIdentity(members: AnyObj[]) {
 
 /* ---------- activities helpers for dashboard ---------- */
 function activityTitle(a: AnyObj): string {
-  return pick(a, ["title", "tittel", "name", "navn"], "Uten tittel") || "Uten tittel";
+  return (
+    pick(a, ["title", "tittel", "name", "navn"], "Uten tittel") || "Uten tittel"
+  );
 }
 function activityTypeLabel(a: AnyObj): string {
   const t = String(pick(a, ["type", "kategori"], "offer")).toLowerCase();
@@ -330,59 +332,51 @@ export default function DashboardPage() {
     };
   }, [me.email, me.member, supabase]);
 
-  // ✅ NYTT: Ensure-member så vi får navn/profil uten refresh
+  // ✅ NYTT: identitet-hydration – fanger opp at LS blir fylt etter første render
   React.useEffect(() => {
-    let alive = true;
-    (async () => {
-      const email = (me.email || "").trim();
-      if (!email) return;
-      if (me.member) return; // allerede ok
+    if (me.member) return;
 
-      try {
-        const displayName = ""; // vi kan sende tom – serveren håndterer det
-        const res = await fetch("/api/dashboard/ensure-member", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, displayName }),
-        });
+    let tries = 0;
+    const tick = () => {
+      tries += 1;
 
-        if (!res.ok) return;
-        const j = await res.json().catch(() => ({}));
+      const ms = readMembers();
+      const ident = getCurrentIdentity(ms);
 
-        // forventer at route returnerer member (best effort)
-        const member = (j?.member ?? j?.data?.member ?? j?.result?.member ?? j?.memberRow ?? null) as AnyObj | null;
-        if (!alive || !member) return;
-
-        const memberId = toStr(member?.id);
-        if (!memberId) return;
-
-        // oppdater LS-id (slik resten av appen forventer)
-        writeLS("follies.currentMemberId", memberId);
-
-        // oppdater members store (merge)
-        const cur = readMembers();
-        const next = (() => {
-          const map = new Map<string, AnyObj>();
-          for (const m of cur) {
-            const id = toStr(m?.id ?? m?.uuid ?? m?._id ?? m?.memberId);
-            if (id) map.set(id, m);
-          }
-          map.set(memberId, member);
-          return Array.from(map.values());
-        })();
-        writeLS(MEMBERS_KEY, next);
-
-        setMembers(next);
-        setMe((prev) => ({ ...prev, id: memberId, member }));
-      } catch {
-        // ignorer – da viser vi bare "Velkommen" til LS blir fylt av andre flows
+      if (ident?.member) {
+        setMembers(ms);
+        setMe((prev) => ({
+          ...prev,
+          id: ident.id || prev.id,
+          email: ident.email || prev.email,
+          member: ident.member,
+        }));
+        return true;
       }
-    })();
+      return false;
+    };
+
+    // kjør én gang med en gang
+    if (tick()) return;
+
+    const iv = window.setInterval(() => {
+      const done = tick();
+      if (done || tries >= 12) {
+        window.clearInterval(iv);
+      }
+    }, 250); // totalt ~3 sek
+
+    const onStorage = () => {
+      // hvis andre faner/komponenter oppdaterer LS → reager med en gang
+      tick();
+    };
+    window.addEventListener("storage", onStorage);
 
     return () => {
-      alive = false;
+      window.clearInterval(iv);
+      window.removeEventListener("storage", onStorage);
     };
-  }, [me.email, me.member]);
+  }, [me.member, me.email, me.id]);
 
   // Kandidater fra LS (participants + leder-perms)
   const candidateActivityIds = React.useMemo(() => {
