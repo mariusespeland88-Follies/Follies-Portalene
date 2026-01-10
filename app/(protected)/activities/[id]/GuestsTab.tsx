@@ -1,3 +1,4 @@
+// PATH: app/(protected)/activities/[id]/GuestsTab.tsx
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";

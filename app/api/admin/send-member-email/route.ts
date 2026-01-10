@@ -1,3 +1,4 @@
+// PATH: app/api/admin/send-member-email/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";

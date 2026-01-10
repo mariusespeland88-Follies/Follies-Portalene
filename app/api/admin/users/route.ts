@@ -1,3 +1,4 @@
+// PATH: app/api/admin/users/route.ts
 // app/api/admin/users/route.ts
 import { NextResponse } from 'next/server';
 import { createClient as createRouteClient } from '@/lib/supabase/route';

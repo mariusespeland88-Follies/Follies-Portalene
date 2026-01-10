@@ -1,3 +1,4 @@
+// PATH: app/(protected)/activities/[id]/VolunteersTab.tsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";

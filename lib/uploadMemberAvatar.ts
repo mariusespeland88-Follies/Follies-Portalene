@@ -1,3 +1,4 @@
+// PATH: lib/uploadMemberAvatar.ts
 "use client";
 import { createClientComponentClient } from "@/lib/supabase/browser";
 

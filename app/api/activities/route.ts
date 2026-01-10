@@ -1,3 +1,4 @@
+// PATH: app/api/activities/route.ts
 import { NextResponse } from 'next/server';
 
 const URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;

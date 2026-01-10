@@ -1,3 +1,4 @@
+// PATH: app/(protected)/members/formUtils.ts
 export type Activity = {
   id: string;
   name: string;

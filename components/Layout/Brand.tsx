@@ -1,3 +1,4 @@
+// PATH: components/Layout/Brand.tsx
 'use client';
 
 export default function Brand() {

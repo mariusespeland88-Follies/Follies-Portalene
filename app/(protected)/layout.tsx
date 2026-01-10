@@ -1,3 +1,4 @@
+// PATH: app/(protected)/layout.tsx
 import * as React from "react";
 import SupabaseBridge from "@/components/SupabaseBridge";
 import AppHeader from "@/components/Layout/AppHeader";

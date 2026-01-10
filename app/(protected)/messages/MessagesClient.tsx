@@ -1,3 +1,4 @@
+// PATH: app/(protected)/messages/MessagesClient.tsx
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";

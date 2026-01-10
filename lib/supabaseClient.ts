@@ -1,3 +1,4 @@
+// PATH: lib/supabaseClient.ts
 "use client";
 
 // Enkel, trygg Supabase-klient som kan brukes i React-komponenter

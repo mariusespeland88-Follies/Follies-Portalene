@@ -1,3 +1,4 @@
+// PATH: lib/activityPeople.ts
 // Legacy-klienthjelper (IKKE server actions). Server-funksjoner flyttet til lib/server/activityPeople.ts
 export type AnyObj = Record<string, any>;
 

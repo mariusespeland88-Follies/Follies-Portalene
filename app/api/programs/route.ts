@@ -1,3 +1,4 @@
+// PATH: app/api/programs/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServiceRoleClient } from '@/lib/supabase/server';
 

@@ -1,3 +1,4 @@
+// PATH: app/(protected)/activities/new/page.tsx
 "use client";
 
 import { useRouter } from "next/navigation";

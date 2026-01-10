@@ -1,3 +1,4 @@
+// PATH: app/(protected)/calendar/page.tsx
 import dynamic from "next/dynamic";
 
 // Laster kalenderen som ren klientkomponent (CSR), via aliaset "@"

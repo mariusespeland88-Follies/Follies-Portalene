@@ -1,3 +1,4 @@
+// PATH: next.config.mjs
 const envDefaults = {
   NEXT_PUBLIC_SUPABASE_URL: 'stub:SUPABASE_URL',
   NEXT_PUBLIC_SUPABASE_ANON_KEY: 'stub:SUPABASE_ANON_KEY',

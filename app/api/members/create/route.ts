@@ -1,3 +1,4 @@
+// PATH: app/api/members/create/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createRouteHandlerClient } from "@/lib/supabase/handlers";

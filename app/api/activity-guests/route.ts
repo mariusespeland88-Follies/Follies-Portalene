@@ -1,3 +1,4 @@
+// PATH: app/api/activity-guests/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 

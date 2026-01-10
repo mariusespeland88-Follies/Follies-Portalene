@@ -1,3 +1,4 @@
+// PATH: lib/client/hardDeleteActivity.ts
 export type HardDeleteOpts = { redirectToList?: boolean };
 
 const LS_ACT_V1 = "follies.activities.v1";

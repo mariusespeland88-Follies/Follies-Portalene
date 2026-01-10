@@ -1,3 +1,4 @@
+// PATH: app/(protected)/members/archive/page.tsx
 import Link from 'next/link';
 import { getSupabaseServiceRoleClient } from '@/lib/supabase/server';
 

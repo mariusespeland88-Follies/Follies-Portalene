@@ -1,3 +1,4 @@
+// PATH: components/activity/MessagesTab.tsx
 "use client";
 
 export default function MessagesTab({ activityId }: { activityId: string }) {

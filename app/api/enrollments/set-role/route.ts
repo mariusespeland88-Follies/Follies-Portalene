@@ -1,3 +1,4 @@
+// PATH: app/api/enrollments/set-role/route.ts
 // app/api/enrollments/set-role/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";

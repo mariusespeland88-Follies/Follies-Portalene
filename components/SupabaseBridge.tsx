@@ -1,3 +1,4 @@
+// PATH: components/SupabaseBridge.tsx
 "use client";
 
 import { useEffect } from "react";

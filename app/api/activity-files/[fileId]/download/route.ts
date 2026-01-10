@@ -1,3 +1,4 @@
+// PATH: app/api/activity-files/[fileId]/download/route.ts
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 

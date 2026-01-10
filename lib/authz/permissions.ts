@@ -1,3 +1,4 @@
+// PATH: lib/authz/permissions.ts
 // lib/authz/permissions.ts
 export type ModuleKey = 'dashboard' | 'members' | 'activities' | 'calendar' | 'stats';
 export type Level = 'none' | 'view' | 'edit' | 'admin';

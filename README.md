@@ -1,3 +1,4 @@
+<!-- PATH: README.md -->
 # Follies Ansatteportal (MVP)
 
 Next.js 14 + Supabase starter for Follies' interne portal.

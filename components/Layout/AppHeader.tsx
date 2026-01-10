@@ -1,3 +1,4 @@
+// PATH: components/Layout/AppHeader.tsx
 "use client";
 
 import * as React from "react";
