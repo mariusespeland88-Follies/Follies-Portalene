@@ -1,829 +1,1109 @@
-// PATH: app/(protected)/messages/MessagesClient.tsx
 "use client";
 
-import { useEffect, useMemo, useState, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+/**
+ * PATH: app/(protected)/messages/MessagesClient.tsx
+ * Ny Follies Messenger (portal)
+ * - Bruker NY struktur: conversations / participants / messages / attachments
+ * - DM opprettes via server-route (service role) for å sikre participants
+ * - Grupper kan opprettes av ledere (UI + server-route)
+ * - Attachments er private (signed URLs via server routes)
+ */
+
+import * as React from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClientComponentClient } from "@/lib/supabase/browser";
-import { saveMessage } from "@/lib/messagesClient";
-import usePermissions from "@/hooks/usePermissions";
+import usePermissions from "@/lib/authz/usePermissions";
 
-const MSG_LS = "follies.messages.v1";
+type AnyObj = Record<string, any>;
 
-type StoredMessage = {
+type ConversationType = "dm" | "group" | "activity";
+
+type Conversation = {
   id: string;
-  memberId?: string;
-  member_id?: string;
-  subject?: string;
-  body?: string;
-  createdAt?: string;
-  created_at?: string;
-  scope?: string;
-  target?: string;
-  activityId?: string | null;
-  activity_id?: string | null;
-  createdByName?: string | null;
-  createdByEmail?: string | null;
-  created_by_name?: string | null;
-  created_by_email?: string | null;
+  type: ConversationType;
+  title: string | null;
+  activity_id: string | null;
+  created_at: string;
 };
 
-type MemberInfo = {
+type Participant = {
+  conversation_id: string;
+  member_id: string;
+  last_read_at: string | null;
+  role: string | null;
+};
+
+type MemberLite = {
   id: string;
   name: string;
   email: string | null;
+  avatar_url: string | null;
 };
 
-type ThreadSummary = {
-  memberId: string;
-  lastMessageAt: string | null;
-  lastMessagePreview: string;
-  count: number;
+type MessageRow = {
+  id: string;
+  conversation_id: string;
+  sender_member_id: string;
+  body: string | null;
+  created_at: string;
 };
 
-/* ------------------------ LS helpers ------------------------ */
+type AttachmentRow = {
+  id: string;
+  message_id: string;
+  storage_path: string;
+  file_name: string;
+  mime_type: string | null;
+  file_size: number | null;
+  image_width: number | null;
+  image_height: number | null;
+  created_at: string;
+};
 
-function safeJSON<T>(raw: string | null): T | null {
-  try {
-    return raw ? (JSON.parse(raw) as T) : null;
-  } catch {
-    return null;
-  }
+function safeName(first?: string | null, last?: string | null) {
+  const fn = String(first ?? "").trim();
+  const ln = String(last ?? "").trim();
+  const full = `${fn} ${ln}`.trim();
+  return full || "Ukjent";
 }
-
-function normalizeMemberId(
-  m: StoredMessage,
-  keyFromObject?: string
-): string | null {
-  if (m.memberId) return String(m.memberId);
-  if (m.member_id) return String(m.member_id);
-  if (keyFromObject) return String(keyFromObject);
-  return null;
-}
-
-function normalizeCreatedAt(m: StoredMessage): string | null {
-  return (m.createdAt || m.created_at || null) ?? null;
-}
-
-function loadMessagesGroupedByMemberFromLS(
-  allowedMemberId?: string | null
-): Record<string, StoredMessage[]> {
-  if (typeof window === "undefined") return {};
-  const raw = localStorage.getItem(MSG_LS);
-  if (!raw) return {};
-
-  const data = safeJSON<any>(raw);
-  if (!data) return {};
-
-  const grouped: Record<string, StoredMessage[]> = {};
-
-  // Variant 1: Array av meldinger
-  if (Array.isArray(data)) {
-    for (const item of data as StoredMessage[]) {
-      const mid = normalizeMemberId(item);
-      if (!mid) continue;
-      if (!grouped[mid]) grouped[mid] = [];
-      grouped[mid].push({ ...item, memberId: mid });
-    }
-    if (allowedMemberId) {
-      return grouped[allowedMemberId]
-        ? { [allowedMemberId]: grouped[allowedMemberId] }
-        : {};
-    }
-    return grouped;
-  }
-
-  // Variant 2: Objekt { memberId: [meldinger] }
-  if (data && typeof data === "object") {
-    for (const [key, value] of Object.entries(data)) {
-      if (!Array.isArray(value)) continue;
-      const mid = String(key);
-      grouped[mid] = (value as StoredMessage[]).map((m) => ({
-        ...m,
-        memberId: normalizeMemberId(m, mid) ?? mid,
-      }));
-    }
-    if (allowedMemberId) {
-      return grouped[allowedMemberId]
-        ? { [allowedMemberId]: grouped[allowedMemberId] }
-        : {};
-    }
-    return grouped;
-  }
-
-  return {};
-}
-
-function makeThreadSummaries(
-  grouped: Record<string, StoredMessage[]>
-): ThreadSummary[] {
-  const result: ThreadSummary[] = [];
-
-  for (const [memberId, list] of Object.entries(grouped)) {
-    if (!list.length) continue;
-
-    const sorted = [...list].sort((a, b) => {
-      const da = normalizeCreatedAt(a);
-      const db = normalizeCreatedAt(b);
-      if (!da && !db) return 0;
-      if (!da) return 1;
-      if (!db) return -1;
-      return new Date(db).getTime() - new Date(da).getTime();
-    });
-
-    const newest = sorted[0];
-    const lastBody = (newest.body || "").trim();
-    const preview =
-      lastBody.length > 100 ? lastBody.slice(0, 100) + "…" : lastBody;
-
-    result.push({
-      memberId,
-      lastMessageAt: normalizeCreatedAt(newest),
-      lastMessagePreview: preview,
-      count: list.length,
-    });
-  }
-
-  // Sorter threads etter nyeste melding
-  return result.sort((a, b) => {
-    if (!a.lastMessageAt && !b.lastMessageAt) return 0;
-    if (!a.lastMessageAt) return 1;
-    if (!b.lastMessageAt) return -1;
-    return (
-      new Date(b.lastMessageAt!).getTime() -
-      new Date(a.lastMessageAt!).getTime()
-    );
-  });
-}
-
-/* ------------------------ UI helpers ------------------------ */
-
-function formatDateTime(value: string | null): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(+d)) return "—";
-  return d.toLocaleString("nb-NO");
-}
-
-function initials(name: string): string {
+function initials(name: string) {
   return (
     name
       .trim()
       .split(/\s+/)
       .slice(0, 2)
-      .map((p) => p[0]?.toUpperCase() ?? "")
-      .join("") || "U"
+      .map((p) => p?.[0]?.toUpperCase() ?? "")
+      .join("") || "?"
   );
 }
+function fmtTime(iso: string) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("nb-NO", { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "—";
+  }
+}
+function clampPreview(s: string, n = 52) {
+  const t = (s || "").replace(/\s+/g, " ").trim();
+  if (!t) return "—";
+  return t.length > n ? t.slice(0, n) + "…" : t;
+}
 
-/* ----------------------------- Component ----------------------------- */
+/** ------------------------------------------------------------ */
 
 export default function MessagesClient() {
   const supabase = createClientComponentClient();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const { isAdmin, isLeader, meMemberId } = usePermissions();
-  const canViewAll = isAdmin || isLeader;
+  const sp = useSearchParams();
 
-  const [grouped, setGrouped] = useState<Record<string, StoredMessage[]>>({});
-  const [threads, setThreads] = useState<ThreadSummary[]>([]);
-  const [members, setMembers] = useState<Record<string, MemberInfo>>({});
-  const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
-  const [sendInfo, setSendInfo] = useState<string | null>(null);
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
-  const [senderEmail, setSenderEmail] = useState<string | null>(null);
-  const [senderName, setSenderName] = useState<string | null>(null);
+  const { isLeader, loading: permsLoading, meMemberId } = usePermissions();
 
-  const logRef = useRef<HTMLDivElement | null>(null);
+  // URL: /messages?memberId=...  -> ønsket DM
+  const openMemberId = sp.get("memberId");
 
-  /* --------- load messages: DB-first, LS-fallback --------- */
-  useEffect(() => {
-    let active = true;
+  const [booting, setBooting] = React.useState(true);
 
+  const [me, setMe] = React.useState<{ id: string | null }>({ id: null });
+
+  const [participants, setParticipants] = React.useState<Participant[]>([]);
+  const [conversations, setConversations] = React.useState<Conversation[]>([]);
+  const [membersById, setMembersById] = React.useState<Record<string, MemberLite>>(
+    {}
+  );
+
+  const [activeConversationId, setActiveConversationId] = React.useState<string | null>(
+    null
+  );
+
+  const [messages, setMessages] = React.useState<MessageRow[]>([]);
+  const [attachmentsByMessageId, setAttachmentsByMessageId] = React.useState<
+    Record<string, AttachmentRow[]>
+  >({});
+
+  const [draft, setDraft] = React.useState("");
+  const [sending, setSending] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  // Emoji mini-palette (enkelt, men funker)
+  const [emojiOpen, setEmojiOpen] = React.useState(false);
+  const EMOJIS = ["😊", "😂", "❤️", "🔥", "🙌", "🥺", "👍", "🎭", "✅", "😮"];
+
+  // Upload state
+  const fileRef = React.useRef<HTMLInputElement | null>(null);
+  const imgRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Realtime subscription
+  const channelRef = React.useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  /** --------------------- bootstrap: finn meg --------------------- */
+  React.useEffect(() => {
+    let alive = true;
     (async () => {
       try {
-        let query = supabase
-          .from("messages")
-          .select(
-            "id, member_id, subject, body, created_at, scope, target, activity_id, created_by_name, created_by_email"
-          )
-          .order("created_at", { ascending: true });
+        // prefer fra usePermissions (LS/DB)
+        const id = (meMemberId ?? "").trim() || null;
+        if (alive) setMe({ id });
+      } finally {
+        if (alive) setBooting(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [meMemberId]);
 
-        if (!canViewAll) {
-          if (!meMemberId) {
-            setGrouped({});
-            setThreads([]);
-            setLoading(false);
+  /** ------------------- last inn conversations for meg ------------------- */
+  React.useEffect(() => {
+    if (booting) return;
+    if (!me.id) return;
+
+    let alive = true;
+
+    (async () => {
+      setError(null);
+      try {
+        // 1) mine participant-rader
+        const { data: pRows, error: pErr } = await supabase
+          .from("conversation_participants")
+          .select("conversation_id, member_id, last_read_at, role")
+          .eq("member_id", me.id);
+
+        if (!alive) return;
+        if (pErr) throw pErr;
+
+        const parts = (pRows || []) as any[];
+        setParticipants(
+          parts.map((r) => ({
+            conversation_id: String(r.conversation_id),
+            member_id: String(r.member_id),
+            last_read_at: r.last_read_at ?? null,
+            role: r.role ?? null,
+          }))
+        );
+
+        const convIds = Array.from(new Set(parts.map((r) => String(r.conversation_id))));
+        if (convIds.length === 0) {
+          setConversations([]);
+          return;
+        }
+
+        // 2) conversations
+        const { data: cRows, error: cErr } = await supabase
+          .from("conversations")
+          .select("id, type, title, activity_id, created_at")
+          .in("id", convIds);
+
+        if (!alive) return;
+        if (cErr) throw cErr;
+
+        const convs = (cRows || []) as any[];
+        const normalized: Conversation[] = convs.map((c) => ({
+          id: String(c.id),
+          type: String(c.type) as ConversationType,
+          title: c.title ?? null,
+          activity_id: c.activity_id ?? null,
+          created_at: c.created_at ?? new Date().toISOString(),
+        }));
+        setConversations(normalized);
+
+        // 3) hent participants for disse convs (for å vite hvem som er i DM)
+        // (RLS tillater select participants for convs du er i)
+        const { data: allP, error: allPErr } = await supabase
+          .from("conversation_participants")
+          .select("conversation_id, member_id, last_read_at, role")
+          .in("conversation_id", convIds);
+
+        if (!alive) return;
+        if (allPErr) throw allPErr;
+
+        const allParts = (allP || []) as any[];
+
+        // 4) hent member-info for alle member_id vi ser
+        const memberIds = Array.from(
+          new Set(allParts.map((x) => String(x.member_id)))
+        ).filter(Boolean);
+
+        if (memberIds.length) {
+          const { data: mRows } = await supabase
+            .from("members")
+            .select("id, first_name, last_name, email, avatar_url")
+            .in("id", memberIds);
+
+          if (!alive) return;
+
+          const map: Record<string, MemberLite> = {};
+          for (const row of (mRows || []) as any[]) {
+            const id = String(row.id);
+            map[id] = {
+              id,
+              name: safeName(row.first_name, row.last_name),
+              email: row.email ?? null,
+              avatar_url: row.avatar_url ?? null,
+            };
+          }
+          setMembersById(map);
+        }
+
+        // 5) hvis URL ber om DM med memberId -> ensure DM via API
+        if (openMemberId) {
+          const dmId = await ensureDmConversation(openMemberId);
+          if (dmId) {
+            setActiveConversationId(dmId);
+            // rydd URL (så refresh ikke re-trigger)
+            router.replace("/messages");
             return;
           }
-          query = query.eq("member_id", meMemberId);
         }
 
-        const { data, error } = await query;
-
-        if (!active) return;
-
-        if (error) {
-          console.error("Feil ved henting av meldinger fra DB:", error);
-          const g = loadMessagesGroupedByMemberFromLS(meMemberId);
-          const t = makeThreadSummaries(g);
-          setGrouped(g);
-          setThreads(t);
-          setLoading(false);
-          return;
+        // 6) hvis ingen aktiv conversation valgt, velg første
+        if (!activeConversationId && normalized.length) {
+          setActiveConversationId(normalized[0].id);
         }
-
-        if (data && data.length) {
-          const groupedFromDb: Record<string, StoredMessage[]> = {};
-          for (const row of data as any[]) {
-            const mid = row.member_id ? String(row.member_id) : null;
-            if (!mid) continue;
-            const msg: StoredMessage = {
-              id: String(row.id),
-              memberId: mid,
-              member_id: mid,
-              subject: row.subject ?? undefined,
-              body: row.body ?? "",
-              createdAt: row.created_at ?? undefined,
-              created_at: row.created_at ?? undefined,
-              scope: row.scope ?? undefined,
-              target: row.target ?? undefined,
-              activityId: row.activity_id ?? null,
-              activity_id: row.activity_id ?? null,
-              createdByName: row.created_by_name ?? null,
-              createdByEmail: row.created_by_email ?? null,
-              created_by_name: row.created_by_name ?? null,
-              created_by_email: row.created_by_email ?? null,
-            };
-            if (!groupedFromDb[mid]) groupedFromDb[mid] = [];
-            groupedFromDb[mid].push(msg);
-          }
-          const t = makeThreadSummaries(groupedFromDb);
-          setGrouped(groupedFromDb);
-          setThreads(t);
-          setLoading(false);
-        } else {
-          // DB tom → bruk LS (gammelt system)
-          const g = loadMessagesGroupedByMemberFromLS(meMemberId);
-          const t = makeThreadSummaries(g);
-          setGrouped(g);
-          setThreads(t);
-          setLoading(false);
-        }
-      } catch (e) {
-        console.error("Uventet feil ved henting av meldinger:", e);
-        const g = loadMessagesGroupedByMemberFromLS(meMemberId);
-        const t = makeThreadSummaries(g);
-        setGrouped(g);
-        setThreads(t);
-        setLoading(false);
+      } catch (e: any) {
+        console.error(e);
+        if (alive) setError(e?.message || "Kunne ikke laste Messenger.");
       }
     })();
 
     return () => {
-      active = false;
+      alive = false;
     };
-  }, [supabase, canViewAll, meMemberId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booting, me.id]);
 
-  useEffect(() => {
-    let active = true;
+  /** ------------------- last inn messages for aktiv conversation ------------------- */
+  React.useEffect(() => {
+    if (!me.id) return;
+    if (!activeConversationId) return;
+
+    let alive = true;
 
     (async () => {
+      setError(null);
       try {
-        const { data } = await supabase.auth.getSession();
-        const email = data?.session?.user?.email ?? null;
-        if (!active) return;
-        setSenderEmail(email);
-
-        if (!email) return;
-        const { data: rows } = await supabase
-          .from("members")
-          .select("first_name, last_name")
-          .ilike("email", email)
-          .limit(1);
-        if (!active) return;
-        const record = Array.isArray(rows) ? rows[0] : null;
-        if (record) {
-          const fn = String(record.first_name || "").trim();
-          const ln = String(record.last_name || "").trim();
-          const name = fn || ln ? `${fn} ${ln}`.trim() : null;
-          setSenderName(name);
-        }
-      } catch (e) {
-        console.error("Uventet feil ved henting av avsender:", e);
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [supabase]);
-
-  /* --------- load member info from Supabase --------- */
-  useEffect(() => {
-    let active = true;
-
-    (async () => {
-      const memberIds = Object.keys(grouped);
-      if (!memberIds.length) {
-        return;
-      }
-
-      try {
-        const { data, error } = await supabase
-          .from("members")
-          .select("id, first_name, last_name, email")
-          .in("id", memberIds);
-
-        if (!active) return;
-        if (error) {
-          console.error("Feil ved henting av medlemmer til Messenger:", error);
-          return;
+        // unsubscribe forrige
+        if (channelRef.current) {
+          try {
+            await supabase.removeChannel(channelRef.current);
+          } catch {}
+          channelRef.current = null;
         }
 
-        const next: Record<string, MemberInfo> = {};
-        for (const row of (data || []) as any[]) {
-          const id = String(row.id);
-          const fn = (row.first_name || "").trim();
-          const ln = (row.last_name || "").trim();
-          const name = fn || ln ? `${fn} ${ln}`.trim() : "Ukjent medlem";
-          next[id] = { id, name, email: row.email ?? null };
-        }
-        setMembers(next);
-      } catch (e) {
-        console.error("Uventet feil ved henting av medlemmer til Messenger:", e);
-      }
-    })();
+        // 1) messages
+        const { data: rows, error: err } = await supabase
+          .from("conversation_messages")
+          .select("id, conversation_id, sender_member_id, body, created_at")
+          .eq("conversation_id", activeConversationId)
+          .order("created_at", { ascending: true })
+          .limit(400);
 
-    return () => {
-      active = false;
-    };
-  }, [grouped, supabase]);
+        if (!alive) return;
+        if (err) throw err;
 
-  const selectedMemberIdFromQuery = searchParams.get("memberId");
-
-  const selectedMemberId = useMemo(() => {
-    if (!canViewAll && meMemberId) return meMemberId;
-    if (selectedMemberIdFromQuery) return selectedMemberIdFromQuery;
-    if (threads.length) return threads[0].memberId;
-    return null;
-  }, [selectedMemberIdFromQuery, threads, canViewAll, meMemberId]);
-
-  /* --------- ensure member info if opened from member page --------- */
-  useEffect(() => {
-    if (!selectedMemberId) return;
-    if (members[selectedMemberId]) return;
-
-    let active = true;
-
-    (async () => {
-      try {
-        const { data, error } = await supabase
-          .from("members")
-          .select("id, first_name, last_name, email")
-          .eq("id", selectedMemberId)
-          .maybeSingle();
-
-        if (!active) return;
-        if (error) {
-          console.error(
-            "Feil ved henting av medlem for første samtale i Messenger:",
-            error
-          );
-          return;
-        }
-        if (!data) return;
-
-        const row: any = data;
-        const id = String(row.id);
-        const fn = (row.first_name || "").trim();
-        const ln = (row.last_name || "").trim();
-        const name = fn || ln ? `${fn} ${ln}`.trim() : "Ukjent medlem";
-        const email = row.email ?? null;
-
-        setMembers((prev) => ({
-          ...prev,
-          [id]: { id, name, email },
+        const msgs = (rows || []) as any[];
+        const normalized: MessageRow[] = msgs.map((m) => ({
+          id: String(m.id),
+          conversation_id: String(m.conversation_id),
+          sender_member_id: String(m.sender_member_id),
+          body: m.body ?? null,
+          created_at: m.created_at ?? new Date().toISOString(),
         }));
-      } catch (e) {
-        console.error(
-          "Uventet feil ved henting av medlem for første samtale:",
-          e
-        );
+        setMessages(normalized);
+
+        // 2) attachments for disse messages
+        const msgIds = normalized.map((m) => m.id);
+        if (msgIds.length) {
+          const { data: attRows, error: attErr } = await supabase
+            .from("conversation_attachments")
+            .select(
+              "id, message_id, storage_path, file_name, mime_type, file_size, image_width, image_height, created_at"
+            )
+            .in("message_id", msgIds);
+
+          if (!alive) return;
+          if (attErr) throw attErr;
+
+          const by: Record<string, AttachmentRow[]> = {};
+          for (const a of (attRows || []) as any[]) {
+            const mid = String(a.message_id);
+            if (!by[mid]) by[mid] = [];
+            by[mid].push({
+              id: String(a.id),
+              message_id: mid,
+              storage_path: String(a.storage_path),
+              file_name: String(a.file_name),
+              mime_type: a.mime_type ?? null,
+              file_size: a.file_size ?? null,
+              image_width: a.image_width ?? null,
+              image_height: a.image_height ?? null,
+              created_at: a.created_at ?? new Date().toISOString(),
+            });
+          }
+          setAttachmentsByMessageId(by);
+        } else {
+          setAttachmentsByMessageId({});
+        }
+
+        // 3) realtime subscribe (kun inserts)
+        const ch = supabase
+          .channel(`conv:${activeConversationId}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "conversation_messages",
+              filter: `conversation_id=eq.${activeConversationId}`,
+            },
+            (payload) => {
+              const m = payload.new as any;
+              setMessages((prev) => {
+                const id = String(m.id);
+                if (prev.some((x) => x.id === id)) return prev;
+                return [
+                  ...prev,
+                  {
+                    id,
+                    conversation_id: String(m.conversation_id),
+                    sender_member_id: String(m.sender_member_id),
+                    body: m.body ?? null,
+                    created_at: m.created_at ?? new Date().toISOString(),
+                  },
+                ];
+              });
+            }
+          )
+          .subscribe();
+
+        channelRef.current = ch;
+      } catch (e: any) {
+        console.error(e);
+        if (alive) setError(e?.message || "Kunne ikke laste meldinger.");
       }
     })();
 
     return () => {
-      active = false;
+      alive = false;
     };
-  }, [selectedMemberId, members, supabase]);
+  }, [activeConversationId, me.id, supabase]);
 
-  /* --------- derived selected messages --------- */
-  const selectedMessages = useMemo(() => {
-    if (!selectedMemberId) return [];
-    const list = grouped[selectedMemberId] || [];
-    return [...list].sort((a, b) => {
-      const da = normalizeCreatedAt(a);
-      const db = normalizeCreatedAt(b);
-      if (!da && !db) return 0;
-      if (!da) return -1;
-      if (!db) return 1;
-      return new Date(da!).getTime() - new Date(db!).getTime();
-    });
-  }, [grouped, selectedMemberId]);
+  /** ------------------- helpers: finne title og DM-part ------------------- */
+  const convById = React.useMemo(() => {
+    const m = new Map<string, Conversation>();
+    for (const c of conversations) m.set(c.id, c);
+    return m;
+  }, [conversations]);
 
-  const selectedMemberInfo: MemberInfo | null = selectedMemberId
-    ? members[selectedMemberId] ?? {
-        id: selectedMemberId,
-        name: "Ukjent medlem",
-        email: null,
+  const activeConv = activeConversationId ? convById.get(activeConversationId) : null;
+
+  // Vi trenger participants for å finne motpart i DM:
+  const [allParticipants, setAllParticipants] = React.useState<
+    { conversation_id: string; member_id: string }[]
+  >([]);
+
+  React.useEffect(() => {
+    if (!me.id) return;
+    if (conversations.length === 0) return;
+
+    let alive = true;
+    (async () => {
+      try {
+        const ids = conversations.map((c) => c.id);
+        const { data, error } = await supabase
+          .from("conversation_participants")
+          .select("conversation_id, member_id")
+          .in("conversation_id", ids);
+        if (!alive) return;
+        if (error) throw error;
+        setAllParticipants((data || []) as any[]);
+      } catch (e) {
+        // stille (ikke kritisk)
       }
-    : null;
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [me.id, conversations, supabase]);
 
-  /* --------- scroll to bottom on new messages --------- */
-  useEffect(() => {
-    if (!logRef.current) return;
-    logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [selectedMessages.length]);
-
-  /* --------- handlers --------- */
-
-  async function handleSend() {
-    if (!selectedMemberId) return;
-    if (!canViewAll) {
-      setSendError("Du har ikke tilgang til å sende meldinger her.");
-      return;
+  function displayTitle(c: Conversation): { title: string; peerId?: string } {
+    if (c.type !== "dm") {
+      return { title: c.title || (c.type === "activity" ? "Aktivitet" : "Gruppe") };
     }
-    if (!body.trim()) {
-      setSendError("Meldingen kan ikke være tom.");
-      return;
+    const parts = allParticipants.filter((p) => p.conversation_id === c.id);
+    const peer = parts.find((p) => p.member_id !== me.id);
+    const peerId = peer?.member_id;
+    const peerName = peerId ? membersById[peerId]?.name : null;
+    return { title: peerName || c.title || "Privat chat", peerId };
+  }
+
+  /** ------------------- ensure DM via server route ------------------- */
+  async function ensureDmConversation(otherMemberId: string): Promise<string | null> {
+    if (!me.id) return null;
+    try {
+      const res = await fetch("/api/messenger/dm/ensure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meMemberId: me.id, otherMemberId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Kunne ikke opprette DM.");
+      const cid = String(json?.conversationId || "");
+      if (!cid) throw new Error("Mangler conversationId");
+      // refresh list
+      setTimeout(() => {
+        // trigger reload
+        setBooting((x) => x);
+      }, 10);
+      return cid;
+    } catch (e: any) {
+      setError(e?.message || "Kunne ikke opprette DM.");
+      return null;
     }
+  }
+
+  /** ------------------- send message ------------------- */
+  async function sendText() {
+    if (!me.id || !activeConversationId) return;
+    const text = draft.trim();
+    if (!text) return;
 
     setSending(true);
-    setSendError(null);
-    setSendInfo(null);
-
+    setError(null);
     try {
-      const subjectToUse =
-        subject.trim() ||
-        `Melding til ${selectedMemberInfo?.name ?? "medlem"}`;
-      const createdByName = senderName || null;
-      const createdByEmail = senderEmail || null;
-
-      // 1) Lagre lokalt (LS) via eksisterende helper
-      const saved = saveMessage({
-        scope: "member",
-        memberId: selectedMemberId,
-        activityId: null,
-        target: "custom",
-        subject: subjectToUse,
-        body: body.trim(),
-        createdByEmail,
-        createdByName,
+      const { error } = await supabase.from("conversation_messages").insert({
+        conversation_id: activeConversationId,
+        sender_member_id: me.id,
+        body: text,
       });
-
-      // 2) Oppdater React-state (så UI viser meldingen med en gang)
-      setGrouped((prev) => {
-        const existing = prev[selectedMemberId] || [];
-        const nextGrouped = {
-          ...prev,
-          [selectedMemberId]: [
-            ...existing,
-            {
-              ...(saved as any),
-              memberId: selectedMemberId,
-              createdByEmail,
-              createdByName,
-            },
-          ],
-        };
-        setThreads(makeThreadSummaries(nextGrouped));
-        return nextGrouped;
-      });
-
-      // 3) Lagre i Supabase (DB) → slik at andre ser det og fremtidig app kan lese det
-      try {
-        const { error: insertError } = await supabase.from("messages").insert({
-          member_id: selectedMemberId,
-          activity_id: null,
-          scope: "member",
-          target: "custom",
-          subject: subjectToUse,
-          body: body.trim(),
-          created_by_email: createdByEmail,
-          created_by_name: createdByName,
-        });
-        if (insertError) {
-          console.error("Feil ved lagring av melding i DB:", insertError);
-        }
-      } catch (e) {
-        console.error("Uventet feil ved lagring av melding i DB:", e);
-      }
-
-      // 4) Send e-post også, hvis vi har e-postadresse
-      const email = selectedMemberInfo?.email?.trim() || null;
-      if (email) {
-        const res = await fetch("/api/admin/send-member-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            memberId: selectedMemberId,
-            email,
-            subject: subjectToUse,
-            body: body.trim(),
-          }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          const msg = String(json?.error || "");
-          if (
-            msg.includes("Supabase or SMTP configuration missing") ||
-            msg.toLowerCase().includes("smtp")
-          ) {
-            setSendInfo(
-              "Meldingen er lagret, men e-post kunne ikke sendes fordi SMTP-oppsett mangler."
-            );
-          } else {
-            throw new Error(json?.error || "Kunne ikke sende e-post.");
-          }
-        } else {
-          setSendInfo(`Meldingen er lagret og sendt til ${email}.`);
-        }
-      } else {
-        setSendInfo(
-          "Meldingen er lagret i portalen (ingen e-post registrert)."
-        );
-      }
-
-      setSubject("");
-      setBody("");
+      if (error) throw error;
+      setDraft("");
+      setEmojiOpen(false);
     } catch (e: any) {
-      setSendError(e?.message || "Noe gikk galt ved sending av melding.");
+      console.error(e);
+      setError(e?.message || "Kunne ikke sende melding.");
     } finally {
       setSending(false);
     }
   }
 
-  function handleSelectThread(memberId: string) {
-    const qs = new URLSearchParams(searchParams.toString());
-    qs.set("memberId", memberId);
-    router.push(`/messages?${qs.toString()}`);
+  /** ------------------- attachments (private) ------------------- */
+  async function uploadAttachment(file: File) {
+    if (!me.id || !activeConversationId) return;
+
+    setSending(true);
+    setError(null);
+
+    try {
+      // 1) lag en melding først (tom tekst ok)
+      const { data: msgRow, error: msgErr } = await supabase
+        .from("conversation_messages")
+        .insert({
+          conversation_id: activeConversationId,
+          sender_member_id: me.id,
+          body: null,
+        })
+        .select("id")
+        .single();
+
+      if (msgErr) throw msgErr;
+
+      const messageId = String((msgRow as any)?.id || "");
+      if (!messageId) throw new Error("Kunne ikke opprette meldings-ID.");
+
+      // 2) be server om signed upload url + path
+      const res = await fetch("/api/messenger/attachments/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: activeConversationId,
+          messageId,
+          fileName: file.name,
+          contentType: file.type,
+          size: file.size,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || "Kunne ikke lage upload-url.");
+
+      const { uploadUrl, storagePath } = j as {
+        uploadUrl: string;
+        storagePath: string;
+      };
+      if (!uploadUrl || !storagePath) throw new Error("Mangler upload-data.");
+
+      // 3) last opp filen direkte til signed url
+      const up = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!up.ok) throw new Error("Opplasting feilet.");
+
+      // 4) registrer attachment i DB (RLS: select er sikret, insert via service route)
+      const res2 = await fetch("/api/messenger/attachments/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messageId,
+          storagePath,
+          fileName: file.name,
+          mimeType: file.type,
+          fileSize: file.size,
+        }),
+      });
+      const j2 = await res2.json().catch(() => ({}));
+      if (!res2.ok) throw new Error(j2?.error || "Kunne ikke registrere vedlegg.");
+
+      // 5) refresh attachments
+      setTimeout(() => {
+        setActiveConversationId((x) => x); // trigger effect reload
+      }, 50);
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message || "Kunne ikke laste opp vedlegg.");
+    } finally {
+      setSending(false);
+    }
   }
 
-  /* ----------------------------- render states ----------------------------- */
+  function onPickFile(kind: "file" | "image") {
+    if (kind === "file") fileRef.current?.click();
+    else imgRef.current?.click();
+  }
 
-  if (loading) {
+  /** ------------------- group create (leaders only) ------------------- */
+  const [groupOpen, setGroupOpen] = React.useState(false);
+  const [groupTitle, setGroupTitle] = React.useState("");
+  const [groupPick, setGroupPick] = React.useState<Record<string, boolean>>({});
+  const [groupQuery, setGroupQuery] = React.useState("");
+
+  const memberList = React.useMemo(() => Object.values(membersById), [membersById]);
+  const filteredMembers = React.useMemo(() => {
+    const q = groupQuery.trim().toLowerCase();
+    const base = memberList.filter((m) => m.id !== me.id);
+    if (!q) return base.sort((a, b) => a.name.localeCompare(b.name, "nb"));
+    return base
+      .filter((m) => m.name.toLowerCase().includes(q) || (m.email || "").toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name, "nb"));
+  }, [memberList, groupQuery, me.id]);
+
+  async function createGroup() {
+    if (!me.id) return;
+    const title = groupTitle.trim();
+    const ids = Object.entries(groupPick)
+      .filter(([, v]) => v)
+      .map(([id]) => id);
+
+    if (!title) {
+      setError("Gruppen må ha et navn.");
+      return;
+    }
+    if (ids.length === 0) {
+      setError("Velg minst én deltaker.");
+      return;
+    }
+
+    setSending(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/messenger/group/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meMemberId: me.id, title, memberIds: ids }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Kunne ikke opprette gruppe.");
+      const cid = String(json?.conversationId || "");
+      if (!cid) throw new Error("Mangler conversationId.");
+      setGroupOpen(false);
+      setGroupTitle("");
+      setGroupPick({});
+      setActiveConversationId(cid);
+
+      // reload list
+      setTimeout(() => {
+        router.refresh();
+      }, 50);
+    } catch (e: any) {
+      setError(e?.message || "Kunne ikke opprette gruppe.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /** ------------------- UI: conversation list with last message preview ------------------- */
+  const lastByConv = React.useMemo(() => {
+    const map: Record<string, { text: string; at: string }> = {};
+    for (const m of messages) {
+      // messages er for aktiv conv, ikke alle – så vi lager et fallback basert på conv.updated_at
+      void m;
+    }
+    return map;
+  }, [messages]);
+
+  const sortedConversations = React.useMemo(() => {
+    // enkel sort: newest created_at først (senere kan vi sortere på siste melding)
+    return [...conversations].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  }, [conversations]);
+
+  /** ------------------- render ------------------- */
+  if (booting || permsLoading) {
     return (
-      <main className="mx-auto max-w-7xl bg-neutral-100 px-4 py-10 text-neutral-900">
+      <main className="mx-auto max-w-7xl px-4 py-10 text-neutral-900">
         <div className="rounded-2xl border border-neutral-200 bg-white p-6 text-sm font-medium shadow">
-          Laster meldinger…
+          Laster Messenger…
         </div>
       </main>
     );
   }
 
-  if (!threads.length && !selectedMemberIdFromQuery) {
+  if (!me.id) {
     return (
-      <main className="mx-auto max-w-7xl bg-neutral-100 px-4 py-10 text-neutral-900">
-        <section className="rounded-3xl border border-neutral-200 bg-white p-8 shadow">
-          <h1 className="text-3xl font-semibold tracking-tight text-red-600">
-            Follies Messenger
-          </h1>
-          <p className="mt-2 text-sm text-neutral-700">
-            Du har ikke sendt eller lagret noen meldinger ennå.
-          </p>
-          <p className="mt-3 text-sm text-neutral-800">
-            Gå til{" "}
-            <Link
-              href="/members"
-              className="font-semibold text-red-600 underline underline-offset-2"
-            >
-              Medlemmer
-            </Link>{" "}
-            og bruk knappen <span className="font-semibold">Messenger</span> på
-            et medlem for å starte en samtale.
-          </p>
-        </section>
+      <main className="mx-auto max-w-7xl px-4 py-10 text-neutral-900">
+        <div className="rounded-2xl border border-red-200 bg-rose-50 p-6 text-sm text-red-800 shadow">
+          Fant ikke innlogget medlem (memberId). Logg inn på nytt, eller åpne Dashboard og refresh.
+        </div>
       </main>
     );
   }
-
-  /* ----------------------------- main render ----------------------------- */
 
   return (
-    <main className="mx-auto max-w-7xl bg-neutral-100 px-4 py-8 text-neutral-900">
-      {/* Tittelrad */}
+    <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
+      {/* header */}
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-red-600">
-            Follies Messenger
-          </h1>
-          <p className="mt-1 text-sm text-neutral-700">
-            Hold kontakt med deltakere og foresatte direkte fra portalen.
-          </p>
+          <h1 className="text-3xl font-semibold tracking-tight text-red-600">Follies Messenger</h1>
+          <p className="mt-1 text-sm text-neutral-700">Privat chat, grupper og aktivitetsrom – kun det du har tilgang til.</p>
         </div>
-        <Link
-          href="/members"
-          className="rounded-lg border border-red-500 bg-white px-4 py-2 text-sm font-semibold text-red-600 shadow-sm hover:bg-red-50"
-        >
-          Gå til medlemmer
-        </Link>
+
+        <div className="flex items-center gap-2">
+          {isLeader ? (
+            <button
+              onClick={() => setGroupOpen(true)}
+              className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
+            >
+              + Ny gruppe
+            </button>
+          ) : null}
+
+          <Link
+            href="/members"
+            className="rounded-lg border border-red-500 bg-white px-4 py-2 text-sm font-semibold text-red-600 shadow-sm hover:bg-red-50"
+          >
+            Medlemmer
+          </Link>
+        </div>
       </div>
 
-      {/* Hovedkort */}
-      <section className="rounded-3xl border border-neutral-200 bg-white p-4 shadow">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr),minmax(0,1.4fr)]">
-          {/* VENSTRE: trådliste */}
-          <aside className="flex min-h-[420px] flex-col rounded-2xl border border-neutral-200 bg-neutral-50">
-            <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-xs font-semibold text-white">
-                  ✉
+      {error ? (
+        <div className="mb-4 rounded-xl border border-red-200 bg-rose-50 px-4 py-3 text-sm text-red-800">
+          {error}
+        </div>
+      ) : null}
+
+      <section className="rounded-3xl border border-neutral-200 bg-white shadow">
+        <div className="grid gap-0 lg:grid-cols-[minmax(0,0.9fr),minmax(0,1.6fr)]">
+          {/* LEFT: conversation list */}
+          <aside className="border-b border-neutral-200 bg-neutral-50 lg:border-b-0 lg:border-r">
+            <div className="border-b border-neutral-200 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-semibold">Samtaler</div>
+                <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-red-600 ring-1 ring-red-200">
+                  {sortedConversations.length}
                 </span>
-                <h2 className="text-sm font-semibold text-neutral-900">
-                  Samtaler
-                </h2>
               </div>
-              <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-red-600 ring-1 ring-red-200">
-                {threads.length || (selectedMemberId ? 1 : 0)}
-              </span>
+              <div className="mt-2 rounded-full border border-neutral-200 bg-white px-3 py-2 text-sm">
+                <input
+                  placeholder="Søk (kommer snart)"
+                  className="w-full bg-transparent outline-none placeholder:text-neutral-400"
+                  disabled
+                />
+              </div>
             </div>
-            <div className="flex-1 overflow-y-auto">
-              {threads.length === 0 && selectedMemberId ? (
-                <div className="px-4 py-3 text-sm text-neutral-700">
-                  Du starter en ny samtale med{" "}
-                    <span className="font-semibold">
-                      {selectedMemberInfo?.name ?? "medlem"}
-                    </span>
-                    .
+
+            <div className="max-h-[70vh] overflow-y-auto">
+              {sortedConversations.length === 0 ? (
+                <div className="p-4 text-sm text-neutral-700">
+                  Ingen samtaler ennå. Gå til et medlem og trykk <span className="font-semibold">Messenger</span>.
                 </div>
               ) : (
-                threads.map((t) => {
-                  const info =
-                    members[t.memberId] ?? {
-                      id: t.memberId,
-                      name: "Ukjent medlem",
-                      email: null,
-                    };
-                  const active = selectedMemberId === t.memberId;
-                  return (
-                    <button
-                      key={t.memberId}
-                      onClick={() => handleSelectThread(t.memberId)}
-                      className={`flex w-full items-start gap-3 px-4 py-3 text-left text-sm transition ${
-                        active
-                          ? "bg-red-50 border-l-4 border-red-500"
-                          : "hover:bg-neutral-100"
-                      }`}
-                    >
-                      <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-600 text-xs font-semibold text-white">
-                        {initials(info.name)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="truncate text-[13px] font-semibold text-neutral-900">
-                            {info.name}
-                          </p>
-                          <span className="text-[11px] font-medium text-neutral-500">
-                            {formatDateTime(t.lastMessageAt)}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 line-clamp-2 text-[12px] text-neutral-700">
-                          {t.lastMessagePreview || "Ingen tekst."}
-                        </p>
-                        <p className="mt-1 text-[10px] text-neutral-500">
-                          {t.count} melding{t.count === 1 ? "" : "er"}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })
+                <ul className="divide-y divide-neutral-200">
+                  {sortedConversations.map((c) => {
+                    const active = c.id === activeConversationId;
+                    const info = displayTitle(c);
+                    const peer = info.peerId ? membersById[info.peerId] : null;
+
+                    const avatarUrl = peer?.avatar_url || null;
+                    const title = info.title;
+
+                    return (
+                      <li key={c.id}>
+                        <button
+                          onClick={() => setActiveConversationId(c.id)}
+                          className={
+                            "flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition " +
+                            (active ? "bg-red-50" : "hover:bg-white")
+                          }
+                        >
+                          {/* avatar */}
+                          {avatarUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={avatarUrl}
+                              alt={title}
+                              className="h-11 w-11 rounded-full border border-neutral-200 object-cover"
+                            />
+                          ) : (
+                            <div className="grid h-11 w-11 place-items-center rounded-full border border-neutral-200 bg-white text-xs font-semibold text-neutral-700">
+                              {initials(title)}
+                            </div>
+                          )}
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="truncate font-semibold text-neutral-900">{title}</div>
+                              <div className="text-[11px] font-medium text-neutral-500">
+                                {fmtTime(c.created_at)}
+                              </div>
+                            </div>
+                            <div className="mt-0.5 truncate text-xs text-neutral-600">
+                              {c.type === "activity" ? "Aktivitetsrom" : c.type === "group" ? "Gruppe" : "Privat"}
+                              {" · "}
+                              {clampPreview(lastByConv[c.id]?.text || "")}
+                            </div>
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
             </div>
           </aside>
 
-          {/* HØYRE: valgt samtale */}
-          <section className="flex min-h-[420px] flex-col rounded-2xl border border-neutral-200 bg-neutral-50">
-            <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
+          {/* RIGHT: chat */}
+          <section className="flex min-h-[520px] flex-col bg-neutral-50">
+            {/* chat header */}
+            <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3">
               <div>
-                <h2 className="text-sm font-semibold text-neutral-900">
-                  {selectedMemberInfo?.name ?? "Velg en samtale"}
-                </h2>
-                {selectedMemberInfo?.email && (
-                  <p className="text-xs text-neutral-600">
-                    {selectedMemberInfo.email}
-                  </p>
-                )}
-              </div>
-              {selectedMemberId && (
-                <Link
-                  href={`/members/${encodeURIComponent(selectedMemberId)}`}
-                  className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-100"
-                >
-                  Åpne medlem
-                </Link>
-              )}
-            </div>
-
-            {/* Meldingslogg */}
-            <div
-              ref={logRef}
-              className="flex-1 space-y-2 overflow-y-auto px-4 py-3"
-            >
-              {selectedMessages.length === 0 ? (
-                <p className="text-sm text-neutral-700">
-                  Ingen meldinger registrert i denne samtalen ennå.
-                </p>
-              ) : (
-                selectedMessages.map((m) => (
-                  <article
-                    key={m.id}
-                    className="max-w-xl rounded-2xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-900 shadow-sm"
-                  >
-                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <span className="truncate text-[13px] font-semibold text-red-600">
-                        {m.subject || "Melding"}
-                      </span>
-                      <span className="text-[11px] font-medium text-neutral-500">
-                        {formatDateTime(normalizeCreatedAt(m))}
-                      </span>
-                    </div>
-                    <div className="mb-1 text-[11px] font-medium text-neutral-600">
-                      Fra:{" "}
-                      {m.createdByName ||
-                        m.created_by_name ||
-                        m.createdByEmail ||
-                        m.created_by_email ||
-                        "Administrasjon"}
-                    </div>
-                    <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-neutral-900">
-                      {m.body || ""}
-                    </p>
-                  </article>
-                ))
-              )}
-            </div>
-
-            {/* Ny melding */}
-            {selectedMemberId && canViewAll && (
-              <div className="border-t border-neutral-200 bg-white px-4 py-3">
-                <div className="space-y-2">
-                  <input
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    placeholder='Tittel (f.eks. "Husk øving") – valgfritt'
-                    className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-900 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400"
-                  />
-                  <textarea
-                    value={body}
-                    onChange={(e) => setBody(e.target.value)}
-                    rows={3}
-                    placeholder="Skriv meldingen du vil sende til medlemmet…"
-                    className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-900 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400"
-                  />
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="mt-1 text-[11px] text-neutral-600">
-                      Meldingen lagres i portalen og forsøkes sendt som e-post
-                      hvis medlemmet har en registrert adresse.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleSend}
-                      disabled={sending || !body.trim()}
-                      className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-red-500 disabled:opacity-60"
-                    >
-                      {sending ? "Sender…" : "Send melding"}
-                    </button>
-                  </div>
-
-                  {sendError && (
-                    <div className="mt-1 inline-flex items-center gap-2 rounded-lg border border-red-200 bg-rose-50 px-3 py-1 text-[11px] text-red-700">
-                      <span className="text-xs">⚠️</span>
-                      <span>{sendError}</span>
-                    </div>
-                  )}
-                  {sendInfo && !sendError && (
-                    <div className="mt-1 inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] text-emerald-700">
-                      <span className="text-xs">✔</span>
-                      <span>{sendInfo}</span>
-                    </div>
-                  )}
+                <div className="text-sm font-semibold text-neutral-900">
+                  {activeConv ? displayTitle(activeConv).title : "Velg en samtale"}
+                </div>
+                <div className="text-xs text-neutral-600">
+                  {activeConv ? (activeConv.type === "dm" ? "Privat" : activeConv.type === "group" ? "Gruppe" : "Aktivitet") : "—"}
                 </div>
               </div>
-            )}
-            {selectedMemberId && !canViewAll && (
-              <div className="border-t border-neutral-200 bg-white px-4 py-3">
-                <p className="text-xs text-neutral-600">
-                  Du kan lese meldinger her, men kun ledere/admin kan sende nye.
-                </p>
+
+              {activeConv?.type === "dm" ? (
+                (() => {
+                  const peerId = displayTitle(activeConv).peerId;
+                  return peerId ? (
+                    <Link
+                      href={`/members/${encodeURIComponent(peerId)}`}
+                      className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-100"
+                    >
+                      Åpne medlem
+                    </Link>
+                  ) : null;
+                })()
+              ) : null}
+            </div>
+
+            {/* messages */}
+            <div className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
+              {!activeConversationId ? (
+                <div className="text-sm text-neutral-700">Velg en samtale til venstre.</div>
+              ) : messages.length === 0 ? (
+                <div className="text-sm text-neutral-700">Ingen meldinger ennå. Skriv den første 👇</div>
+              ) : (
+                messages.map((m) => {
+                  const mine = m.sender_member_id === me.id;
+                  const sender = membersById[m.sender_member_id];
+                  const senderName = sender?.name || "Ukjent";
+                  const atts = attachmentsByMessageId[m.id] || [];
+
+                  return (
+                    <div key={m.id} className={"flex " + (mine ? "justify-end" : "justify-start")}>
+                      <div className={"max-w-[78%] space-y-1"}>
+                        {!mine ? (
+                          <div className="text-[11px] font-semibold text-neutral-600">{senderName}</div>
+                        ) : null}
+
+                        {/* attachments */}
+                        {atts.length ? (
+                          <div className="space-y-2">
+                            {atts.map((a) => (
+                              <AttachmentCard key={a.id} a={a} />
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {/* text bubble */}
+                        {m.body ? (
+                          <div
+                            className={
+                              "rounded-2xl border px-3 py-1.5 text-[13px] leading-relaxed " +
+                              (mine
+                                ? "border-neutral-200 bg-white"
+                                : "border-neutral-200 bg-white")
+                            }
+                          >
+                            {m.body}
+                          </div>
+                        ) : null}
+
+                        <div className={"text-[10px] text-neutral-500 " + (mine ? "text-right" : "text-left")}>
+                          {new Date(m.created_at).toLocaleString("nb-NO")}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* composer */}
+            <div className="border-t border-neutral-200 bg-white px-4 py-3">
+              {/* hidden file inputs */}
+              <input
+                ref={fileRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) uploadAttachment(f);
+                }}
+              />
+              <input
+                ref={imgRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) uploadAttachment(f);
+                }}
+              />
+
+              <div className="flex items-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEmojiOpen((v) => !v)}
+                  className="grid h-9 w-9 place-items-center rounded-full bg-neutral-100 text-lg hover:bg-neutral-200"
+                  title="Emoji"
+                >
+                  😊
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onPickFile("file")}
+                  className="grid h-9 w-9 place-items-center rounded-full bg-neutral-100 text-sm hover:bg-neutral-200"
+                  title="Fil"
+                >
+                  📎
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onPickFile("image")}
+                  className="grid h-9 w-9 place-items-center rounded-full bg-neutral-100 text-sm hover:bg-neutral-200"
+                  title="Bilde"
+                >
+                  🖼️
+                </button>
+
+                <div className="flex-1 rounded-full bg-neutral-100 px-4 py-2">
+                  <input
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder="Aa"
+                    className="w-full bg-transparent text-sm outline-none placeholder:text-neutral-500"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        sendText();
+                      }
+                    }}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={sendText}
+                  disabled={sending || !draft.trim() || !activeConversationId}
+                  className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-60"
+                >
+                  Send
+                </button>
               </div>
-            )}
+
+              {emojiOpen ? (
+                <div className="mt-2 flex flex-wrap gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 p-2">
+                  {EMOJIS.map((e) => (
+                    <button
+                      key={e}
+                      type="button"
+                      className="grid h-9 w-9 place-items-center rounded-xl bg-white text-lg hover:bg-neutral-100"
+                      onClick={() => setDraft((d) => d + e)}
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="mt-2 text-[11px] text-neutral-500">
+                Realtime på meldinger er aktiv. Vedlegg er private (signed URLs).
+              </div>
+            </div>
           </section>
         </div>
       </section>
+
+      {/* Group modal */}
+      {groupOpen ? (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setGroupOpen(false)} />
+          <div className="absolute left-1/2 top-1/2 w-[min(680px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-neutral-200 bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-neutral-900">Ny gruppe</div>
+                <div className="text-xs text-neutral-600">Kun ledere kan opprette grupper.</div>
+              </div>
+              <button
+                className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-100"
+                onClick={() => setGroupOpen(false)}
+              >
+                Lukk
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-[1fr,1.2fr]">
+              <div>
+                <label className="text-xs font-semibold text-neutral-700">Gruppenavn</label>
+                <input
+                  value={groupTitle}
+                  onChange={(e) => setGroupTitle(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+                  placeholder="F.eks. Refleksjoner – crew"
+                />
+
+                <label className="mt-4 block text-xs font-semibold text-neutral-700">Søk medlemmer</label>
+                <input
+                  value={groupQuery}
+                  onChange={(e) => setGroupQuery(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+                  placeholder="Søk navn eller e-post…"
+                />
+
+                <button
+                  onClick={createGroup}
+                  disabled={sending}
+                  className="mt-4 w-full rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
+                >
+                  {sending ? "Oppretter…" : "Opprett gruppe"}
+                </button>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
+                <div className="text-xs font-semibold text-neutral-700">Velg deltakere</div>
+                <div className="mt-2 max-h-[320px] overflow-y-auto divide-y divide-neutral-200 rounded-xl bg-white">
+                  {filteredMembers.map((m) => {
+                    const checked = !!groupPick[m.id];
+                    return (
+                      <label key={m.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) =>
+                            setGroupPick((prev) => ({ ...prev, [m.id]: e.target.checked }))
+                          }
+                        />
+                        <div className="min-w-0">
+                          <div className="truncate font-semibold text-neutral-900">{m.name}</div>
+                          <div className="truncate text-xs text-neutral-600">{m.email || "—"}</div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="mt-2 text-[11px] text-neutral-600">
+                  Valgt:{" "}
+                  <span className="font-semibold">
+                    {Object.values(groupPick).filter(Boolean).length}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
+  );
+}
+
+/** ------------------- Attachment card (portal) ------------------- */
+function AttachmentCard({ a }: { a: AttachmentRow }) {
+  const [busy, setBusy] = React.useState(false);
+  const [url, setUrl] = React.useState<string | null>(null);
+  const isImage = (a.mime_type || "").startsWith("image/");
+
+  async function ensureUrl() {
+    if (url) return url;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/messenger/attachments/download-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storagePath: a.storage_path }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || "Kunne ikke hente lenke.");
+      const u = String(j?.signedUrl || "");
+      if (!u) throw new Error("Mangler signedUrl.");
+      setUrl(u);
+      return u;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-neutral-200 bg-white p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-neutral-900">
+            {a.file_name}
+          </div>
+          <div className="text-xs text-neutral-600">
+            {a.mime_type || "fil"} {a.file_size ? `· ${Math.round(a.file_size / 1024)} KB` : ""}
+          </div>
+        </div>
+
+        <button
+          className="rounded-full border border-neutral-300 bg-white px-3 py-1 text-xs font-semibold text-neutral-800 hover:bg-neutral-100 disabled:opacity-60"
+          disabled={busy}
+          onClick={async () => {
+            const u = await ensureUrl();
+            if (u) window.open(u, "_blank");
+          }}
+        >
+          {busy ? "…" : "Åpne"}
+        </button>
+      </div>
+
+      {isImage && url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt={a.file_name} className="mt-2 w-full rounded-xl border border-neutral-200 object-cover" />
+      ) : null}
+    </div>
   );
 }
