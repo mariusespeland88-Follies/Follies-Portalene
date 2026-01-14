@@ -1,4 +1,3 @@
-// PATH: lib/supabase/client.ts
 // lib/supabase/client.ts
 "use client";
 
