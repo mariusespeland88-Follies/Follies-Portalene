@@ -2,8 +2,22 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { requireLeader } from "@/lib/authz/apiAuth";
+import { sendPushToMembers } from "@/lib/push/memberPush";
 
 const S = (v: any) => String(v ?? "").trim();
+
+function fmtOslo(dateIso: string): string {
+  const d = new Date(dateIso);
+  if (Number.isNaN(d.getTime())) return dateIso;
+  return new Intl.DateTimeFormat("nb-NO", {
+    timeZone: "Europe/Oslo",
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
+}
 
 export async function POST(req: Request) {
   try {
@@ -34,6 +48,7 @@ export async function POST(req: Request) {
 
     // Upsert session
     let sessionId = id;
+    const isNew = !sessionId;
 
     if (sessionId) {
       const { error } = await supabase
@@ -67,6 +82,34 @@ export async function POST(req: Request) {
         .insert(targets.map((member_id: string) => ({ session_id: sessionId, member_id })));
 
       if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+    }
+
+    // Push: ny eller oppdatert øving
+    if (targets.length) {
+      const { data: activityRow } = await supabase
+        .from("activities")
+        .select("id, title, name")
+        .eq("id", activity_id)
+        .maybeSingle();
+
+      const activityName =
+        S((activityRow as any)?.title) || S((activityRow as any)?.name) || "Follies";
+
+      const pushTitle = isNew
+        ? `Ny øving i ${activityName}`
+        : `Øving oppdatert i ${activityName}`;
+      const pushBody = `${title} • ${fmtOslo(start_at)}${location ? ` • ${location}` : ""}`;
+
+      await sendPushToMembers(supabase as any, {
+        memberIds: targets,
+        title: pushTitle,
+        body: pushBody,
+        data: {
+          type: isNew ? "session_created" : "session_updated",
+          sessionId,
+          activityId: activity_id,
+        },
+      }).catch(() => {});
     }
 
     return NextResponse.json({ ok: true, id: sessionId });

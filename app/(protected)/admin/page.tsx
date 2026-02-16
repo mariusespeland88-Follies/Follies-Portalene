@@ -304,6 +304,7 @@ export default function AdminPage() {
   // Handlingskort (admin-hub)
   const actions = [
     { id: "access", label: "Tilgang & roller", href: "/admin/access", desc: "Sett rettigheter pr. modul/tilbud." },
+    { id: "push", label: "Push-varsler", href: "/admin/push", desc: "Send push til medlemmer/publikum." },
     { id: "cleanup-ls", label: "Rydd spøkelses-aktiviteter (LS)", href: "/admin/cleanup-activities", desc: "Fjern lokale aktivitetsrester." },
     { id: "cleanup-db", label: "Rydd spøkelses-aktiviteter (DB)", href: "/admin/cleanup-db-activities", desc: "Slett uaktuelle aktiviteter i databasen." },
     { id: "activities", label: "Aktiviteter", href: "/activities", desc: "Se og administrer alle aktiviteter." },

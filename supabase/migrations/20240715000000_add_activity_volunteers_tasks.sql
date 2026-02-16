@@ -1,4 +1,4 @@
-// PATH: supabase/migrations/20240715000000_add_activity_volunteers_tasks.sql
+-- PATH: supabase/migrations/20240715000000_add_activity_volunteers_tasks.sql
 -- Add volunteers and tasks modules for activities
 
 create extension if not exists "pgcrypto";
@@ -33,7 +33,8 @@ create table if not exists public.activity_tasks (
 alter table public.activity_volunteers enable row level security;
 alter table public.activity_tasks enable row level security;
 
-create policy if not exists "Activity volunteers visible to authorized staff"
+drop policy if exists "Activity volunteers visible to authorized staff" on public.activity_volunteers;
+create policy "Activity volunteers visible to authorized staff"
   on public.activity_volunteers
   for select
   using (
@@ -45,7 +46,8 @@ create policy if not exists "Activity volunteers visible to authorized staff"
     )
   );
 
-create policy if not exists "Activity volunteers manageable by leaders"
+drop policy if exists "Activity volunteers manageable by leaders" on public.activity_volunteers;
+create policy "Activity volunteers manageable by leaders"
   on public.activity_volunteers
   for all
   using (
@@ -67,7 +69,8 @@ create policy if not exists "Activity volunteers manageable by leaders"
     )
   );
 
-create policy if not exists "Activity tasks visible to authorized staff"
+drop policy if exists "Activity tasks visible to authorized staff" on public.activity_tasks;
+create policy "Activity tasks visible to authorized staff"
   on public.activity_tasks
   for select
   using (
@@ -79,7 +82,8 @@ create policy if not exists "Activity tasks visible to authorized staff"
     )
   );
 
-create policy if not exists "Activity tasks manageable by leaders"
+drop policy if exists "Activity tasks manageable by leaders" on public.activity_tasks;
+create policy "Activity tasks manageable by leaders"
   on public.activity_tasks
   for all
   using (
@@ -100,4 +104,3 @@ create policy if not exists "Activity tasks manageable by leaders"
         and ar.role in ('leader','admin')
     )
   );
-

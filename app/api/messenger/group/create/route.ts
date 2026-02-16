@@ -1,17 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requireLeader } from "@/lib/authz/apiAuth";
+import { requireApiMember } from "@/lib/authz/apiAuth";
 
 export const runtime = "nodejs";
 
-function hasLeaderRole(roles: string[]) {
-  const r = roles.map((x) => String(x).toLowerCase());
-  return r.includes("leader") || r.includes("leder") || r.includes("staff") || r.includes("admin");
-}
-
 export async function POST(req: Request) {
   try {
-    const auth = await requireLeader(req);
+    const auth = await requireApiMember(req);
     if (!auth.ok) return auth.response;
 
     const body = await req.json().catch(() => ({}));
@@ -32,23 +27,6 @@ export async function POST(req: Request) {
     if (!url || !key) return NextResponse.json({ error: "Mangler SUPABASE env" }, { status: 500 });
 
     const sb = createClient(url, key);
-
-    // Sjekk lederrolle via member_roles (som usePermissions også bruker)
-    const { data: rows, error: rErr } = await sb
-      .from("members")
-      .select("id, member_roles(role)")
-      .eq("id", String(meMemberId))
-      .maybeSingle();
-
-    if (rErr) return NextResponse.json({ error: rErr.message }, { status: 500 });
-
-    const roles = Array.isArray((rows as any)?.member_roles)
-      ? (rows as any).member_roles.map((x: any) => String(x.role))
-      : [];
-
-    if (!hasLeaderRole(roles)) {
-      return NextResponse.json({ error: "Kun ledere kan opprette grupper." }, { status: 403 });
-    }
 
     const { data: created, error: cErr } = await sb
       .from("conversations")

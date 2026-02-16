@@ -1,4 +1,4 @@
-// PATH: supabase/migrations/20240708000000_add_activity_guests.sql
+-- PATH: supabase/migrations/20240708000000_add_activity_guests.sql
 -- Add guest & attendance support for activities
 
 create extension if not exists "pgcrypto";
@@ -50,7 +50,8 @@ alter table public.activity_guests enable row level security;
 alter table public.activity_guest_children enable row level security;
 
 -- Replace these policy helpers with project specific logic if needed
-create policy if not exists "Activity guests are visible to authorized staff"
+drop policy if exists "Activity guests are visible to authorized staff" on public.activity_guests;
+create policy "Activity guests are visible to authorized staff"
   on public.activity_guests
   for select
   using (
@@ -62,7 +63,8 @@ create policy if not exists "Activity guests are visible to authorized staff"
     )
   );
 
-create policy if not exists "Activity guests manageable by leaders"
+drop policy if exists "Activity guests manageable by leaders" on public.activity_guests;
+create policy "Activity guests manageable by leaders"
   on public.activity_guests
   for all
   using (
@@ -84,7 +86,8 @@ create policy if not exists "Activity guests manageable by leaders"
     )
   );
 
-create policy if not exists "Activity guest children visible to authorized staff"
+drop policy if exists "Activity guest children visible to authorized staff" on public.activity_guest_children;
+create policy "Activity guest children visible to authorized staff"
   on public.activity_guest_children
   for select
   using (
@@ -97,7 +100,8 @@ create policy if not exists "Activity guest children visible to authorized staff
     )
   );
 
-create policy if not exists "Activity guest children manageable by leaders"
+drop policy if exists "Activity guest children manageable by leaders" on public.activity_guest_children;
+create policy "Activity guest children manageable by leaders"
   on public.activity_guest_children
   for all
   using (

@@ -5,7 +5,7 @@
  * Ny Follies Messenger (portal)
  * - Bruker NY struktur: conversations / participants / messages / attachments
  * - DM opprettes via server-route (service role) for å sikre participants
- * - Grupper kan opprettes av ledere (UI + server-route)
+ * - Grupper kan opprettes av medlemmer og ledere
  * - Attachments er private (signed URLs via server routes)
  */
 
@@ -61,6 +61,11 @@ type AttachmentRow = {
   created_at: string;
 };
 
+type ConversationAttachmentRow = AttachmentRow & {
+  sender_member_id: string | null;
+  message_created_at: string | null;
+};
+
 function safeName(first?: string | null, last?: string | null) {
   const fn = String(first ?? "").trim();
   const ln = String(last ?? "").trim();
@@ -85,6 +90,15 @@ function fmtTime(iso: string) {
     return "—";
   }
 }
+function fmtDateTime(iso?: string | null) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("nb-NO");
+  } catch {
+    return "—";
+  }
+}
 function clampPreview(s: string, n = 52) {
   const t = (s || "").replace(/\s+/g, " ").trim();
   if (!t) return "—";
@@ -98,12 +112,13 @@ export default function MessagesClient() {
   const router = useRouter();
   const sp = useSearchParams();
 
-  const { isLeader, loading: permsLoading, meMemberId } = usePermissions();
+  const { loading: permsLoading, meMemberId } = usePermissions();
 
   // URL: /messages?memberId=...  -> ønsket DM
   const openMemberId = sp.get("memberId");
 
   const [booting, setBooting] = React.useState(true);
+  const [reloadTick, setReloadTick] = React.useState(0);
 
   const [me, setMe] = React.useState<{ id: string | null }>({ id: null });
 
@@ -121,6 +136,12 @@ export default function MessagesClient() {
   const [attachmentsByMessageId, setAttachmentsByMessageId] = React.useState<
     Record<string, AttachmentRow[]>
   >({});
+  const [conversationAttachments, setConversationAttachments] = React.useState<
+    ConversationAttachmentRow[]
+  >([]);
+  const [activeParticipants, setActiveParticipants] = React.useState<Participant[]>([]);
+  const [onlineIds, setOnlineIds] = React.useState<Set<string>>(new Set());
+  const [listQuery, setListQuery] = React.useState("");
 
   const [draft, setDraft] = React.useState("");
   const [sending, setSending] = React.useState(false);
@@ -164,6 +185,13 @@ export default function MessagesClient() {
     (async () => {
       setError(null);
       try {
+        // Sikrer at aktivitetsrom finnes og har riktig deltakerliste
+        await fetch("/api/messenger/activity/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }).catch(() => null);
+
         // 1) mine participant-rader
         const { data: pRows, error: pErr } = await supabase
           .from("conversation_participants")
@@ -271,7 +299,7 @@ export default function MessagesClient() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [booting, me.id]);
+  }, [booting, me.id, reloadTick]);
 
   /** ------------------- last inn messages for aktiv conversation ------------------- */
   React.useEffect(() => {
@@ -290,6 +318,23 @@ export default function MessagesClient() {
           } catch {}
           channelRef.current = null;
         }
+
+        const refreshActiveParticipants = async () => {
+          const { data: pRows, error: pErr } = await supabase
+            .from("conversation_participants")
+            .select("conversation_id, member_id, last_read_at, role")
+            .eq("conversation_id", activeConversationId);
+          if (pErr) throw pErr;
+          const rows = (pRows || []) as any[];
+          setActiveParticipants(
+            rows.map((r) => ({
+              conversation_id: String(r.conversation_id),
+              member_id: String(r.member_id),
+              last_read_at: r.last_read_at ? String(r.last_read_at) : null,
+              role: r.role ?? null,
+            }))
+          );
+        };
 
         // 1) messages
         const { data: rows, error: err } = await supabase
@@ -346,6 +391,43 @@ export default function MessagesClient() {
           setAttachmentsByMessageId({});
         }
 
+        const attListRes = await fetch("/api/messenger/attachments/list", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversationId: activeConversationId, limit: 600 }),
+        });
+        const attListJson = await attListRes.json().catch(() => ({} as AnyObj));
+        if (attListRes.ok) {
+          const items = Array.isArray(attListJson?.items) ? attListJson.items : [];
+          setConversationAttachments(
+            items.map((a: AnyObj) => ({
+              id: String(a.id || ""),
+              message_id: String(a.message_id || ""),
+              storage_path: String(a.storage_path || ""),
+              file_name: String(a.file_name || ""),
+              mime_type: a.mime_type ?? null,
+              file_size: typeof a.file_size === "number" ? a.file_size : null,
+              image_width: typeof a.image_width === "number" ? a.image_width : null,
+              image_height: typeof a.image_height === "number" ? a.image_height : null,
+              created_at: String(a.created_at || a.message_created_at || ""),
+              sender_member_id: a.sender_member_id ? String(a.sender_member_id) : null,
+              message_created_at: a.message_created_at ? String(a.message_created_at) : null,
+            }))
+          );
+        } else {
+          setConversationAttachments([]);
+        }
+
+        // 2b) participants + read status for aktiv samtale
+        await refreshActiveParticipants();
+
+        // 2c) mark as read for current user
+        await supabase
+          .from("conversation_participants")
+          .update({ last_read_at: new Date().toISOString() })
+          .eq("conversation_id", activeConversationId)
+          .eq("member_id", me.id);
+
         // 3) realtime subscribe (kun inserts)
         const ch = supabase
           .channel(`conv:${activeConversationId}`)
@@ -357,7 +439,7 @@ export default function MessagesClient() {
               table: "conversation_messages",
               filter: `conversation_id=eq.${activeConversationId}`,
             },
-            (payload) => {
+            async (payload) => {
               const m = payload.new as any;
               setMessages((prev) => {
                 const id = String(m.id);
@@ -373,6 +455,18 @@ export default function MessagesClient() {
                   },
                 ];
               });
+
+              // Mark incoming as read when chat is open
+              if (String(m.sender_member_id) !== String(me.id)) {
+                await supabase
+                  .from("conversation_participants")
+                  .update({ last_read_at: new Date().toISOString() })
+                  .eq("conversation_id", activeConversationId)
+                  .eq("member_id", me.id);
+                try {
+                  await refreshActiveParticipants();
+                } catch {}
+              }
             }
           )
           .subscribe();
@@ -400,7 +494,7 @@ export default function MessagesClient() {
 
   // Vi trenger participants for å finne motpart i DM:
   const [allParticipants, setAllParticipants] = React.useState<
-    { conversation_id: string; member_id: string }[]
+    { conversation_id: string; member_id: string; last_read_at: string | null }[]
   >([]);
 
   React.useEffect(() => {
@@ -413,7 +507,7 @@ export default function MessagesClient() {
         const ids = conversations.map((c) => c.id);
         const { data, error } = await supabase
           .from("conversation_participants")
-          .select("conversation_id, member_id")
+          .select("conversation_id, member_id, last_read_at")
           .in("conversation_id", ids);
         if (!alive) return;
         if (error) throw error;
@@ -426,6 +520,43 @@ export default function MessagesClient() {
       alive = false;
     };
   }, [me.id, conversations, supabase]);
+
+  React.useEffect(() => {
+    if (!me.id || !activeConversationId) return;
+
+    const ch = supabase.channel(`presence:${activeConversationId}`, {
+      config: { presence: { key: me.id } },
+    });
+
+    const syncPresence = () => {
+      const state = (ch.presenceState?.() ?? {}) as Record<string, any[]>;
+      const ids = new Set<string>();
+      for (const [key, values] of Object.entries(state)) {
+        if (!Array.isArray(values) || values.length === 0) continue;
+        const first = values[0] as any;
+        const id = String(first?.member_id ?? key).trim();
+        if (id) ids.add(id);
+      }
+      setOnlineIds(ids);
+    };
+
+    ch.on("presence", { event: "sync" }, syncPresence)
+      .on("presence", { event: "join" }, syncPresence)
+      .on("presence", { event: "leave" }, syncPresence)
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          try {
+            await ch.track({ member_id: me.id, at: new Date().toISOString() });
+          } catch {}
+        }
+      });
+
+    return () => {
+      try {
+        supabase.removeChannel(ch);
+      } catch {}
+    };
+  }, [activeConversationId, me.id, supabase]);
 
   function displayTitle(c: Conversation): { title: string; peerId?: string } {
     if (c.type !== "dm") {
@@ -449,17 +580,41 @@ export default function MessagesClient() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error || "Kunne ikke opprette DM.");
-      const cid = String(json?.conversationId || "");
+      const cid = String(json?.conversationId ?? json?.conversation_id ?? "");
       if (!cid) throw new Error("Mangler conversationId");
-      // refresh list
-      setTimeout(() => {
-        // trigger reload
-        setBooting((x) => x);
-      }, 10);
+      setConversations((prev) => {
+        if (prev.some((c) => c.id === cid)) return prev;
+        return [
+          {
+            id: cid,
+            type: "dm",
+            title: null,
+            activity_id: null,
+            created_at: new Date().toISOString(),
+          },
+          ...prev,
+        ];
+      });
       return cid;
     } catch (e: any) {
       setError(e?.message || "Kunne ikke opprette DM.");
       return null;
+    }
+  }
+
+  async function notifyMessagePush(messageId: string) {
+    if (!activeConversationId) return;
+    try {
+      await fetch("/api/messenger/messages/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: activeConversationId,
+          messageId,
+        }),
+      });
+    } catch {
+      // Push er best effort.
     }
   }
 
@@ -472,14 +627,20 @@ export default function MessagesClient() {
     setSending(true);
     setError(null);
     try {
-      const { error } = await supabase.from("conversation_messages").insert({
-        conversation_id: activeConversationId,
-        sender_member_id: me.id,
-        body: text,
-      });
+      const { data: inserted, error } = await supabase
+        .from("conversation_messages")
+        .insert({
+          conversation_id: activeConversationId,
+          sender_member_id: me.id,
+          body: text,
+        })
+        .select("id")
+        .single();
       if (error) throw error;
       setDraft("");
       setEmojiOpen(false);
+      const messageId = String((inserted as AnyObj)?.id ?? "").trim();
+      if (messageId) void notifyMessagePush(messageId);
     } catch (e: any) {
       console.error(e);
       setError(e?.message || "Kunne ikke sende melding.");
@@ -556,9 +717,11 @@ export default function MessagesClient() {
       const j2 = await res2.json().catch(() => ({}));
       if (!res2.ok) throw new Error(j2?.error || "Kunne ikke registrere vedlegg.");
 
+      void notifyMessagePush(messageId);
+
       // 5) refresh attachments
       setTimeout(() => {
-        setActiveConversationId((x) => x); // trigger effect reload
+        setReloadTick((x) => x + 1);
       }, 50);
     } catch (e: any) {
       console.error(e);
@@ -573,21 +736,66 @@ export default function MessagesClient() {
     else imgRef.current?.click();
   }
 
-  /** ------------------- group create (leaders only) ------------------- */
+  /** ------------------- group create ------------------- */
   const [groupOpen, setGroupOpen] = React.useState(false);
   const [groupTitle, setGroupTitle] = React.useState("");
   const [groupPick, setGroupPick] = React.useState<Record<string, boolean>>({});
   const [groupQuery, setGroupQuery] = React.useState("");
+  const [groupSearchRows, setGroupSearchRows] = React.useState<MemberLite[]>([]);
+  const [attachmentsOpen, setAttachmentsOpen] = React.useState(false);
 
   const memberList = React.useMemo(() => Object.values(membersById), [membersById]);
+  React.useEffect(() => {
+    if (!groupOpen) return;
+    const q = groupQuery.trim();
+    if (!q) {
+      setGroupSearchRows([]);
+      return;
+    }
+
+    let alive = true;
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/messenger/members/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ q, limit: 60 }),
+        });
+        const json = await res.json().catch(() => ({} as AnyObj));
+        if (!alive || !res.ok) {
+          if (alive) setGroupSearchRows([]);
+          return;
+        }
+        const items = Array.isArray(json?.items) ? json.items : [];
+        setGroupSearchRows(
+          items.map((m: AnyObj) => ({
+            id: String(m.id || ""),
+            name: String(m.name || "Ukjent"),
+            email: m.email ?? null,
+            avatar_url: m.avatar_url ?? null,
+          }))
+        );
+      } catch {
+        if (alive) setGroupSearchRows([]);
+      }
+    }, 220);
+
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [groupOpen, groupQuery]);
+
   const filteredMembers = React.useMemo(() => {
     const q = groupQuery.trim().toLowerCase();
-    const base = memberList.filter((m) => m.id !== me.id);
-    if (!q) return base.sort((a, b) => a.name.localeCompare(b.name, "nb"));
-    return base
+    const local = memberList.filter((m) => m.id !== me.id);
+    if (!q) return local.sort((a, b) => a.name.localeCompare(b.name, "nb"));
+    const remote = groupSearchRows.filter((m) => m.id !== me.id);
+    if (remote.length > 0) return remote.sort((a, b) => a.name.localeCompare(b.name, "nb"));
+    return local
       .filter((m) => m.name.toLowerCase().includes(q) || (m.email || "").toLowerCase().includes(q))
       .sort((a, b) => a.name.localeCompare(b.name, "nb"));
-  }, [memberList, groupQuery, me.id]);
+  }, [memberList, groupQuery, groupSearchRows, me.id]);
 
   async function createGroup() {
     if (!me.id) return;
@@ -616,17 +824,14 @@ export default function MessagesClient() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error || "Kunne ikke opprette gruppe.");
-      const cid = String(json?.conversationId || "");
+      const cid = String(json?.conversationId ?? json?.conversation_id ?? "");
       if (!cid) throw new Error("Mangler conversationId.");
       setGroupOpen(false);
       setGroupTitle("");
       setGroupPick({});
       setActiveConversationId(cid);
 
-      // reload list
-      setTimeout(() => {
-        router.refresh();
-      }, 50);
+      setReloadTick((x) => x + 1);
     } catch (e: any) {
       setError(e?.message || "Kunne ikke opprette gruppe.");
     } finally {
@@ -650,6 +855,47 @@ export default function MessagesClient() {
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
   }, [conversations]);
+  const filteredConversations = React.useMemo(() => {
+    const q = listQuery.trim().toLowerCase();
+    if (!q) return sortedConversations;
+    return sortedConversations.filter((c) => {
+      const title = displayTitle(c).title.toLowerCase();
+      if (title.includes(q)) return true;
+      if (c.type === "activity" && "aktivitet aktivitetsrom".includes(q)) return true;
+      if (c.type === "group" && "gruppe".includes(q)) return true;
+      if (c.type === "dm" && "privat".includes(q)) return true;
+      return false;
+    });
+  }, [listQuery, sortedConversations, allParticipants, membersById, me.id]);
+
+  const activeInfo = React.useMemo(
+    () => (activeConv ? displayTitle(activeConv) : null),
+    [activeConv, allParticipants, membersById, me.id]
+  );
+  const activePeerId = activeInfo?.peerId ?? null;
+  const activePeerParticipant = activePeerId
+    ? activeParticipants.find((p) => p.member_id === activePeerId) || null
+    : null;
+  const activePeerOnline = activePeerId ? onlineIds.has(activePeerId) : false;
+  const activeAttachmentList = React.useMemo(() => {
+    if (conversationAttachments.length) return conversationAttachments;
+    const flat: ConversationAttachmentRow[] = [];
+    for (const m of messages) {
+      const atts = attachmentsByMessageId[m.id] || [];
+      for (const a of atts) {
+        flat.push({
+          ...a,
+          sender_member_id: m.sender_member_id,
+          message_created_at: m.created_at,
+        });
+      }
+    }
+    return flat.sort(
+      (a, b) =>
+        new Date(b.message_created_at || b.created_at).getTime() -
+        new Date(a.message_created_at || a.created_at).getTime()
+    );
+  }, [conversationAttachments, messages, attachmentsByMessageId]);
 
   /** ------------------- render ------------------- */
   if (booting || permsLoading) {
@@ -682,14 +928,12 @@ export default function MessagesClient() {
         </div>
 
         <div className="flex items-center gap-2">
-          {isLeader ? (
-            <button
-              onClick={() => setGroupOpen(true)}
-              className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
-            >
-              + Ny gruppe
-            </button>
-          ) : null}
+          <button
+            onClick={() => setGroupOpen(true)}
+            className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
+          >
+            + Ny gruppe
+          </button>
 
           <Link
             href="/members"
@@ -714,26 +958,27 @@ export default function MessagesClient() {
               <div className="flex items-center justify-between">
                 <div className="text-sm font-semibold">Samtaler</div>
                 <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-red-600 ring-1 ring-red-200">
-                  {sortedConversations.length}
+                  {filteredConversations.length}
                 </span>
               </div>
               <div className="mt-2 rounded-full border border-neutral-200 bg-white px-3 py-2 text-sm">
                 <input
-                  placeholder="Søk (kommer snart)"
+                  placeholder="Søk samtaler"
                   className="w-full bg-transparent outline-none placeholder:text-neutral-400"
-                  disabled
+                  value={listQuery}
+                  onChange={(e) => setListQuery(e.target.value)}
                 />
               </div>
             </div>
 
             <div className="max-h-[70vh] overflow-y-auto">
-              {sortedConversations.length === 0 ? (
+              {filteredConversations.length === 0 ? (
                 <div className="p-4 text-sm text-neutral-700">
                   Ingen samtaler ennå. Gå til et medlem og trykk <span className="font-semibold">Messenger</span>.
                 </div>
               ) : (
                 <ul className="divide-y divide-neutral-200">
-                  {sortedConversations.map((c) => {
+                  {filteredConversations.map((c) => {
                     const active = c.id === activeConversationId;
                     const info = displayTitle(c);
                     const peer = info.peerId ? membersById[info.peerId] : null;
@@ -792,26 +1037,41 @@ export default function MessagesClient() {
             <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3">
               <div>
                 <div className="text-sm font-semibold text-neutral-900">
-                  {activeConv ? displayTitle(activeConv).title : "Velg en samtale"}
+                  {activeInfo ? activeInfo.title : "Velg en samtale"}
                 </div>
                 <div className="text-xs text-neutral-600">
-                  {activeConv ? (activeConv.type === "dm" ? "Privat" : activeConv.type === "group" ? "Gruppe" : "Aktivitet") : "—"}
+                  {!activeConv
+                    ? "—"
+                    : activeConv.type === "dm"
+                    ? activePeerOnline
+                      ? "Privat · Pålogget nå"
+                      : activePeerParticipant?.last_read_at
+                      ? `Privat · sist lest ${fmtDateTime(activePeerParticipant.last_read_at)}`
+                      : "Privat · Frakoblet"
+                    : activeConv.type === "group"
+                    ? "Gruppe"
+                    : "Aktivitet"}
                 </div>
               </div>
 
-              {activeConv?.type === "dm" ? (
-                (() => {
-                  const peerId = displayTitle(activeConv).peerId;
-                  return peerId ? (
-                    <Link
-                      href={`/members/${encodeURIComponent(peerId)}`}
-                      className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-100"
-                    >
-                      Åpne medlem
-                    </Link>
-                  ) : null;
-                })()
-              ) : null}
+              <div className="flex items-center gap-2">
+                {activeConversationId ? (
+                  <button
+                    onClick={() => setAttachmentsOpen(true)}
+                    className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-100"
+                  >
+                    Vedlegg ({activeAttachmentList.length})
+                  </button>
+                ) : null}
+                {activeConv?.type === "dm" && activePeerId ? (
+                  <Link
+                    href={`/members/${encodeURIComponent(activePeerId)}`}
+                    className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-100"
+                  >
+                    Åpne medlem
+                  </Link>
+                ) : null}
+              </div>
             </div>
 
             {/* messages */}
@@ -826,6 +1086,14 @@ export default function MessagesClient() {
                   const sender = membersById[m.sender_member_id];
                   const senderName = sender?.name || "Ukjent";
                   const atts = attachmentsByMessageId[m.id] || [];
+                  const seenByCount = mine
+                    ? activeParticipants.filter((p) => {
+                        if (p.member_id === me.id) return false;
+                        const readAt = p.last_read_at ? Date.parse(p.last_read_at) : 0;
+                        const sentAt = Date.parse(m.created_at) || 0;
+                        return readAt > 0 && sentAt > 0 && readAt >= sentAt;
+                      }).length
+                    : 0;
 
                   return (
                     <div key={m.id} className={"flex " + (mine ? "justify-end" : "justify-start")}>
@@ -859,6 +1127,7 @@ export default function MessagesClient() {
 
                         <div className={"text-[10px] text-neutral-500 " + (mine ? "text-right" : "text-left")}>
                           {new Date(m.created_at).toLocaleString("nb-NO")}
+                          {mine ? ` · ${seenByCount > 0 ? "Sett" : "Sendt"}` : ""}
                         </div>
                       </div>
                     </div>
@@ -976,7 +1245,7 @@ export default function MessagesClient() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-lg font-semibold text-neutral-900">Ny gruppe</div>
-                <div className="text-xs text-neutral-600">Kun ledere kan opprette grupper.</div>
+                <div className="text-xs text-neutral-600">Medlemmer og ledere kan opprette grupper.</div>
               </div>
               <button
                 className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-100"
@@ -1046,7 +1315,84 @@ export default function MessagesClient() {
           </div>
         </div>
       ) : null}
+
+      {attachmentsOpen ? (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setAttachmentsOpen(false)} />
+          <div className="absolute left-1/2 top-1/2 w-[min(760px,94vw)] -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-neutral-200 bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-neutral-900">Alle vedlegg</div>
+                <div className="text-xs text-neutral-600">
+                  {activeAttachmentList.length} filer i denne samtalen
+                </div>
+              </div>
+              <button
+                className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-100"
+                onClick={() => setAttachmentsOpen(false)}
+              >
+                Lukk
+              </button>
+            </div>
+
+            <div className="mt-4 max-h-[70vh] overflow-y-auto rounded-2xl border border-neutral-200">
+              {activeAttachmentList.length === 0 ? (
+                <div className="p-4 text-sm text-neutral-700">Ingen vedlegg i samtalen ennå.</div>
+              ) : (
+                <ul className="divide-y divide-neutral-200">
+                  {activeAttachmentList.map((a) => (
+                    <li key={a.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-neutral-900">{a.file_name}</div>
+                        <div className="truncate text-xs text-neutral-600">
+                          {a.mime_type || "fil"}
+                          {a.file_size ? ` · ${Math.round(a.file_size / 1024)} KB` : ""}
+                          {" · "}
+                          {fmtDateTime(a.message_created_at || a.created_at)}
+                        </div>
+                      </div>
+                      <AttachmentOpenButton storagePath={a.storage_path} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
+  );
+}
+
+function AttachmentOpenButton({ storagePath }: { storagePath: string }) {
+  const [busy, setBusy] = React.useState(false);
+
+  return (
+    <button
+      className="rounded-full border border-neutral-300 bg-white px-3 py-1 text-xs font-semibold text-neutral-800 hover:bg-neutral-100 disabled:opacity-60"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          const res = await fetch("/api/messenger/attachments/download-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ storagePath }),
+          });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(j?.error || "Kunne ikke hente lenke.");
+          const u = String(j?.signedUrl || "");
+          if (!u) throw new Error("Mangler signedUrl.");
+          window.open(u, "_blank");
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {busy ? "…" : "Åpne"}
+    </button>
   );
 }
 
