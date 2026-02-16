@@ -26,6 +26,7 @@ import GuestsTab from "./GuestsTab";
 import AttendanceTab from "./AttendanceTab";
 import VolunteersTab from "./VolunteersTab";
 import TasksTab from "./TasksTab";
+import WaitlistTab from "./WaitlistTab";
 
 type AnyObj = Record<string, any>;
 type Tab =
@@ -33,6 +34,7 @@ type Tab =
   | "deltakere"
   | "ledere"
   | "okter"
+  | "venteliste"
   | "filer"
   | "meldinger"
   | "gjester"
@@ -262,6 +264,7 @@ const ALL_TAB_KEYS: Tab[] = [
   "deltakere",
   "ledere",
   "okter",
+  "venteliste",
   "gjester",
   "innsjekk",
   "frivillige",
@@ -284,6 +287,8 @@ const TAB_SYNONYMS: Record<string, Tab> = {
   sessions: "okter",
   session: "okter",
   okter: "okter",
+  waitlist: "venteliste",
+  venteliste: "venteliste",
   files: "filer",
   file: "filer",
   documents: "filer",
@@ -327,6 +332,7 @@ function computeEnabledTabs(act: DbActivity | null): Tab[] {
     "meldinger",
   ];
   if (!act) return fallbackBase;
+  const isOffer = labelForType((act as any)?.type) === "Tilbud";
 
   const rawConfig = (act as any).tab_config as any;
   const validSet = new Set<Tab>(ALL_TAB_KEYS);
@@ -347,10 +353,14 @@ function computeEnabledTabs(act: DbActivity | null): Tab[] {
 
   if (cleaned.length) {
     if (!cleaned.includes("oversikt")) cleaned.unshift("oversikt");
+    if (isOffer && !cleaned.includes("venteliste")) cleaned.push("venteliste");
+    if (!isOffer) return cleaned.filter((key) => key !== "venteliste");
     return cleaned;
   }
 
-  const tabs = [...fallbackBase];
+  const tabs: Tab[] = ["oversikt", "deltakere", "ledere", "okter"];
+  if (isOffer) tabs.push("venteliste");
+  tabs.push("filer", "meldinger");
   if ((act as any).has_guests) tabs.push("gjester");
   if ((act as any).has_attendance) tabs.push("innsjekk");
   if ((act as any).has_volunteers) tabs.push("frivillige");
@@ -387,6 +397,7 @@ export default function ActivityDetailPage() {
   const showAttendanceTab = useMemo(() => Boolean((act as any)?.has_attendance), [act]);
   const showVolunteersTab = useMemo(() => Boolean((act as any)?.has_volunteers), [act]);
   const showTasksTab = useMemo(() => Boolean((act as any)?.has_tasks), [act]);
+  const showWaitlistTab = useMemo(() => labelForType((act as any)?.type) === "Tilbud", [act]);
 
   useEffect(() => {
     const next = computeEnabledTabs(act);
@@ -399,7 +410,8 @@ export default function ActivityDetailPage() {
     if (tab === "innsjekk" && !showAttendanceTab) setTab("oversikt");
     if (tab === "frivillige" && !showVolunteersTab) setTab("oversikt");
     if (tab === "oppgaver" && !showTasksTab) setTab("oversikt");
-  }, [showAttendanceTab, showGuestsTab, showTasksTab, showVolunteersTab, tab]);
+    if (tab === "venteliste" && !showWaitlistTab) setTab("oversikt");
+  }, [showAttendanceTab, showGuestsTab, showTasksTab, showVolunteersTab, showWaitlistTab, tab]);
 
   const reloadRoster = useCallback(
     async (activityId: string | null) => {
@@ -545,6 +557,7 @@ export default function ActivityDetailPage() {
     { key: "okter", label: "Økter" },
   ];
 
+  if (showWaitlistTab) allTabDefs.push({ key: "venteliste", label: "Venteliste" });
   if (showGuestsTab) allTabDefs.push({ key: "gjester", label: "Gjester" });
   if (showAttendanceTab) allTabDefs.push({ key: "innsjekk", label: "Innsjekk" });
   if (showVolunteersTab) allTabDefs.push({ key: "frivillige", label: "Frivillige" });
@@ -554,6 +567,7 @@ export default function ActivityDetailPage() {
   allTabDefs.push({ key: "meldinger", label: "Meldinger" });
 
   const isTabFeatureAvailable = (key: Tab): boolean => {
+    if (key === "venteliste") return showWaitlistTab;
     if (key === "gjester") return showGuestsTab;
     if (key === "innsjekk") return showAttendanceTab;
     if (key === "frivillige") return showVolunteersTab;
@@ -654,6 +668,19 @@ export default function ActivityDetailPage() {
 
             {tab === "ledere" && (
               <PeoplePanel title="Ledere" people={leaders} emphasize variant="leaders" busyId={busyId} onDemote={async (mid) => await setRole(mid, "participant")} />
+            )}
+
+            {tab === "venteliste" && showWaitlistTab && (
+              effectiveActivityDbId ? (
+                <WaitlistTab
+                  activityId={effectiveActivityDbId}
+                  onRosterChanged={async () => {
+                    await reloadRoster(effectiveActivityDbId);
+                  }}
+                />
+              ) : (
+                <MissingActivityDbIdNotice title="Venteliste" />
+              )
             )}
 
             {tab === "frivillige" && showVolunteersTab && (effectiveActivityDbId ? <VolunteersTab activityId={effectiveActivityDbId} /> : <MissingActivityDbIdNotice title="Frivillige" />)}

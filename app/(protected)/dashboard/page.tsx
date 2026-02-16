@@ -33,7 +33,6 @@ const ACTIVITIES_KEY = "follies.activities.v1";
 const CAL_V1 = "follies.calendar.v1";
 const CAL_FB = "follies.calendar";
 const REMINDERS_KEY = "follies.reminders.v1";
-const MESSAGES_KEY = "follies.messages.v1";
 const PERMS_KEY = "follies.perms.v1";
 
 // samme cover-store som resten av appen bruker
@@ -104,9 +103,6 @@ function readCalendar(): AnyObj[] {
 }
 function readReminders(): AnyObj[] {
   return parseJSON<AnyObj[]>(readLS(REMINDERS_KEY), []);
-}
-function readMessages(): AnyObj[] {
-  return parseJSON<AnyObj[]>(readLS(MESSAGES_KEY), []);
 }
 function readPerms(): AnyObj {
   return parseJSON<AnyObj>(readLS(PERMS_KEY), {});
@@ -281,15 +277,16 @@ export default function DashboardPage() {
   const [activities, setActivities] = React.useState<AnyObj[]>([]);
   const [calendar, setCalendar] = React.useState<AnyObj[]>([]);
   const [reminders, setReminders] = React.useState<AnyObj[]>([]);
-  const [messages, setMessages] = React.useState<AnyObj[]>([]);
   const [me, setMe] = React.useState<{
     id?: string;
     email?: string;
     member?: AnyObj | null;
   }>({});
-  const [msgOpen, setMsgOpen] = React.useState(false);
 
   const [myDbActivities, setMyDbActivities] = React.useState<AnyObj[]>([]);
+  const [myActivitiesStatus, setMyActivitiesStatus] = React.useState<
+    "idle" | "loading" | "ok" | "fail"
+  >("idle");
 
   // DB sessions
   const [dbSessions, setDbSessions] = React.useState<DbSession[]>([]);
@@ -303,13 +300,11 @@ export default function DashboardPage() {
     const acts = readActivities();
     const cal = readCalendar();
     const rem = readReminders();
-    const msgs = readMessages();
     const ident = getCurrentIdentity(ms);
     setMembers(ms);
     setActivities(acts);
     setCalendar(cal);
     setReminders(rem);
-    setMessages(msgs);
     setMe({ id: ident.id, email: ident.email, member: ident.member });
   }, []);
 
@@ -401,7 +396,10 @@ export default function DashboardPage() {
     let alive = true;
     (async () => {
       const email = (me.email || "").trim();
-      if (!email) return;
+      if (!email) {
+        setMyActivitiesStatus("idle");
+        return;
+      }
 
       const displayName =
         (me.member &&
@@ -415,15 +413,25 @@ export default function DashboardPage() {
       if (candidateActivityIds.length)
         qs.set("candidates", candidateActivityIds.join(","));
 
+      if (alive) setMyActivitiesStatus("loading");
       try {
-        const res = await fetch(`/api/dashboard/my-activities?${qs.toString()}`);
+        const res = await fetch(`/api/dashboard/my-activities?${qs.toString()}`, {
+          cache: "no-store",
+        });
         if (res.ok) {
           const j = await res.json();
           if (alive && Array.isArray(j?.activities)) {
             setMyDbActivities(j.activities);
+            setMyActivitiesStatus("ok");
+          } else if (alive) {
+            setMyActivitiesStatus("fail");
           }
+        } else if (alive) {
+          setMyActivitiesStatus("fail");
         }
-      } catch {}
+      } catch {
+        if (alive) setMyActivitiesStatus("fail");
+      }
     })();
     return () => {
       alive = false;
@@ -526,56 +534,6 @@ export default function DashboardPage() {
     return upcomingFromLS;
   }, [sessionsStatus, dbSessions, upcomingFromLS]);
 
-  const myMessages = React.useMemo(() => {
-    const base = messages;
-    if (!Array.isArray(base) || (!me.id && !me.email)) return [];
-    const mine = base
-      .filter((m) => {
-        const tid = toStr(
-          (m as any).to_member_id ??
-            (m as any).memberId ??
-            (m as any).toId ??
-            ""
-        );
-        const temail = toStr(
-          (m as any).to_email ?? (m as any).email ?? ""
-        )
-          .trim()
-          .toLowerCase();
-        const broadcast = !!((m as any).to_all || (m as any).broadcast);
-        const myId = (me.id || "").trim();
-        const myEmail = (me.email || "").trim().toLowerCase();
-        if (broadcast) return true;
-        if (myId && tid && tid === myId) return true;
-        if (myEmail && temail && temail === myEmail) return true;
-        return false;
-      })
-      .sort((a, b) => {
-        const ar = (a as any).read_at ? 1 : 0;
-        const br = (b as any).read_at ? 1 : 0;
-        if (ar !== br) return ar - br;
-        const at = new Date(
-          (a as any).created_at ||
-            (a as any).date ||
-            (a as any).sent_at ||
-            0
-        ).getTime();
-        const bt = new Date(
-          (b as any).created_at ||
-            (b as any).date ||
-            (b as any).sent_at ||
-            0
-        ).getTime();
-        return bt - at;
-      });
-    return mine;
-  }, [messages, me.id, me.email]);
-
-  const unreadCount = myMessages.reduce(
-    (n, m) => n + ((m as any).read_at ? 0 : 1),
-    0
-  );
-
   const name = me.member ? fullName(me.member) : "Velkommen";
   const email = me.member ? memberEmail(me.member) : me.email || "—";
   const mid = me.member
@@ -587,31 +545,10 @@ export default function DashboardPage() {
       )
     : "";
 
-  function markMessageRead(id: string) {
-    const all = Array.isArray(messages) ? messages.slice() : [];
-    const idx = all.findIndex(
-      (m) => String((m as any).id) === String(id)
-    );
-    if (idx >= 0) {
-      (all[idx] as any) = {
-        ...(all[idx] as any),
-        read_at: new Date().toISOString(),
-      };
-      setMessages(all);
-      writeLS(MESSAGES_KEY, all);
-    }
-  }
-  function markAllRead() {
-    const all = (Array.isArray(messages) ? messages.slice() : []).map(
-      (m) => ({
-        ...(m as any),
-        read_at:
-          (m as any).read_at || new Date().toISOString(),
-      })
-    );
-    setMessages(all);
-    writeLS(MESSAGES_KEY, all);
-  }
+  const isMyActivitiesLoading =
+    myActivitiesStatus === "loading" && myActivities.length === 0;
+  const isIdentityConnecting =
+    myActivitiesStatus === "idle" && !(me.id || "").trim() && !(me.email || "").trim();
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -627,29 +564,6 @@ export default function DashboardPage() {
               <div className="text-white">{email}</div>
             </div>
             <div className="flex items-center gap-2">
-              {/* Knapp som åpner beskjeder */}
-              <button
-                onClick={() => setMsgOpen(true)}
-                className="relative inline-flex items-center justify-center rounded-lg bg-white/95 text-black px-3.5 py-2 text-sm font-semibold shadow-sm hover:bg-white focus:outline-none focus:ring-2 focus:ring-red-600"
-                aria-label="Åpne beskjeder"
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <path d="M12 2a6 6 0 00-6 6v2.586l-.707 2.121A1 1 0 006.243 14h11.514a1 1 0 00.95-1.293L18 10.586V8a6 6 0 00-6-6zm0 20a3 3 0 002.995-2.824L15 19h-6a3 3 0 003 3z" />
-                </svg>
-                <span className="ml-2">Beskjeder</span>
-                {unreadCount > 0 && (
-                  <span className="absolute -top-2 -right-2 inline-flex items-center justify-center rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
-
               {mid ? (
                 <button
                   onClick={() =>
@@ -683,9 +597,11 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          {myActivities.length === 0 ? (
+          {isMyActivitiesLoading ? (
+            <div className="mt-3 text-gray-700">Laster aktiviteter…</div>
+          ) : myActivities.length === 0 ? (
             <div className="mt-3 text-gray-700">
-              Ingen aktiviteter funnet.
+              {isIdentityConnecting ? "Kobler til medlemsprofil…" : "Ingen aktiviteter funnet."}
             </div>
           ) : (
             <ul className="mt-3 divide-y">
@@ -876,132 +792,6 @@ export default function DashboardPage() {
           </button>
         </div>
       </section>
-
-      {/* ---------- Slide-over: Mine beskjeder ---------- */}
-      {msgOpen && (
-        <div className="fixed inset-0 z-50">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setMsgOpen(false)}
-          />
-          <div className="absolute right-0 top-0 h-full w-full sm:w-[420px] bg-white shadow-2xl ring-1 ring-black/10 flex flex-col">
-            <div className="p-4 border-b flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-black">
-                  Mine beskjeder
-                </h2>
-                {unreadCount > 0 ? (
-                  <div className="text-xs text-red-700 font-semibold mt-0.5">
-                    {unreadCount} ulest
-                    {unreadCount > 1 ? "e" : ""}
-                  </div>
-                ) : (
-                  <div className="text-xs text-gray-600 mt-0.5">
-                    Alle lest
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={markAllRead}
-                  className="inline-flex items-center justify-center rounded-md bg-black px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
-                >
-                  Marker alle som lest
-                </button>
-                <button
-                  onClick={() => setMsgOpen(false)}
-                  className="inline-flex items-center justify-center rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
-                  aria-label="Lukk"
-                >
-                  Lukk
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto">
-              {myMessages.length === 0 ? (
-                <div className="p-4 text-gray-700">
-                  Ingen beskjeder.
-                </div>
-              ) : (
-                <ul className="divide-y">
-                  {myMessages.map((m) => {
-                    const when = new Date(
-                      (m as any).created_at ||
-                        (m as any).sent_at ||
-                        (m as any).date ||
-                        Date.now()
-                    );
-                    const unread = !(m as any).read_at;
-                    const activity =
-                      (m as any).activity_id ||
-                      (m as any).activityId;
-                    return (
-                      <li key={(m as any).id} className="p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-xs text-gray-600">
-                              {when.toLocaleString("nb-NO")}
-                            </div>
-                            <div
-                              className={`mt-0.5 font-medium ${
-                                unread
-                                  ? "text-black"
-                                  : "text-gray-800"
-                              }`}
-                            >
-                              {(m as any).title ||
-                                (m as any).subject ||
-                                "Beskjed"}
-                            </div>
-                            {((m as any).body ||
-                              (m as any).message) && (
-                              <div className="mt-1 text-sm text-gray-700 whitespace-pre-line max-h-28 overflow-y-auto">
-                                {(m as any).body ||
-                                  (m as any).message}
-                              </div>
-                            )}
-                          </div>
-                          {unread ? (
-                            <button
-                              onClick={() =>
-                                markMessageRead(
-                                  String((m as any).id)
-                                )
-                              }
-                              className="shrink-0 inline-flex items-center justify-center rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100"
-                            >
-                              Marker som lest
-                            </button>
-                          ) : null}
-                        </div>
-
-                        {activity ? (
-                          <div className="mt-3">
-                            <button
-                              onClick={() => {
-                                setMsgOpen(false);
-                                router.push(
-                                  `/activities/${encodeURIComponent(
-                                    toStr(activity)
-                                  )}`
-                                );
-                              }}
-                              className="inline-flex items-center justify-center rounded-md bg-black px-3.5 py-2 text-sm font-semibold text-white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
-                            >
-                              Gå til aktivitet
-                            </button>
-                          </div>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
