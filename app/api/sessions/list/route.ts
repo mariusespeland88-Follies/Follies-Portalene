@@ -1,6 +1,7 @@
 // PATH: app/api/sessions/list/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { requireApiUser } from "@/lib/authz/apiAuth";
 
 const S = (v: any) => String(v ?? "").trim();
 
@@ -9,6 +10,9 @@ export async function GET(req: Request) {
   const debug = S(url.searchParams.get("debug")) === "1";
 
   try {
+    const auth = await requireApiUser(req);
+    if (!auth.ok) return auth.response;
+
     const supabase = getSupabaseServiceRoleClient();
     if (!supabase) {
       return NextResponse.json(

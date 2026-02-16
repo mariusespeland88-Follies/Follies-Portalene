@@ -1,6 +1,7 @@
 // PATH: app/api/admin/invite-member/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdmin } from "@/lib/authz/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -23,6 +24,9 @@ const supabaseAdmin =
     : null;
 
 export async function POST(req: Request) {
+  const auth = await requireAdmin(req);
+  if (!auth.ok) return auth.response;
+
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !supabaseAdmin) {
     return NextResponse.json(
       { error: "Supabase configuration is missing." },

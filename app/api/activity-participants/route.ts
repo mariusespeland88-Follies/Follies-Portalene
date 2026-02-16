@@ -1,17 +1,21 @@
 // PATH: app/api/activity-participants/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireApiUser } from "@/lib/authz/apiAuth";
 
 /**
  * Returnerer { participants: { id, name }[] } for gitt ?id=<activity_id>
  * Leser fra Supabase på server (Service Role key via server-env).
  * Forventer tabeller:
- *  - enrollment (member_id, activity_id, status?) — aktive rader gir medlemskap
- *  - member (id, first_name, last_name, archived)
+ *  - enrollments (member_id, activity_id, role?)
+ *  - members (id, first_name, last_name, archived)
  */
 
 export async function GET(request: Request) {
   try {
+    const auth = await requireApiUser(request);
+    if (!auth.ok) return auth.response;
+
     const { searchParams } = new URL(request.url);
     const activityId = searchParams.get("id");
     if (!activityId) {
@@ -23,20 +27,32 @@ export async function GET(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY! // server only
     );
 
-    // Hent aktive enrollments for denne aktiviteten
-    // NB: Tilpass evt. hvor "status" brukes; her antar vi null eller "active" er gyldig.
     const { data: rows, error } = await supabase
-      .from("enrollment")
-      .select("member:member(id, first_name, last_name, archived)")
+      .from("enrollments")
+      .select("member_id")
       .eq("activity_id", activityId);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    const memberIds = Array.from(
+      new Set((rows ?? []).map((r: any) => String(r?.member_id ?? "")).filter(Boolean))
+    );
+
+    if (memberIds.length === 0) return NextResponse.json({ participants: [] });
+
+    const { data: members, error: mErr } = await supabase
+      .from("members")
+      .select("id, first_name, last_name, archived")
+      .in("id", memberIds);
+
+    if (mErr) {
+      return NextResponse.json({ error: mErr.message }, { status: 500 });
+    }
+
     const participants =
-      (rows ?? [])
-        .map((r: any) => r.member)
+      (members ?? [])
         .filter((m: any) => m && !m.archived)
         .map((m: any) => ({
           id: String(m.id),

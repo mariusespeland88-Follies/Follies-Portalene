@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
+import { requireAdmin } from "@/lib/authz/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -21,6 +22,9 @@ const supabaseAdmin =
     : null;
 
 export async function POST(req: Request) {
+  const auth = await requireAdmin(req);
+  if (!auth.ok) return auth.response;
+
   if (!supabaseAdmin || !SMTP_HOST || !SMTP_PORT) {
     return NextResponse.json(
       { error: "Supabase or SMTP configuration missing." },

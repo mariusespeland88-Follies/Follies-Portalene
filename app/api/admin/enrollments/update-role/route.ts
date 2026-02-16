@@ -1,11 +1,15 @@
 // PATH: app/api/admin/enrollments/update-role/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/authz/apiAuth";
 
 export const runtime = "nodejs"; // kjør på Node (bra for service-role)
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
+
     const body = await req.json();
     const activityId = String(body.activityId || "");
     const memberId = String(body.memberId || "");
