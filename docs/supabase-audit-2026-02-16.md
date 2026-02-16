@@ -52,6 +52,10 @@
 6. Review `import_julaften_2025`:
 - keep only if still used for reporting/history
 
+## SQL Plan
+- Non-destructive SQL runbook:
+  - `docs/supabase-safe-cleanup-plan.sql`
+
 ## Notes
 - This round is non-destructive: no table drops, no destructive SQL.
 - Goal is stability between portal and mobile first, cleanup second.
