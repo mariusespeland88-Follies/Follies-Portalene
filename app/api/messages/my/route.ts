@@ -1,25 +1,16 @@
 // PATH: app/api/messages/my/route.ts
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-
-import { createRouteHandlerClient } from "@/lib/supabase/handlers";
+import { requireApiUser } from "@/lib/authz/apiAuth";
 import getServiceRoleClient from "@/lib/supabase/service";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const cookieStore = cookies;
-    const supabase = createRouteHandlerClient({ cookies: cookieStore });
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    const auth = await requireApiUser(req);
+    if (!auth.ok) return auth.response;
 
-    if (!session) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-    }
-
-    const email = (session.user.email || "").trim();
+    const email = String(auth.user.email || "").trim();
     if (!email) {
       return NextResponse.json({ ok: true, messages: [] });
     }

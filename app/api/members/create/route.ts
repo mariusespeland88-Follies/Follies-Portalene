@@ -1,13 +1,16 @@
 // PATH: app/api/members/create/route.ts
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createRouteHandlerClient } from "@/lib/supabase/handlers";
+import { requireLeader } from "@/lib/authz/apiAuth";
+import { getServiceRoleClient } from "@/lib/supabase/service";
 
 function toNull(s: any) {
   return typeof s === "string" && s.trim() === "" ? null : s;
 }
 
 export async function POST(req: Request) {
+  const auth = await requireLeader(req);
+  if (!auth.ok) return auth.response;
+
   let body: any = {};
   try {
     body = await req.json();
@@ -43,7 +46,7 @@ export async function POST(req: Request) {
     if (insertable[k] === undefined) delete insertable[k];
   }
 
-  const supabase = createRouteHandlerClient({ cookies });
+  const supabase = getServiceRoleClient();
 
   const { data, error } = await supabase
     .from("members")

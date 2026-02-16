@@ -1,32 +1,23 @@
 // PATH: app/api/members/[id]/delete/route.ts
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-
-import { createRouteHandlerClient } from "@/lib/supabase/handlers";
+import { requireAdmin } from "@/lib/authz/apiAuth";
 import getServiceRoleClient from "@/lib/supabase/service";
 
 export const runtime = "nodejs";
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requireAdmin(req);
+  if (!auth.ok) return auth.response;
+
   const memberId = params?.id ? String(params.id) : "";
   if (!memberId) {
     return NextResponse.json({ ok: false, error: "Mangler id" }, { status: 400 });
   }
 
   try {
-    const cookieStore = cookies;
-    const supabase = createRouteHandlerClient({ cookies: cookieStore });
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-    }
-
     const admin = getServiceRoleClient();
 
     try {
