@@ -1,6 +1,7 @@
 // PATH: app/api/activity-volunteers/[id]/route.ts
 import { NextResponse } from "next/server";
 
+import { requireLeader } from "@/lib/authz/apiAuth";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 function mapVolunteer(row: any) {
@@ -25,6 +26,9 @@ function mapVolunteer(row: any) {
 }
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+  const auth = await requireLeader(request);
+  if (!auth.ok) return auth.response;
+
   const id = params?.id;
   if (!id) {
     return NextResponse.json({ error: "Mangler id" }, { status: 400 });
@@ -68,7 +72,10 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   return NextResponse.json(mapVolunteer(data));
 }
 
-export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+  const auth = await requireLeader(request);
+  if (!auth.ok) return auth.response;
+
   const id = params?.id;
   if (!id) {
     return NextResponse.json({ error: "Mangler id" }, { status: 400 });

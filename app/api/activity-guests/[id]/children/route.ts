@@ -1,11 +1,15 @@
 // PATH: app/api/activity-guests/[id]/children/route.ts
 import { NextResponse } from "next/server";
+import { requireLeader } from "@/lib/authz/apiAuth";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requireLeader(request);
+  if (!auth.ok) return auth.response;
+
   const guestId = params?.id;
   if (!guestId) {
     return NextResponse.json({ error: "Mangler id" }, { status: 400 });

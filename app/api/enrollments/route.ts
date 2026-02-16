@@ -1,20 +1,38 @@
-// PATH: app/api/enrollments/route.ts
-import { NextResponse } from 'next/server';
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-async function sb(path: string) {
-  return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
-  });
-}
+import { NextResponse } from "next/server";
+import { requireApiMember } from "@/lib/authz/apiAuth";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export async function GET(req: Request) {
+  const auth = await requireApiMember(req);
+  if (!auth.ok) return auth.response;
+
   const { searchParams } = new URL(req.url);
-  const member = searchParams.get('member');
-  if (!member) return NextResponse.json([], { status: 200 });
-  const res = await sb(`enrollment?select=activity_id&member_id=eq.${member}`);
-  if (!res.ok) return NextResponse.json({ error: await res.text() }, { status: res.status });
-  return NextResponse.json(await res.json());
+  const requestedMember = String(searchParams.get("member") || "").trim();
+  const memberId = auth.memberId;
+  if (!memberId) {
+    return NextResponse.json({ error: "Fant ikke medlem" }, { status: 403 });
+  }
+
+  if (requestedMember && requestedMember !== memberId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const db = getSupabaseServiceRoleClient();
+  if (!db) {
+    return NextResponse.json(
+      { error: "Supabase er ikke konfigurert" },
+      { status: 500 }
+    );
+  }
+
+  const { data, error } = await db
+    .from("enrollments")
+    .select("activity_id")
+    .eq("member_id", memberId);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json(data || []);
 }

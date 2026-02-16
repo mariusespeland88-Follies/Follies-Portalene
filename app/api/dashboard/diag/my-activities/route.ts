@@ -1,10 +1,14 @@
 // PATH: app/api/dashboard/diag/my-activities/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/authz/apiAuth";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
+  const auth = await requireAdmin(req);
+  if (!auth.ok) return auth.response;
+
   const url = new URL(req.url, "http://localhost"); // FIX: robust parsing
   const email = (url.searchParams.get("email") || "").trim();
   const displayName = (url.searchParams.get("displayName") || "").trim();

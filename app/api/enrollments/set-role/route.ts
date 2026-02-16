@@ -2,6 +2,7 @@
 // app/api/enrollments/set-role/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdmin } from "@/lib/authz/apiAuth";
 
 export const runtime = "nodejs";        // kjør på server
 export const dynamic = "force-dynamic"; // ingen cache
@@ -20,6 +21,9 @@ function normRole(input: string | null): "leader" | "participant" {
 
 export async function GET(req: Request) {
   try {
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
+
     const supabase = srv();
     const url = new URL(req.url);
     const memberId = url.searchParams.get("member");
@@ -47,6 +51,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
+
     const supabase = srv();
     const body = (await req.json()) as { member: string; activity: string; role?: string | null };
     const memberId = body?.member;

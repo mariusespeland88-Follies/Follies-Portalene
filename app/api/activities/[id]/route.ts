@@ -1,6 +1,7 @@
 // PATH: app/api/activities/[id]/route.ts
 import { NextResponse } from "next/server";
 
+import { requireApiUser, requireLeader } from "@/lib/authz/apiAuth";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 const ACTIVITY_COLUMNS = [
@@ -59,6 +60,9 @@ async function fetchActivityByIdentifier(
 }
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
+  const auth = await requireApiUser(_req);
+  if (!auth.ok) return auth.response;
+
   const identifier = params.id;
   if (!identifier) {
     return NextResponse.json({ error: "Mangler aktivitets-ID" }, { status: 400 });
@@ -73,6 +77,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  const auth = await requireLeader(req);
+  if (!auth.ok) return auth.response;
+
   const identifier = params.id;
   if (!identifier) {
     return NextResponse.json({ error: "Mangler aktivitets-ID" }, { status: 400 });
@@ -135,6 +142,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  const auth = await requireLeader(_req);
+  if (!auth.ok) return auth.response;
+
   const identifier = params.id;
   if (!identifier) {
     return NextResponse.json({ error: "Mangler aktivitets-ID" }, { status: 400 });

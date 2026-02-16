@@ -1,8 +1,12 @@
 // PATH: app/api/programs/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { requireApiUser, requireLeader } from "@/lib/authz/apiAuth";
 import { getSupabaseServiceRoleClient } from '@/lib/supabase/server';
 
-export async function GET() {
+export async function GET(req: Request) {
+  const auth = await requireApiUser(req);
+  if (!auth.ok) return auth.response;
+
   const supabase = getSupabaseServiceRoleClient();
   if (!supabase) {
     return NextResponse.json([], { status: 200 });
@@ -13,6 +17,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireLeader(req);
+  if (!auth.ok) return auth.response;
+
   const body = await req.json();
   const supabase = getSupabaseServiceRoleClient();
   if (!supabase) {

@@ -1,6 +1,7 @@
 // PATH: app/api/activity-files/[fileId]/route.ts
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { requireLeader } from "@/lib/authz/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -31,6 +32,9 @@ async function writeManifest(supabase: SupabaseClient, activityId: string, items
 
 export async function PATCH(req: Request, { params }: { params: { fileId: string } }) {
   try {
+    const auth = await requireLeader(req);
+    if (!auth.ok) return auth.response;
+
     const { searchParams } = new URL(req.url);
     const activityId = searchParams.get("activityId");
     if (!activityId) return NextResponse.json({ error: "Mangler activityId" }, { status: 400 });
@@ -61,6 +65,9 @@ export async function PATCH(req: Request, { params }: { params: { fileId: string
 
 export async function DELETE(req: Request, { params }: { params: { fileId: string } }) {
   try {
+    const auth = await requireLeader(req);
+    if (!auth.ok) return auth.response;
+
     const { searchParams } = new URL(req.url);
     const activityId = searchParams.get("activityId");
     if (!activityId) return NextResponse.json({ error: "Mangler activityId" }, { status: 400 });

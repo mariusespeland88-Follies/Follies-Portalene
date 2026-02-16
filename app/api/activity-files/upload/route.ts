@@ -1,6 +1,7 @@
 // PATH: app/api/activity-files/upload/route.ts
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { requireLeader } from "@/lib/authz/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -43,6 +44,9 @@ function safeName(name: string) {
 
 export async function POST(req: Request) {
   try {
+    const auth = await requireLeader(req);
+    if (!auth.ok) return auth.response;
+
     const form = await req.formData();
     const activityId = String(form.get("activityId") || "");
     const category = String(form.get("category") || "other") as ActivityFile["category"];

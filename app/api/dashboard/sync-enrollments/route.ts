@@ -1,18 +1,22 @@
 // PATH: app/api/dashboard/sync-enrollments/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/authz/apiAuth";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireApiUser(req);
+    if (!auth.ok) return auth.response;
+
     const db = getSupabaseServiceRoleClient();
     if (!db) {
       return NextResponse.json({ ok: false, error: "Server mangler Supabase-konfig." }, { status: 500 });
     }
 
     const body = await req.json();
-    const email = String(body?.email || "").trim();
+    const email = String(auth.user.email || body?.email || "").trim();
     const role = body?.role === "leader" ? "leader" : "participant";
     const activityIds: string[] = Array.isArray(body?.activityIds) ? body.activityIds.map((x: any) => String(x)) : [];
 
@@ -21,7 +25,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Finn eller opprett medlem
-    let { data: mRow } = await db.from("members").select("id").ilike("email", email).maybeSingle();
+    let mRow: { id: string } | null = auth.memberId ? { id: auth.memberId } : null;
+    if (!mRow?.id) {
+      const { data: byEmail } = await db
+        .from("members")
+        .select("id")
+        .ilike("email", email)
+        .maybeSingle();
+      mRow = byEmail ? { id: String((byEmail as any).id) } : null;
+    }
     if (!mRow?.id) {
       const { data: created, error: cErr } = await db
         .from("members")
@@ -29,7 +41,7 @@ export async function POST(req: NextRequest) {
         .select("id")
         .single();
       if (cErr) throw cErr;
-      mRow = created;
+      mRow = { id: String((created as any)?.id || "") };
     }
     const memberId = String(mRow!.id);
 
