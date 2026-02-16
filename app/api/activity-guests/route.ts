@@ -1,5 +1,6 @@
 // PATH: app/api/activity-guests/route.ts
 import { NextResponse } from "next/server";
+import { requireLeader } from "@/lib/authz/apiAuth";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 function mapGuest(row: any) {
@@ -20,6 +21,9 @@ function mapGuest(row: any) {
 }
 
 export async function GET(request: Request) {
+  const auth = await requireLeader(request);
+  if (!auth.ok) return auth.response;
+
   const { searchParams } = new URL(request.url);
   const activityId = searchParams.get("activityId");
   if (!activityId) {
@@ -96,6 +100,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireLeader(request);
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
     const {
       activityId,

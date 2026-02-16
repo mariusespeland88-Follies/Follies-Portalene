@@ -1,69 +1,65 @@
-// PATH: app/api/member-enrollments/[id]/route.ts
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
+import { requireLeader } from "@/lib/authz/apiAuth";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
-const URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-async function sb(path: string, init: RequestInit = {}) {
-  const headers: Record<string,string> = {
-    apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json'
-  };
-  return fetch(`${URL}/rest/v1/${path}`, { ...init, headers: { ...headers, ...(init.headers||{}) }});
+function asIdSet(items: unknown): Set<string> {
+  if (!Array.isArray(items)) return new Set();
+  return new Set(items.map((x) => String(x || "").trim()).filter(Boolean));
 }
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
-  const memberId = params.id;
-  const { activity_ids = [] } = await req.json().catch(()=>({}));
+  const auth = await requireLeader(req);
+  if (!auth.ok) return auth.response;
 
-  // 1) Hent eksisterende enrollments
-  const curRes = await sb(`enrollment?select=activity_id&member_id=eq.${memberId}`);
-  if (!curRes.ok) return NextResponse.json({ error: await curRes.text() }, { status: curRes.status });
-  const current: Array<{ activity_id: string }> = await curRes.json();
+  const memberId = String(params?.id || "").trim();
+  const body = await req.json().catch(() => ({}));
+  const nextIds = asIdSet(body?.activity_ids);
 
-  const currentIds = new Set(current.map(r => r.activity_id));
-  const newIds = new Set<string>(Array.isArray(activity_ids) ? activity_ids : []);
+  if (!memberId) {
+    return NextResponse.json({ error: "Mangler member id" }, { status: 400 });
+  }
 
-  // Diff
-  const toAdd = [...newIds].filter(id => !currentIds.has(id));
-  const toRemove = [...currentIds].filter(id => !newIds.has(id));
+  const db = getSupabaseServiceRoleClient();
+  if (!db) {
+    return NextResponse.json(
+      { error: "Supabase er ikke konfigurert" },
+      { status: 500 }
+    );
+  }
 
-  // 2) Legg til nye enrollments + historikk-start
+  const { data: currentRows, error: currentError } = await db
+    .from("enrollments")
+    .select("activity_id")
+    .eq("member_id", memberId);
+  if (currentError) {
+    return NextResponse.json({ error: currentError.message }, { status: 500 });
+  }
+
+  const currentIds = asIdSet((currentRows || []).map((r: any) => r.activity_id));
+  const toAdd = Array.from(nextIds).filter((id) => !currentIds.has(id));
+  const toRemove = Array.from(currentIds).filter((id) => !nextIds.has(id));
+
   if (toAdd.length) {
-    // upsert enrollments
-    const rows = toAdd.map(a => ({ member_id: memberId, activity_id: a }));
-    const ins = await sb('enrollment', { method: 'POST', body: JSON.stringify(rows) });
-    if (!ins.ok) return NextResponse.json({ error: await ins.text() }, { status: ins.status });
-
-    // for hver ny: hvis det ikke finnes en åpen historikkrad, legg inn start
-    const today = new Date().toISOString().slice(0,10);
-    for (const actId of toAdd) {
-      // Sjekk om det finnes en åpen rad
-      const openCheck = await sb(
-        `member_activity_history?select=id&member_id=eq.${memberId}&activity_id=eq.${actId}&end_date=is.null&limit=1`
-      );
-      if (!openCheck.ok) continue;
-      const open = await openCheck.json();
-      if (open.length === 0) {
-        await sb('member_activity_history', {
-          method: 'POST',
-          body: JSON.stringify([{ member_id: memberId, activity_id: actId, start_date: today }]),
-        }).catch(()=>{});
-      }
+    const rows = toAdd.map((activityId) => ({
+      member_id: memberId,
+      activity_id: activityId,
+    }));
+    const { error } = await db
+      .from("enrollments")
+      .upsert(rows, { onConflict: "member_id,activity_id" });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
   }
 
-  // 3) Fjern enrollments som ikke lenger er valgt + historikk-slutt
   if (toRemove.length) {
-    for (const actId of toRemove) {
-      // Slett enrollment
-      await sb(`enrollment?member_id=eq.${memberId}&activity_id=eq.${actId}`, { method: 'DELETE' }).catch(()=>{});
-
-      // Sett end_date på åpen historikkrad
-      const today = new Date().toISOString().slice(0,10);
-      await sb(
-        `member_activity_history?member_id=eq.${memberId}&activity_id=eq.${actId}&end_date=is.null`,
-        { method: 'PATCH', body: JSON.stringify({ end_date: today }) }
-      ).catch(()=>{});
+    const { error } = await db
+      .from("enrollments")
+      .delete()
+      .eq("member_id", memberId)
+      .in("activity_id", toRemove);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
   }
 

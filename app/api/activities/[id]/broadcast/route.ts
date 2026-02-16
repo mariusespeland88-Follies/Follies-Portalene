@@ -1,6 +1,7 @@
 // PATH: app/api/activities/[id]/broadcast/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
+import { requireLeader } from "@/lib/authz/apiAuth";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -30,6 +31,9 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireLeader(req);
+    if (!auth.ok) return auth.response;
+
     const activityId = String(params?.id || "").trim();
     if (!activityId)
       return NextResponse.json(

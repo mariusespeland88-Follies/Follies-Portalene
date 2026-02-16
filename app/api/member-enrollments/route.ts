@@ -1,28 +1,47 @@
-// PATH: app/api/member-enrollments/route.ts
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
+import { requireLeader } from "@/lib/authz/apiAuth";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
-const URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+export async function PUT(req: Request) {
+  const auth = await requireLeader(req);
+  if (!auth.ok) return auth.response;
 
-async function sb(path: string, init: RequestInit = {}) {
-  const headers: Record<string,string> = {
-    apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json'
-  };
-  return fetch(`${URL}/rest/v1/${path}`, { ...init, headers: { ...headers, ...(init.headers||{}) }});
-}
+  const body = await req.json().catch(() => ({}));
+  const memberId = String(body?.memberId || body?.id || "").trim();
+  const activityIds = Array.isArray(body?.activity_ids)
+    ? body.activity_ids.map((a: any) => String(a)).filter(Boolean)
+    : [];
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
-  const { activity_ids = [] } = await req.json().catch(()=>({}));
+  if (!memberId) {
+    return NextResponse.json({ error: "Mangler memberId" }, { status: 400 });
+  }
 
-  // Slett eksisterende
-  const del = await sb(`enrollment?member_id=eq.${params.id}`, { method: 'DELETE' });
-  if (!del.ok) return NextResponse.json({ error: await del.text() }, { status: del.status });
+  const db = getSupabaseServiceRoleClient();
+  if (!db) {
+    return NextResponse.json(
+      { error: "Supabase er ikke konfigurert" },
+      { status: 500 }
+    );
+  }
 
-  // Legg inn nye
-  if (Array.isArray(activity_ids) && activity_ids.length) {
-    const rows = activity_ids.map((a: string) => ({ member_id: params.id, activity_id: a }));
-    const ins = await sb('enrollment', { method: 'POST', body: JSON.stringify(rows) });
-    if (!ins.ok) return NextResponse.json({ error: await ins.text() }, { status: ins.status });
+  const { error: delError } = await db
+    .from("enrollments")
+    .delete()
+    .eq("member_id", memberId);
+  if (delError) {
+    return NextResponse.json({ error: delError.message }, { status: 500 });
+  }
+
+  if (activityIds.length) {
+    const rows = activityIds.map((activityId: string) => ({
+      member_id: memberId,
+      activity_id: activityId,
+    }));
+
+    const { error: insertError } = await db.from("enrollments").insert(rows);
+    if (insertError) {
+      return NextResponse.json({ error: insertError.message }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ success: true });

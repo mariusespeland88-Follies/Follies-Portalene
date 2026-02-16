@@ -1,6 +1,7 @@
 // PATH: app/api/activity-files/[fileId]/download/route.ts
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { requireApiUser } from "@/lib/authz/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,9 @@ async function readManifest(supabase: SupabaseClient, activityId: string) {
 
 export async function GET(req: Request, { params }: { params: { fileId: string } }) {
   try {
+    const auth = await requireApiUser(req);
+    if (!auth.ok) return auth.response;
+
     const { searchParams } = new URL(req.url);
     const activityId = searchParams.get("activityId");
     if (!activityId) return NextResponse.json({ error: "Mangler activityId" }, { status: 400 });

@@ -1,18 +1,22 @@
 // PATH: app/api/dashboard/ensure-member/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/authz/apiAuth";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireApiUser(req);
+    if (!auth.ok) return auth.response;
+
     const db = getSupabaseServiceRoleClient();
     if (!db) {
       return NextResponse.json({ ok: false, error: "Server mangler Supabase-konfig." }, { status: 500 });
     }
 
     const body = await req.json();
-    const email = String(body?.email || "").trim();
+    const email = String(auth.user.email || body?.email || "").trim();
     const displayName = String(body?.displayName || "").trim(); // NYTT: navn fra dashboard
     const candidateActivityIds: string[] = Array.isArray(body?.candidateActivityIds)
       ? body.candidateActivityIds.map((s: any) => String(s))

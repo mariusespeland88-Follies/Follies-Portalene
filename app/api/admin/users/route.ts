@@ -1,12 +1,15 @@
 // PATH: app/api/admin/users/route.ts
 // app/api/admin/users/route.ts
 import { NextResponse } from 'next/server';
-import { createClient as createRouteClient } from '@/lib/supabase/route';
+import { requireAdmin } from "@/lib/authz/apiAuth";
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 
 // POST body: { email, mode: 'invite'|'create', password?, role? }
 export async function POST(req: Request) {
   try {
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
+
     const body = await req.json();
     const email = String(body.email ?? '').trim().toLowerCase();
     const mode = body.mode === 'create' ? 'create' : 'invite';
@@ -16,14 +19,6 @@ export async function POST(req: Request) {
     if (!email) return NextResponse.json({ error: 'Mangler e-post' }, { status: 400 });
     if (mode === 'create' && (!password || password.length < 8))
       return NextResponse.json({ error: 'Passord må være minst 8 tegn' }, { status: 400 });
-
-    // Sjekk at caller er admin
-    const supa = createRouteClient();
-    const { data: { user } } = await supa.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const { data: me } = await supa.from('profiles').select('role').eq('id', user.id).maybeSingle();
-    if (me?.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     // Bruk service role (server only)
     const admin = createAdminClient(
