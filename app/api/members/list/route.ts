@@ -1,8 +1,6 @@
 // PATH: app/api/members/list/route.ts
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-
-import { createRouteHandlerClient } from "@/lib/supabase/handlers";
+import { requireLeader } from "@/lib/authz/apiAuth";
 import getServiceRoleClient from "@/lib/supabase/service";
 
 export const runtime = "nodejs";
@@ -44,15 +42,8 @@ function normalizeMembers(rows: RawMember[] | null | undefined) {
 
 export async function GET(req: Request) {
   try {
-    const cookieStore = cookies;
-    const supabase = createRouteHandlerClient({ cookies: cookieStore });
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await requireLeader(req);
+    if (!auth.ok) return auth.response;
 
     const url = new URL(req.url);
     const email = (url.searchParams.get("email") || "").trim();

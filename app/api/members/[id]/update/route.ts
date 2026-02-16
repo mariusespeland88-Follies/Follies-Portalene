@@ -1,10 +1,13 @@
 // PATH: app/api/members/[id]/update/route.ts
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createRouteHandlerClient } from "@/lib/supabase/handlers";
+import { requireLeader } from "@/lib/authz/apiAuth";
+import { getServiceRoleClient } from "@/lib/supabase/service";
 
 // Håndter lagring fra Rediger-siden
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
+  const auth = await requireLeader(req);
+  if (!auth.ok) return auth.response;
+
   const { id } = params;
   if (!id) return NextResponse.json({ ok: false, error: "Missing id" }, { status: 400 });
 
@@ -42,8 +45,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     if (allowed.has(k)) update[k] = v === "" ? null : v;
   }
 
-  // Koble til Supabase med brukersesjonen (cookies)
-  const supabase = createRouteHandlerClient({ cookies });
+  const supabase = getServiceRoleClient();
 
   const { error } = await supabase
     .from("members")

@@ -9,7 +9,7 @@ export default async function MembersArchivePage() {
 
   if (supabase) {
     const response = await supabase
-      .from('member')
+      .from('members')
       .select('id,first_name,last_name,email,city,created_at')
       .eq('archived', true)
       .order('created_at', { ascending: false });
