@@ -1,6 +1,7 @@
 // PATH: app/api/admin/activities/hard-delete/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/authz/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -32,6 +33,9 @@ async function safeDelete(
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
+
     const { activityId } = await req.json();
     if (!activityId) {
       return NextResponse.json({ error: "Mangler activityId" }, { status: 400 });

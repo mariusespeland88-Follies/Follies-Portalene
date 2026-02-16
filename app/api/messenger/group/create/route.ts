@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireLeader } from "@/lib/authz/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -10,7 +11,16 @@ function hasLeaderRole(roles: string[]) {
 
 export async function POST(req: Request) {
   try {
-    const { meMemberId, title, memberIds } = await req.json();
+    const auth = await requireLeader(req);
+    if (!auth.ok) return auth.response;
+
+    const body = await req.json().catch(() => ({}));
+    const meMemberId = String(auth.memberId ?? "").trim();
+    if (!meMemberId) {
+      return NextResponse.json({ error: "Fant ikke medlem for innlogget bruker." }, { status: 403 });
+    }
+    const title = body?.title;
+    const memberIds = body?.memberIds ?? body?.member_ids;
     const ids: string[] = Array.isArray(memberIds) ? memberIds.map(String) : [];
 
     if (!meMemberId) return NextResponse.json({ error: "Mangler meMemberId" }, { status: 400 });
@@ -65,7 +75,7 @@ export async function POST(req: Request) {
     const { error: pErr } = await sb.from("conversation_participants").insert(payload);
     if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 });
 
-    return NextResponse.json({ conversationId });
+    return NextResponse.json({ conversationId, conversation_id: conversationId });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Ukjent feil" }, { status: 500 });
   }

@@ -1,11 +1,15 @@
 // PATH: app/api/sessions/delete/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { requireLeader } from "@/lib/authz/apiAuth";
 
 const S = (v: any) => String(v ?? "").trim();
 
 export async function POST(req: Request) {
   try {
+    const auth = await requireLeader(req);
+    if (!auth.ok) return auth.response;
+
     const supabase = getSupabaseServiceRoleClient();
     if (!supabase) {
       return NextResponse.json(

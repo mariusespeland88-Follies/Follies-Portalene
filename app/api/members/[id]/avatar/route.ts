@@ -1,6 +1,7 @@
 // PATH: app/api/members/[id]/avatar/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireLeader } from "@/lib/authz/apiAuth";
 
 export const runtime = "nodejs";
 const BUCKET = "profile-photos";
@@ -10,6 +11,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!id) return NextResponse.json({ error: "Mangler id" }, { status: 400 });
 
   try {
+    const auth = await requireLeader(req);
+    if (!auth.ok) return auth.response;
+
     const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
     // bucket (public)
@@ -35,8 +39,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     // hent public URL
     const { data: pub } = await supabase.storage.from(BUCKET).getPublicUrl(path);
 
-    // lagre på member.avatar_url
-    await supabase.from("member").update({ avatar_url: pub.publicUrl }).eq("id", id);
+    // lagre på members.avatar_url (ny sannhet)
+    const { error: updErr } = await supabase
+      .from("members")
+      .update({ avatar_url: pub.publicUrl, avatar_path: path })
+      .eq("id", id);
+    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
 
     return NextResponse.json({ url: pub.publicUrl, path });
   } catch (e: any) {

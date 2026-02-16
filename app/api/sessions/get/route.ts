@@ -1,6 +1,7 @@
 // PATH: app/api/sessions/get/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireApiUser } from "@/lib/authz/apiAuth";
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -16,6 +17,9 @@ function fullName(m: any) {
 
 export async function POST(req: Request) {
   try {
+    const auth = await requireApiUser(req);
+    if (!auth.ok) return auth.response;
+
     const { sessionId } = await req.json();
     if (!sessionId) return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
 

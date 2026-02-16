@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireApiMember } from "@/lib/authz/apiAuth";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
-    const { meMemberId, otherMemberId } = await req.json();
+    const auth = await requireApiMember(req);
+    if (!auth.ok) return auth.response;
+
+    const body = await req.json().catch(() => ({}));
+    const meMemberId = String(auth.memberId ?? "").trim();
+    const otherMemberId = String(
+      body?.otherMemberId ?? body?.targetMemberId ?? body?.target_member_id ?? ""
+    ).trim();
 
     if (!meMemberId || !otherMemberId) {
       return NextResponse.json({ error: "Mangler meMemberId/otherMemberId" }, { status: 400 });
@@ -49,7 +57,7 @@ export async function POST(req: Request) {
 
       const hit = Object.entries(map).find(([, set]) => set.has(String(meMemberId)) && set.has(String(otherMemberId)));
       if (hit) {
-        return NextResponse.json({ conversationId: hit[0] });
+        return NextResponse.json({ conversationId: hit[0], conversation_id: hit[0] });
       }
     }
 
@@ -77,7 +85,7 @@ export async function POST(req: Request) {
 
     if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
 
-    return NextResponse.json({ conversationId });
+    return NextResponse.json({ conversationId, conversation_id: conversationId });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Ukjent feil" }, { status: 500 });
   }

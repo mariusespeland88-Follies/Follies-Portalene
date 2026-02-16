@@ -1,6 +1,7 @@
 // PATH: app/api/admin/create-leader/route.ts
 import { NextResponse } from "next/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { requireAdmin } from "@/lib/authz/apiAuth";
 
 // Kjører i Node (ikke edge) slik at Service Role kan brukes trygt
 export const runtime = "nodejs";
@@ -26,6 +27,9 @@ type Body = {
  */
 export async function POST(req: Request) {
   try {
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
+
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
