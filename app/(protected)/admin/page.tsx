@@ -1,486 +1,731 @@
-// PATH: app/(protected)/admin/page.tsx
 "use client";
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import getSupabaseBrowserClient from "@/lib/supabase/client";
 
-/**
- * Admin (landing)
- * – Beholder alle eksisterende funksjoner (makeMeDB, create-leader-skjema, lister).
- * – Ny “admin-hub” øverst med pene handlingsknapper (ingen nye avhengigheter).
- */
+type MemberRow = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone: string | null;
+  avatar_url: string | null;
+  created_at: string | null;
+  roles: string[];
+};
 
-type AnyObj = Record<string, any>;
+type AdminStats = {
+  membersTotal: number;
+  leadersTotal: number;
+  adminsTotal: number;
+  activitiesTotal: number;
+  enrollmentsTotal: number;
+  conversationsTotal: number;
+  sessionsUpcoming14d: number;
+  membersAdded7d: number;
+  messages7d: number;
+  memberPushActive: number;
+  audiencePushActive: number;
+};
 
-const MEM_V1 = "follies.members.v1";
-const MEM_FB = "follies.members";
-const PERMS = "follies.perms.v1";
+type PushTarget = "all" | "members" | "audience";
+type Banner = { type: "ok" | "err"; text: string };
 
-/* ---------------- utils ---------------- */
-function parseJSON<T>(raw: string | null, fallback: T): T {
-  try { return raw ? (JSON.parse(raw) as T) : fallback; } catch { return fallback; }
-}
-function readLS(key: string): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(key);
-}
-function writeLS(key: string, value: any) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
-function toStr(v: any): string {
-  try { return v == null ? "" : String(v); } catch { return ""; }
-}
-function pick(o: AnyObj, keys: string[], fb: any = ""): any {
-  for (const k of keys) if (o && o[k] !== undefined) return o[k];
-  return fb;
-}
-function idOf(m: AnyObj): string {
-  return toStr(m?.id ?? m?.uuid ?? m?._id ?? m?.memberId);
-}
-function emailOf(m: AnyObj): string {
-  return pick(m, ["email","epost","mail"], "");
-}
-function fullName(m: AnyObj): string {
-  const fn = pick(m, ["first_name","firstName","fornavn"], "");
-  const ln = pick(m, ["last_name","lastName","etternavn"], "");
-  const full = pick(m, ["full_name","fullName","name","navn"], "");
-  return (full ? String(full) : [fn, ln].filter(Boolean).join(" ").trim()) || "Uten navn";
-}
+const EMPTY_STATS: AdminStats = {
+  membersTotal: 0,
+  leadersTotal: 0,
+  adminsTotal: 0,
+  activitiesTotal: 0,
+  enrollmentsTotal: 0,
+  conversationsTotal: 0,
+  sessionsUpcoming14d: 0,
+  membersAdded7d: 0,
+  messages7d: 0,
+  memberPushActive: 0,
+  audiencePushActive: 0,
+};
 
-/* --------------- data readers/writers (LS) --------------- */
-function readMembersLS(): AnyObj[] {
-  const v1 = parseJSON<AnyObj[]>(readLS(MEM_V1), []);
-  const fb = parseJSON<AnyObj[]>(readLS(MEM_FB), []);
-  const map = new Map<string, AnyObj>();
-  for (const m of [...fb, ...v1]) {
-    const key = idOf(m);
-    if (key) map.set(key, m);
-  }
-  return Array.from(map.values());
-}
-function writeMembersLS(list: AnyObj[]) {
-  writeLS(MEM_V1, Array.isArray(list) ? list : []);
+function fullName(member: Pick<MemberRow, "first_name" | "last_name" | "email">): string {
+  const n = `${member.first_name ?? ""} ${member.last_name ?? ""}`.trim();
+  return n || String(member.email ?? "Uten navn");
 }
 
-type Perms = Record<string, { roles?: string[] }>;
-function readPermsLS(): Perms {
-  const p = parseJSON<Perms>(readLS(PERMS), {});
-  return p && typeof p === "object" ? p : {};
-}
-function writePermsLS(p: Perms) { writeLS(PERMS, p || {}); }
-function hasRole(perms: Perms, memberId: string, role: "leader" | "admin" | "member"): boolean {
-  const roles = (perms[memberId]?.roles ?? []).map((r) => String(r).toLowerCase());
-  return roles.includes(role);
+function uniqueLower(values: string[]): string[] {
+  return Array.from(new Set(values.map((x) => String(x).trim().toLowerCase()).filter(Boolean)));
 }
 
-/* ========================================================= */
+function isEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
 
 export default function AdminPage() {
-  const router = useRouter();
   const supabase = React.useMemo(() => getSupabaseBrowserClient(), []);
 
-  // LS-data (sikkerhetsnett)
-  const [membersLS, setMembersLS] = React.useState<AnyObj[]>([]);
-  const [permsLS, setPermsLS] = React.useState<Perms>({});
+  const [members, setMembers] = React.useState<MemberRow[]>([]);
+  const [membersLoading, setMembersLoading] = React.useState(true);
+  const [membersError, setMembersError] = React.useState<string | null>(null);
 
-  // DB-data
-  const [membersDB, setMembersDB] = React.useState<AnyObj[]>([]);
-  const [permsDB, setPermsDB] = React.useState<Perms>({});
+  const [stats, setStats] = React.useState<AdminStats>(EMPTY_STATS);
+  const [statsLoading, setStatsLoading] = React.useState(true);
+  const [statsError, setStatsError] = React.useState<string | null>(null);
 
-  // “meg”
-  const [meEmail, setMeEmail] = React.useState<string | null>(null);
+  const [banner, setBanner] = React.useState<Banner | null>(null);
 
-  // form/status
   const [firstName, setFirstName] = React.useState("");
   const [lastName, setLastName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [phone, setPhone] = React.useState("");
   const [avatarUrl, setAvatarUrl] = React.useState("");
-  const [asAdmin, setAsAdmin] = React.useState(false);
+  const [createAsAdmin, setCreateAsAdmin] = React.useState(false);
+  const [createBusy, setCreateBusy] = React.useState(false);
 
-  const [ok, setOk] = React.useState<string | null>(null);
-  const [err, setErr] = React.useState<string | null>(null);
-  const [busy, setBusy] = React.useState(false);
+  const [selfBusy, setSelfBusy] = React.useState<"leader" | "admin" | null>(null);
+  const [rowBusyId, setRowBusyId] = React.useState<string | null>(null);
 
-  // Init fra LS + session-email
-  React.useEffect(() => {
-    setMembersLS(readMembersLS());
-    setPermsLS(readPermsLS());
-    supabase.auth.getSession().then(({ data }) => {
-      setMeEmail(data.session?.user?.email ?? null);
-    });
-  }, [supabase]);
+  const [search, setSearch] = React.useState("");
 
-  // Hent fra Supabase (og speil til LS)
-  async function loadFromSupabase() {
+  const [pushTitle, setPushTitle] = React.useState("");
+  const [pushMessage, setPushMessage] = React.useState("");
+  const [pushDeepLink, setPushDeepLink] = React.useState("");
+  const [pushTarget, setPushTarget] = React.useState<PushTarget>("all");
+  const [pushBusy, setPushBusy] = React.useState(false);
+  const [reminderBusy, setReminderBusy] = React.useState(false);
+
+  const setOk = React.useCallback((text: string) => setBanner({ type: "ok", text }), []);
+  const setErr = React.useCallback((text: string) => setBanner({ type: "err", text }), []);
+
+  const loadMembers = React.useCallback(async () => {
+    setMembersLoading(true);
+    setMembersError(null);
     try {
-      const sess = await supabase.auth.getSession();
-      if (!sess.data.session) {
-        setMembersDB([]); setPermsDB({});
-        return;
-      }
       const { data, error } = await supabase
         .from("members")
-        .select("id, first_name, last_name, email, phone, avatar_url, created_at, member_roles ( role )");
+        .select("id, first_name, last_name, email, phone, avatar_url, created_at, member_roles(role)")
+        .order("created_at", { ascending: false });
 
-      if (error) { setMembersDB([]); setPermsDB({}); return; }
+      if (error) throw error;
 
-      const list = (data ?? []) as any[];
-      const normalized: AnyObj[] = list.map((m) => ({
-        id: m.id,
-        first_name: m.first_name ?? "",
-        last_name: m.last_name ?? "",
-        email: m.email ?? "",
-        phone: m.phone ?? "",
-        avatar_url: m.avatar_url ?? "",
-        created_at: m.created_at ?? null,
+      const rows = Array.isArray(data) ? data : [];
+      const normalized: MemberRow[] = rows.map((row: any) => ({
+        id: String(row.id),
+        first_name: row.first_name ?? null,
+        last_name: row.last_name ?? null,
+        email: row.email ?? null,
+        phone: row.phone ?? null,
+        avatar_url: row.avatar_url ?? null,
+        created_at: row.created_at ?? null,
+        roles: uniqueLower(
+          Array.isArray(row.member_roles)
+            ? row.member_roles.map((r: any) => String(r?.role ?? ""))
+            : []
+        ),
       }));
 
-      const rolesMap: Perms = {};
-      for (const m of list) {
-        const id = String(m.id);
-        const roles = Array.isArray(m.member_roles) ? m.member_roles.map((r: any) => String(r.role)) : [];
-        rolesMap[id] = { roles };
-      }
-
-      setMembersDB(normalized);
-      setPermsDB(rolesMap);
-
-      // SPEIL til LS
-      const currentLS = readMembersLS();
-      const lsMap = new Map(currentLS.map((m) => [idOf(m), m]));
-      for (const m of normalized) {
-        const id = idOf(m);
-        const prev = lsMap.get(id) || {};
-        lsMap.set(id, { ...prev, ...m });
-      }
-      const mergedLS = Array.from(lsMap.values());
-      writeMembersLS(mergedLS);
-      setMembersLS(mergedLS);
-
-      const nextPerms = { ...readPermsLS(), ...rolesMap };
-      writePermsLS(nextPerms);
-      setPermsLS(nextPerms);
-    } catch {
-      setMembersDB([]); setPermsDB({});
+      setMembers(normalized);
+    } catch (e: any) {
+      setMembers([]);
+      setMembersError(String(e?.message ?? e));
+    } finally {
+      setMembersLoading(false);
     }
-  }
+  }, [supabase]);
 
-  React.useEffect(() => {
-    loadFromSupabase();
-    const h = () => loadFromSupabase();
-    try { window.addEventListener("follies:auth-sync", h); } catch {}
-    return () => { try { window.removeEventListener("follies:auth-sync", h); } catch {} };
+  const loadStats = React.useCallback(async () => {
+    setStatsLoading(true);
+    setStatsError(null);
+    try {
+      const res = await fetch("/api/admin/overview", { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String((json as any)?.error ?? "Kunne ikke hente statistikk."));
+
+      const s = (json as any)?.stats ?? {};
+      setStats({
+        membersTotal: Number(s.membersTotal ?? 0),
+        leadersTotal: Number(s.leadersTotal ?? 0),
+        adminsTotal: Number(s.adminsTotal ?? 0),
+        activitiesTotal: Number(s.activitiesTotal ?? 0),
+        enrollmentsTotal: Number(s.enrollmentsTotal ?? 0),
+        conversationsTotal: Number(s.conversationsTotal ?? 0),
+        sessionsUpcoming14d: Number(s.sessionsUpcoming14d ?? 0),
+        membersAdded7d: Number(s.membersAdded7d ?? 0),
+        messages7d: Number(s.messages7d ?? 0),
+        memberPushActive: Number(s.memberPushActive ?? 0),
+        audiencePushActive: Number(s.audiencePushActive ?? 0),
+      });
+    } catch (e: any) {
+      setStats(EMPTY_STATS);
+      setStatsError(String(e?.message ?? e));
+    } finally {
+      setStatsLoading(false);
+    }
   }, []);
 
-  // Velg kilde
-  const useDB = membersDB.length > 0;
-  const members = useDB ? membersDB : membersLS;
-  const perms = useDB ? permsDB : permsLS;
+  React.useEffect(() => {
+    void loadMembers();
+    void loadStats();
+  }, [loadMembers, loadStats]);
 
-  const leaders = React.useMemo(
-    () => members.filter((m) => hasRole(perms, idOf(m), "leader")).sort((a, b) => fullName(a).localeCompare(fullName(b), "nb")),
-    [members, perms]
-  );
-  const admins = React.useMemo(
-    () => members.filter((m) => hasRole(perms, idOf(m), "admin")).sort((a, b) => fullName(a).localeCompare(fullName(b), "nb")),
-    [members, perms]
-  );
+  const refreshAll = async () => {
+    await Promise.all([loadMembers(), loadStats()]);
+  };
 
-  function resetForm() {
-    setFirstName(""); setLastName(""); setEmail(""); setPhone(""); setAvatarUrl(""); setAsAdmin(false);
-  }
-  function validateEmail(v: string) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+  const promoteByEmail = async (payload: {
+    email: string;
+    first_name?: string;
+    last_name?: string;
+    phone?: string;
+    avatar_url?: string;
+    asAdmin: boolean;
+  }) => {
+    const res = await fetch("/api/admin/create-leader", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !(json as any)?.ok) {
+      throw new Error(String((json as any)?.error ?? "Kunne ikke oppdatere roller."));
+    }
+  };
 
-  /* ---------- Knapper: “Gjør meg til leder/admin (DB)” ---------- */
-  async function makeMeDB(asAdminFlag: boolean) {
-    setOk(null); setErr(null);
-
+  const makeSelf = async (asAdmin: boolean) => {
+    setBanner(null);
+    setSelfBusy(asAdmin ? "admin" : "leader");
     try {
-      setBusy(true);
-      // sørg for at vi har en e-post fra session
       const { data } = await supabase.auth.getSession();
-      const em = data.session?.user?.email ?? meEmail ?? null;
-      if (!em) throw new Error("Du må være innlogget for å gjøre dette.");
+      const em = String(data.session?.user?.email ?? "").trim().toLowerCase();
+      if (!em) throw new Error("Du må være innlogget for å bruke denne knappen.");
 
       const nameGuess = em.split("@")[0]?.replace(/[._-]/g, " ") || "";
+      const first = nameGuess.split(" ").filter(Boolean)[0] || "";
+      const last = nameGuess.split(" ").slice(1).join(" ");
 
-      const res = await fetch("/api/admin/create-leader", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          first_name: firstName || nameGuess.split(" ")[0] || "",
-          last_name: lastName || nameGuess.split(" ").slice(1).join(" ") || "",
-          email: em,
-          phone: phone || "",
-          avatar_url: avatarUrl || "",
-          asAdmin: asAdminFlag,
-        }),
-      });
-
-      const json = await res.json();
-      if (!res.ok || !json?.ok) throw new Error(json?.error || "Klarte ikke å oppdatere roller.");
-
-      await loadFromSupabase();
-
-      setOk(asAdminFlag ? "Du er nå admin (DB)." : "Du er nå leder (DB).");
-      setTimeout(() => setOk(null), 2000);
+      await promoteByEmail({ email: em, first_name: first, last_name: last, asAdmin });
+      await refreshAll();
+      setOk(asAdmin ? "Du er nå satt som admin." : "Du er nå satt som leder.");
     } catch (e: any) {
-      setErr(e?.message || "Ukjent feil.");
-      setTimeout(() => setErr(null), 3000);
+      setErr(String(e?.message ?? e));
     } finally {
-      setBusy(false);
+      setSelfBusy(null);
     }
-  }
+  };
 
-  /* ---------- Skjema: opprett leder (valgfri admin) ---------- */
-  async function upsertLeader(e: React.FormEvent) {
+  const onCreateLeader = async (e: React.FormEvent) => {
     e.preventDefault();
-    setOk(null); setErr(null);
+    setBanner(null);
 
-    const em = email.trim();
-    if (!validateEmail(em)) { setErr("Ugyldig e-post."); return; }
+    const em = email.trim().toLowerCase();
+    if (!isEmail(em)) {
+      setErr("Skriv en gyldig e-post.");
+      return;
+    }
 
+    setCreateBusy(true);
     try {
-      setBusy(true);
+      await promoteByEmail({
+        email: em,
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        phone: phone.trim(),
+        avatar_url: avatarUrl.trim(),
+        asAdmin: createAsAdmin,
+      });
+      await refreshAll();
+      setOk("Bruker oppdatert med roller.");
+      setFirstName("");
+      setLastName("");
+      setEmail("");
+      setPhone("");
+      setAvatarUrl("");
+      setCreateAsAdmin(false);
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+    } finally {
+      setCreateBusy(false);
+    }
+  };
 
-      const res = await fetch("/api/admin/create-leader", {
+  const promoteExisting = async (member: MemberRow, asAdmin: boolean) => {
+    setBanner(null);
+    setRowBusyId(member.id);
+    try {
+      const em = String(member.email ?? "").trim().toLowerCase();
+      if (!isEmail(em)) throw new Error("Denne brukeren mangler gyldig e-post.");
+
+      await promoteByEmail({
+        email: em,
+        first_name: String(member.first_name ?? ""),
+        last_name: String(member.last_name ?? ""),
+        phone: String(member.phone ?? ""),
+        avatar_url: String(member.avatar_url ?? ""),
+        asAdmin,
+      });
+      await refreshAll();
+      setOk(asAdmin ? `Satte ${fullName(member)} som admin.` : `Satte ${fullName(member)} som leder.`);
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+    } finally {
+      setRowBusyId(null);
+    }
+  };
+
+  const sendBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBanner(null);
+
+    const t = pushTitle.trim();
+    const m = pushMessage.trim();
+    if (!t || !m) {
+      setErr("Skriv både tittel og melding.");
+      return;
+    }
+
+    setPushBusy(true);
+    try {
+      const res = await fetch("/api/admin/push/broadcast", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          first_name: firstName,
-          last_name: lastName,
-          email: em,
-          phone,
-          avatar_url: avatarUrl,
-          asAdmin,
+          title: t,
+          message: m,
+          target: pushTarget,
+          deepLink: pushDeepLink.trim() || null,
         }),
       });
 
-      const json = await res.json();
-      if (!res.ok || !json?.ok) throw new Error(json?.error || "Klarte ikke å opprette leder.");
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String((json as any)?.error ?? "Kunne ikke sende push."));
 
-      await loadFromSupabase();
-
-      // Speil også til LS for øyeblikkelig respons (beholdt)
-      const member_id: string = json.member_id;
-      const ms = readMembersLS();
-      const idx = ms.findIndex((m) => emailOf(m)?.toLowerCase() === em.toLowerCase());
-      const base = {
-        id: member_id,
-        first_name: firstName || pick(ms[idx], ["first_name","fornavn"], ""),
-        last_name:  lastName  || pick(ms[idx], ["last_name","etternavn"], ""),
-        email: em,
-        phone: phone || pick(ms[idx], ["phone"], ""),
-        avatar_url: avatarUrl || pick(ms[idx], ["avatar_url"], ""),
-        created_at: pick(ms[idx], ["created_at"], new Date().toISOString()),
-      };
-      if (idx >= 0) ms[idx] = { ...ms[idx], ...base };
-      else ms.unshift(base);
-      writeMembersLS(ms);
-      setMembersLS(ms);
-
-      const p = readPermsLS();
-      const roles = new Set([...(p[member_id]?.roles ?? []), "leader", ...(asAdmin ? ["admin"] : [])]);
-      writePermsLS({ ...p, [member_id]: { roles: Array.from(roles) } });
-      setPermsLS(readPermsLS());
-
-      setOk("Leder opprettet.");
-      resetForm();
-      setTimeout(() => setOk(null), 2000);
+      setOk(
+        `Push sendt. Sendt: ${Number((json as any)?.sent ?? 0)} · Feilet: ${Number(
+          (json as any)?.failed ?? 0
+        )} · Tokens: ${Number((json as any)?.tokens ?? 0)}`
+      );
     } catch (e: any) {
-      setErr(e?.message || "Ukjent feil ved opprettelse.");
-      setTimeout(() => setErr(null), 4000);
+      setErr(String(e?.message ?? e));
     } finally {
-      setBusy(false);
+      setPushBusy(false);
     }
-  }
+  };
 
-  /* ------------------------------- RENDER -------------------------------- */
+  const runRemindersNow = async () => {
+    setBanner(null);
+    setReminderBusy(true);
+    try {
+      const res = await fetch("/api/cron/session-reminders", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String((json as any)?.error ?? "Kunne ikke kjøre påminnelser."));
 
-  // Handlingskort (admin-hub)
-  const actions = [
-    { id: "access", label: "Tilgang & roller", href: "/admin/access", desc: "Sett rettigheter pr. modul/tilbud." },
-    { id: "push", label: "Push-varsler", href: "/admin/push", desc: "Send push til medlemmer/publikum." },
-    { id: "cleanup-ls", label: "Rydd spøkelses-aktiviteter (LS)", href: "/admin/cleanup-activities", desc: "Fjern lokale aktivitetsrester." },
-    { id: "cleanup-db", label: "Rydd spøkelses-aktiviteter (DB)", href: "/admin/cleanup-db-activities", desc: "Slett uaktuelle aktiviteter i databasen." },
-    { id: "activities", label: "Aktiviteter", href: "/activities", desc: "Se og administrer alle aktiviteter." },
-    { id: "new-activity", label: "Ny aktivitet", href: "/activities/new", desc: "Opprett nytt tilbud, event eller forestilling.", tone: "primary" as const },
+      setOk(
+        `Påminnelser kjørt. Økter: ${Number((json as any)?.sessions ?? 0)} · Sendt: ${Number(
+          (json as any)?.sent ?? 0
+        )} · Feilet: ${Number((json as any)?.failed ?? 0)}`
+      );
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+    } finally {
+      setReminderBusy(false);
+    }
+  };
+
+  const leaders = React.useMemo(
+    () => members.filter((m) => m.roles.includes("leader")),
+    [members]
+  );
+  const admins = React.useMemo(() => members.filter((m) => m.roles.includes("admin")), [members]);
+
+  const filteredMembers = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter((m) => {
+      const text = [fullName(m), m.email ?? "", m.phone ?? "", m.roles.join(" ")]
+        .join(" ")
+        .toLowerCase();
+      return text.includes(q);
+    });
+  }, [members, search]);
+
+  const toolLinks = [
+    { href: "/admin/access", title: "Tilgang & roller", desc: "Sett detaljtilganger per modul." },
+    { href: "/activities", title: "Aktiviteter", desc: "Planlegg, rediger og organiser innhold." },
+    { href: "/members", title: "Medlemmer", desc: "Se alle medlemmer og profilinfo." },
+    { href: "/messages", title: "Portal Messenger", desc: "Følg samtaler i portalversjonen." },
+    { href: "/admin/cleanup-db-activities", title: "Datarydding", desc: "Rydd opp i utdaterte poster." },
   ];
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 space-y-6">
-      {/* HERO – beholdt stil */}
-      <div className="rounded-2xl ring-1 ring-black/10 bg-gradient-to-r from-red-800 to-red-600 text-white">
-        <div className="px-6 py-6 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-sm text-white/90">Admin</div>
-            <h1 className="text-2xl font-semibold">Tilganger</h1>
-            <p className="text-sm text-white/90">Opprett ledere (og ev. gi admin-tilgang).</p>
+    <div className="min-h-screen bg-[radial-gradient(circle_at_20%_-10%,rgba(225,6,0,0.18),transparent_40%),radial-gradient(circle_at_80%_0%,rgba(0,0,0,0.25),transparent_35%),#f5f6f8]">
+      <div className="mx-auto max-w-[1400px] px-4 py-8">
+        <section className="overflow-hidden rounded-3xl border border-black/10 bg-gradient-to-r from-black via-zinc-900 to-red-700 text-white shadow-2xl">
+          <div className="grid gap-6 px-6 py-7 lg:grid-cols-[1.5fr_1fr]">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-200">Follies Admin Control Center</p>
+              <h1 className="mt-2 text-3xl font-black leading-tight">Én samlet side for admin, lederroller, statistikk og varsler</h1>
+              <p className="mt-3 max-w-2xl text-sm text-zinc-200">
+                Denne siden er laget for rask oversikt og færre klikk: legg til ledere/admin, følg nøkkeltall,
+                send push-varsler og kjør øvingspåminnelser fra samme sted.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-start justify-start gap-2 lg:justify-end">
+              <button
+                onClick={() => void refreshAll()}
+                className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/25 transition hover:bg-white/20"
+              >
+                Oppdater data
+              </button>
+              <button
+                onClick={() => void makeSelf(false)}
+                disabled={selfBusy !== null}
+                className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-zinc-200 disabled:opacity-60"
+              >
+                {selfBusy === "leader" ? "Setter leder..." : "Gjør meg til leder"}
+              </button>
+              <button
+                onClick={() => void makeSelf(true)}
+                disabled={selfBusy !== null}
+                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-500 disabled:opacity-60"
+              >
+                {selfBusy === "admin" ? "Setter admin..." : "Gjør meg til admin"}
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => makeMeDB(false)}
-              className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50 disabled:opacity-60"
-              disabled={busy}
+        </section>
+
+        {banner ? (
+          <div className="mt-4">
+            <div
+              className={`rounded-2xl px-4 py-3 text-sm font-semibold ring-1 ${
+                banner.type === "ok"
+                  ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                  : "bg-red-50 text-red-800 ring-red-200"
+              }`}
             >
-              {/* liten inline-ikon */}
-              <span aria-hidden>⭐</span>
-              Gjør meg til leder (DB)
-            </button>
-            <button
-              onClick={() => makeMeDB(true)}
-              className="inline-flex items-center gap-2 rounded-md bg-black px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
-              disabled={busy}
-            >
-              <span aria-hidden>🛡️</span>
-              Gjør meg til admin (DB)
-            </button>
+              {banner.text}
+            </div>
           </div>
+        ) : null}
+
+        <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <StatCard title="Medlemmer" value={stats.membersTotal} hint={`${stats.membersAdded7d} nye siste 7 dager`} loading={statsLoading} />
+          <StatCard title="Ledere" value={stats.leadersTotal} hint={`${stats.adminsTotal} av disse er admin`} loading={statsLoading} />
+          <StatCard title="Aktiviteter" value={stats.activitiesTotal} hint={`${stats.sessionsUpcoming14d} økter neste 14 dager`} loading={statsLoading} />
+          <StatCard title="Meldingsaktivitet" value={stats.messages7d} hint={`${stats.conversationsTotal} samtaler totalt`} loading={statsLoading} />
+          <StatCard
+            title="Push-klare enheter"
+            value={stats.memberPushActive + stats.audiencePushActive}
+            hint={`${stats.memberPushActive} medlem · ${stats.audiencePushActive} publikum`}
+            loading={statsLoading}
+          />
+        </section>
+
+        {statsError ? (
+          <div className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
+            Kunne ikke laste statistikk: {statsError}
+          </div>
+        ) : null}
+
+        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-12">
+          <section className="xl:col-span-8 space-y-6">
+            <div className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-black text-zinc-900">Rollesenter</h2>
+                  <p className="mt-1 text-sm text-zinc-600">Legg til ledere, gjør personer til admin, og hold styr på rollefordelingen.</p>
+                </div>
+                <div className="rounded-xl bg-zinc-900 px-3 py-2 text-xs font-semibold text-white">
+                  Ledere: {leaders.length} · Admin: {admins.length}
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-5 lg:grid-cols-2">
+                <form onSubmit={onCreateLeader} className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+                  <h3 className="text-sm font-black uppercase tracking-wide text-zinc-800">Opprett / oppdater leder</h3>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <Input label="Fornavn" value={firstName} onChange={setFirstName} placeholder="Fornavn" />
+                    <Input label="Etternavn" value={lastName} onChange={setLastName} placeholder="Etternavn" />
+                    <Input label="E-post" value={email} onChange={setEmail} placeholder="navn@domene.no" className="sm:col-span-2" required />
+                    <Input label="Telefon" value={phone} onChange={setPhone} placeholder="+47 ..." />
+                    <Input label="Avatar URL" value={avatarUrl} onChange={setAvatarUrl} placeholder="https://..." />
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <label className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-800">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-zinc-300 text-red-600"
+                        checked={createAsAdmin}
+                        onChange={(e) => setCreateAsAdmin(e.target.checked)}
+                      />
+                      Gi admin-rolle også
+                    </label>
+
+                    <button
+                      type="submit"
+                      disabled={createBusy}
+                      className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-60"
+                    >
+                      {createBusy ? "Lagrer..." : "Lagre rolle"}
+                    </button>
+                  </div>
+                </form>
+
+                <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-black uppercase tracking-wide text-zinc-800">Folk & roller</h3>
+                    <div className="text-xs font-semibold text-zinc-600">{filteredMembers.length} vist</div>
+                  </div>
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Søk på navn, e-post eller rolle"
+                    className="mt-3 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm outline-none ring-red-600 focus:ring-2"
+                  />
+
+                  <div className="mt-3 max-h-[360px] space-y-2 overflow-y-auto pr-1">
+                    {membersLoading ? (
+                      <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">Laster medlemmer...</div>
+                    ) : membersError ? (
+                      <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{membersError}</div>
+                    ) : filteredMembers.length === 0 ? (
+                      <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">Ingen treff.</div>
+                    ) : (
+                      filteredMembers.slice(0, 120).map((member) => {
+                        const busy = rowBusyId === member.id;
+                        const isLeader = member.roles.includes("leader");
+                        const isAdmin = member.roles.includes("admin");
+                        return (
+                          <div key={member.id} className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-bold text-zinc-900">{fullName(member)}</div>
+                                <div className="truncate text-xs text-zinc-600">{member.email || "Ingen e-post"}</div>
+                                <div className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                                  {member.roles.length ? member.roles.join(" · ") : "member"}
+                                </div>
+                              </div>
+
+                              <div className="flex shrink-0 items-center gap-2">
+                                <button
+                                  onClick={() => void promoteExisting(member, false)}
+                                  disabled={busy || isLeader}
+                                  className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-900 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-50"
+                                >
+                                  {isLeader ? "Leder" : "Gjør leder"}
+                                </button>
+                                <button
+                                  onClick={() => void promoteExisting(member, true)}
+                                  disabled={busy || isAdmin}
+                                  className="rounded-lg bg-zinc-900 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-black disabled:opacity-50"
+                                >
+                                  {isAdmin ? "Admin" : "Gjør admin"}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-black text-zinc-900">Push-senter</h2>
+                  <p className="mt-1 text-sm text-zinc-600">Send varsler til medlemmer, publikum eller begge målgrupper.</p>
+                </div>
+                <button
+                  onClick={() => void runRemindersNow()}
+                  disabled={reminderBusy}
+                  className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-zinc-900 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-60"
+                >
+                  {reminderBusy ? "Kjører påminnelser..." : "Kjør øvingspåminnelser nå"}
+                </button>
+              </div>
+
+              <form onSubmit={sendBroadcast} className="mt-4 grid gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-zinc-700">Målgruppe</label>
+                    <select
+                      value={pushTarget}
+                      onChange={(e) => setPushTarget(e.target.value as PushTarget)}
+                      className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm outline-none ring-red-600 focus:ring-2"
+                    >
+                      <option value="all">Alle (medlemmer + publikum)</option>
+                      <option value="members">Kun medlemmer</option>
+                      <option value="audience">Kun publikum</option>
+                    </select>
+                  </div>
+                  <Input label="Deep link (valgfritt)" value={pushDeepLink} onChange={setPushDeepLink} placeholder="folliesapp://offers" />
+                </div>
+
+                <Input label="Tittel" value={pushTitle} onChange={setPushTitle} placeholder="Ny forestilling: Billetter ute nå" required />
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-zinc-700">Melding</label>
+                  <textarea
+                    value={pushMessage}
+                    onChange={(e) => setPushMessage(e.target.value)}
+                    placeholder="Billetter er tilgjengelig i appen nå."
+                    className="h-28 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm outline-none ring-red-600 focus:ring-2"
+                    maxLength={280}
+                  />
+                </div>
+
+                <div>
+                  <button
+                    type="submit"
+                    disabled={pushBusy}
+                    className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+                  >
+                    {pushBusy ? "Sender push..." : "Send push-varsel"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <aside className="xl:col-span-4 space-y-6">
+            <div className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-black uppercase tracking-wide text-zinc-800">Admin-verktøy</h2>
+              <div className="mt-3 grid gap-2">
+                {toolLinks.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 transition hover:bg-zinc-100"
+                  >
+                    <div className="text-sm font-bold text-zinc-900">{item.title}</div>
+                    <div className="mt-1 text-xs text-zinc-600">{item.desc}</div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-black uppercase tracking-wide text-zinc-800">Nøkkeloversikt</h2>
+              <ul className="mt-3 space-y-2 text-sm text-zinc-700">
+                <KeyItem label="Påmeldinger" value={stats.enrollmentsTotal} />
+                <KeyItem label="Aktive medlemspush" value={stats.memberPushActive} />
+                <KeyItem label="Aktive publikumspush" value={stats.audiencePushActive} />
+                <KeyItem label="Samtaler" value={stats.conversationsTotal} />
+              </ul>
+            </div>
+
+            <div className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-black uppercase tracking-wide text-zinc-800">Teamfordeling</h2>
+              <div className="mt-4 space-y-3">
+                <ProgressRow
+                  label="Ledere"
+                  value={stats.leadersTotal}
+                  total={Math.max(stats.membersTotal, 1)}
+                  tone="bg-red-600"
+                />
+                <ProgressRow
+                  label="Admin"
+                  value={stats.adminsTotal}
+                  total={Math.max(stats.membersTotal, 1)}
+                  tone="bg-black"
+                />
+                <ProgressRow
+                  label="Nye medlemmer (7d)"
+                  value={stats.membersAdded7d}
+                  total={Math.max(stats.membersTotal, 1)}
+                  tone="bg-zinc-500"
+                />
+              </div>
+            </div>
+          </aside>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {(ok || err) && (
-        <div className="flex flex-col gap-2">
-          {ok && <div className="rounded-lg bg-green-50 px-4 py-2 text-sm text-green-800 ring-1 ring-green-200">{ok}</div>}
-          {err && <div className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-800 ring-1 ring-red-200">{err}</div>}
-        </div>
-      )}
+function StatCard({
+  title,
+  value,
+  hint,
+  loading,
+}: {
+  title: string;
+  value: number;
+  hint: string;
+  loading: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-4 shadow-sm">
+      <div className="text-[11px] font-bold uppercase tracking-wide text-zinc-500">{title}</div>
+      <div className="mt-1 text-2xl font-black text-zinc-900">{loading ? "..." : value}</div>
+      <div className="mt-1 text-xs text-zinc-600">{hint}</div>
+    </div>
+  );
+}
 
-      {/* ADMIN-HUB: pent rutenett med handlingsknapper */}
-      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-black">Verktøy</h2>
-        <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {actions.map((a) => (
-            <li key={a.id}>
-              <Link
-                href={a.href}
-                className={`block rounded-2xl border border-zinc-200 p-4 shadow-sm transition ${
-                  a.tone === "primary" ? "bg-neutral-50" : "bg-white"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="text-[15px] font-semibold text-neutral-900">{a.label}</div>
-                  <div className="text-[12px] font-semibold text-red-700 opacity-0 transition group-hover:opacity-100">Åpne →</div>
-                </div>
-                {a.desc ? <p className="mt-1 text-[13px] text-neutral-700">{a.desc}</p> : null}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
+function Input({
+  label,
+  value,
+  onChange,
+  placeholder,
+  className,
+  required,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  className?: string;
+  required?: boolean;
+}) {
+  return (
+    <div className={className || ""}>
+      <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-zinc-700">{label}</label>
+      <input
+        value={value}
+        required={required}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm outline-none ring-red-600 focus:ring-2"
+      />
+    </div>
+  );
+}
 
-      {/* Underseksjoner: Skjema + Lister (beholder funksjonelt oppsett) */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Skjema */}
-        <section className="xl:col-span-2 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-black">Opprett leder</h2>
-          <p className="mt-1 text-sm text-neutral-700">
-            Fyll inn personens detaljer. Personen opprettes i Supabase og får leder-rolle.
-            Kryss av for admin hvis de også skal styre tilgang.
-          </p>
+function KeyItem({ label, value }: { label: string; value: number }) {
+  return (
+    <li className="flex items-center justify-between rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2">
+      <span className="font-semibold text-zinc-700">{label}</span>
+      <span className="font-black text-zinc-900">{value}</span>
+    </li>
+  );
+}
 
-          <form onSubmit={upsertLeader} className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-neutral-800">Fornavn</label>
-              <input value={firstName} onChange={(e) => setFirstName(e.target.value)} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600" placeholder="Fornavn" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-neutral-800">Etternavn</label>
-              <input value={lastName} onChange={(e) => setLastName(e.target.value)} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600" placeholder="Etternavn" />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-neutral-800">E-post (påkrevd)</label>
-              <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600" placeholder="navn@domene.no" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-neutral-800">Telefon</label>
-              <input value={phone} onChange={(e) => setPhone(e.target.value)} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600" placeholder="+47 …" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-neutral-800">Avatar URL</label>
-              <input value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600" placeholder="https://…" />
-            </div>
+function ProgressRow({
+  label,
+  value,
+  total,
+  tone,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  tone: string;
+}) {
+  const pct = Math.max(0, Math.min(100, Math.round((value / total) * 100)));
 
-            <div className="sm:col-span-2 flex items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="inline-flex items-center gap-2">
-                  <input id="role-leader" type="checkbox" checked disabled className="h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600" />
-                  <label htmlFor="role-leader" className="text-sm font-medium text-neutral-900">Rolle: Leder (obligatorisk)</label>
-                </div>
-                <div className="inline-flex items-center gap-2">
-                  <input id="role-admin" type="checkbox" checked={asAdmin} onChange={(e) => setAsAdmin(e.target.checked)} className="h-4 w-4 rounded border-neutral-300 text-red-600 focus:ring-red-600" />
-                  <label htmlFor="role-admin" className="text-sm font-medium text-neutral-900">Gi admin-tilganger</label>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button type="submit" disabled={busy} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60">
-                  {busy ? "Lagrer…" : "Lagre"}
-                </button>
-                <button type="button" onClick={resetForm} disabled={busy} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100 disabled:opacity-60">
-                  Nullstill
-                </button>
-              </div>
-            </div>
-          </form>
-        </section>
-
-        {/* Lister – Supabase hvis mulig, ellers LS */}
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-black">
-              Ledere {useDB ? <span className="text-xs text-neutral-500">(Supabase)</span> : <span className="text-xs text-neutral-500">(lokal)</span>}
-            </h2>
-            <span className="inline-flex items-center rounded-full bg-black/85 px-2.5 py-0.5 text-xs font-semibold text-white">{leaders.length}</span>
-          </div>
-          {leaders.length === 0 ? (
-            <div className="mt-3 text-neutral-700">Ingen ledere enda.</div>
-          ) : (
-            <ul className="mt-4 divide-y divide-neutral-200">
-              {leaders.map((m) => (
-                <li key={idOf(m)} className="py-3 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-medium text-black">{fullName(m)}</div>
-                    <div className="text-sm text-neutral-700 truncate">{emailOf(m) || <span className="text-neutral-500">Ingen e-post</span>}</div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button onClick={() => router.push(`/members/${encodeURIComponent(idOf(m))}`)} className="rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100">Åpne</button>
-                    <button onClick={() => router.push(`/members/${encodeURIComponent(idOf(m))}/edit`)} className="rounded-md bg-black px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800">Rediger</button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <div className="mt-6 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-black">
-              Administratorer {useDB ? <span className="text-xs text-neutral-500">(Supabase)</span> : <span className="text-xs text-neutral-500">(lokal)</span>}
-            </h2>
-            <span className="inline-flex items-center rounded-full bg-black/85 px-2.5 py-0.5 text-xs font-semibold text-white">{admins.length}</span>
-          </div>
-          {admins.length === 0 ? (
-            <div className="mt-3 text-neutral-700">Ingen administratorer enda.</div>
-          ) : (
-            <ul className="mt-4 divide-y divide-neutral-200">
-              {admins.map((m) => (
-                <li key={idOf(m)} className="py-3 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-medium text-black">{fullName(m)}</div>
-                    <div className="text-sm text-neutral-700 truncate">{emailOf(m) || <span className="text-neutral-500">Ingen e-post</span>}</div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button onClick={() => router.push(`/members/${encodeURIComponent(idOf(m))}`)} className="rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-100">Åpne</button>
-                    <button onClick={() => router.push(`/members/${encodeURIComponent(idOf(m))}/edit`)} className="rounded-md bg-black px-3 py-1.5 text-sm font-semibold text-white hover:bg-neutral-800">Rediger</button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs font-semibold text-zinc-700">
+        <span>{label}</span>
+        <span>{pct}%</span>
+      </div>
+      <div className="h-2.5 rounded-full bg-zinc-200">
+        <div className={`h-2.5 rounded-full ${tone}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
