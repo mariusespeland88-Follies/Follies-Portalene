@@ -17,6 +17,7 @@ export async function middleware(req: NextRequest) {
   // Hvilke ruter er offentlige
   const isPublicPath =
     pathname === "/login" ||
+    pathname === "/portal-only-staff" ||
     pathname === "/forgot-password" ||
     pathname.startsWith("/auth/") ||
     pathname === "/favicon.ico" ||
