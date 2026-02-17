@@ -87,6 +87,7 @@ export default function AppHeader() {
   const [email, setEmail] = React.useState<string | null>(null);
   const [displayName, setDisplayName] = React.useState<string | null>(null);
   const [isAdminDirectDB, setIsAdminDirectDB] = React.useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
   async function refreshIdentity() {
     const { data } = await supabase.auth.getSession();
@@ -224,6 +225,10 @@ export default function AppHeader() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  React.useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
   async function onSignOut() {
     try {
       await supabase.auth.signOut();
@@ -237,12 +242,13 @@ export default function AppHeader() {
 
   const showAdmin = isAdminFromHook || isAdminDirectDB;
 
-  const renderNavLink = (href: string, label: string) => {
+  const renderNavLink = (href: string, label: string, onClick?: () => void) => {
     const isActive = pathname === href || pathname?.startsWith(`${href}/`);
     return (
       <Link
         key={href}
         href={href}
+        onClick={onClick}
         className={cx(
           "whitespace-nowrap text-base font-semibold transition-colors",
           isActive
@@ -258,21 +264,21 @@ export default function AppHeader() {
 
   return (
     <header className="relative z-20 border-b border-black bg-black text-white">
-      <div className="relative mx-auto flex h-20 max-w-6xl items-center justify-between gap-6 px-4 sm:px-6">
-        <div className="flex h-full items-center gap-4">
-          <Link href="/" className="flex h-full items-center gap-3">
+      <div className="relative mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:h-20 sm:gap-6 sm:px-6">
+        <div className="flex h-full items-center gap-3 sm:gap-4">
+          <Link href="/" className="flex h-full items-center gap-2 sm:gap-3">
             <span className="sr-only">Til forsiden</span>
             <img
               src="/Images/follies-logo.jpg"
               alt="Follies"
-              className="h-full w-auto max-h-20 object-contain"
+              className="h-full w-auto max-h-12 object-contain sm:max-h-20"
             />
           </Link>
-          <div className="hidden sm:flex flex-col leading-tight">
+          <div className="flex flex-col leading-tight">
             <span className="text-[11px] font-semibold uppercase tracking-[0.35em] text-white/60">
               Ansattportal
             </span>
-            <span className="text-xl font-semibold text-white">Follies Portal</span>
+            <span className="text-base font-semibold text-white sm:text-xl">Follies Portal</span>
           </div>
         </div>
 
@@ -303,9 +309,19 @@ export default function AppHeader() {
         </nav>
 
         <div className="flex items-center gap-3 text-sm">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((v) => !v)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/20 bg-white/10 text-lg text-white transition hover:bg-white/20 md:hidden"
+            aria-label={mobileMenuOpen ? "Lukk meny" : "Åpne meny"}
+            aria-expanded={mobileMenuOpen}
+          >
+            {mobileMenuOpen ? "✕" : "☰"}
+          </button>
+
           {email ? (
             <>
-              <div className="hidden min-w-[140px] flex-col text-xs leading-tight text-white/60 sm:flex">
+              <div className="hidden min-w-[140px] flex-col text-xs leading-tight text-white/60 md:flex">
                 <span className="flex items-center gap-2 text-white">
                   <span className="inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
                   Innlogget
@@ -316,7 +332,7 @@ export default function AppHeader() {
               </div>
               <button
                 onClick={onSignOut}
-                className="rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 font-semibold text-white shadow-sm transition hover:bg-white/20"
+                className="hidden rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 font-semibold text-white shadow-sm transition hover:bg-white/20 md:inline-flex"
               >
                 Logg ut
               </button>
@@ -324,7 +340,7 @@ export default function AppHeader() {
           ) : (
             <Link
               href="/login"
-              className="rounded-lg bg-white px-3 py-1.5 font-semibold text-slate-900 shadow-sm hover:bg-slate-100"
+              className="hidden rounded-lg bg-white px-3 py-1.5 font-semibold text-slate-900 shadow-sm hover:bg-slate-100 md:inline-flex"
             >
               Logg inn
             </Link>
@@ -332,24 +348,78 @@ export default function AppHeader() {
         </div>
       </div>
 
-      <div className="relative border-t border-black bg-black md:hidden">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 overflow-x-auto px-4 py-3 text-sm">
-          {NAV_ITEMS.map((item) => (
-            <div key={item.href}>{renderNavLink(item.href, item.label)}</div>
-          ))}
+      <div
+        className={cx(
+          "border-t border-white/10 bg-black/95 md:hidden",
+          mobileMenuOpen ? "block" : "hidden"
+        )}
+      >
+        <div className="mx-auto max-w-6xl px-4 py-3">
+          <div className="mb-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+            {email ? (
+              <>
+                <div className="text-xs uppercase tracking-[0.2em] text-white/60">Innlogget</div>
+                <div className="mt-1 truncate text-sm font-semibold text-white">
+                  {displayName || email}
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-white/70">Ikke innlogget</div>
+            )}
+          </div>
+
+          <nav className="grid grid-cols-2 gap-2">
+            {NAV_ITEMS.map((item) => {
+              const isActive =
+                pathname === item.href || pathname?.startsWith(`${item.href}/`);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cx(
+                    "rounded-xl border px-3 py-2 text-sm font-semibold transition",
+                    isActive
+                      ? "border-red-400 bg-red-600 text-white"
+                      : "border-white/15 bg-white/5 text-white/85 hover:bg-white/10"
+                  )}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+
           {showAdmin ? (
             <Link
               href="/admin"
               className={cx(
-                "flex items-center gap-1 whitespace-nowrap text-white/70 transition-colors hover:text-white",
-                pathname?.startsWith("/admin") && "text-white"
+                "mt-2 block rounded-xl border px-3 py-2 text-sm font-semibold transition",
+                pathname?.startsWith("/admin")
+                  ? "border-red-400 bg-red-600 text-white"
+                  : "border-white/15 bg-white/5 text-white/85 hover:bg-white/10"
               )}
-              title="Admin"
-              aria-label="Admin"
             >
               🛡️ Admin
             </Link>
           ) : null}
+
+          <div className="mt-3">
+            {email ? (
+              <button
+                onClick={onSignOut}
+                className="w-full rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/20"
+              >
+                Logg ut
+              </button>
+            ) : (
+              <Link
+                href="/login"
+                className="block w-full rounded-xl bg-white px-3 py-2 text-center text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100"
+              >
+                Logg inn
+              </Link>
+            )}
+          </div>
         </div>
       </div>
     </header>
