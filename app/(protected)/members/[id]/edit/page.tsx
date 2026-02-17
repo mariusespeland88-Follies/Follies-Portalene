@@ -62,6 +62,11 @@ function normalizeRole(value: string | null | undefined): Role {
   return "none";
 }
 
+function isLeaderRole(value: string | null | undefined): boolean {
+  const v = String(value ?? "").trim().toLowerCase();
+  return v === "leader" || v === "leder" || v === "staff";
+}
+
 function defaultRole(existing: Role | undefined): Role {
   if (existing && existing !== "none") return existing;
   return "participant";
@@ -116,6 +121,8 @@ export default function MemberEditPage() {
   const [banner, setBanner] = useState<string | null>(null);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteMsg, setInviteMsg] = useState<string | null>(null);
+  const [hasLeaderRole, setHasLeaderRole] = useState(false);
+  const [demoteBusy, setDemoteBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -166,6 +173,7 @@ export default function MemberEditPage() {
         const [
           { data: memberData, error: memberErr },
           { data: enrollmentData, error: enrollErr },
+          { data: roleData, error: roleErr },
         ] = await Promise.all([
           supabase
             .from("members")
@@ -177,6 +185,10 @@ export default function MemberEditPage() {
           supabase
             .from("enrollments")
             .select("activity_id, role")
+            .eq("member_id", id),
+          supabase
+            .from("member_roles")
+            .select("role")
             .eq("member_id", id),
         ]);
 
@@ -219,6 +231,9 @@ export default function MemberEditPage() {
         if (enrollErr) {
           console.error(enrollErr);
         }
+        if (roleErr) {
+          console.error(roleErr);
+        }
         const rolesMap: Record<string, Role> = {};
         const selected: string[] = [];
         for (const row of (enrollmentData ?? []) as EnrollmentRow[]) {
@@ -230,6 +245,8 @@ export default function MemberEditPage() {
         }
         setSelectedRoles(rolesMap);
         setSelectedActs(Array.from(new Set(selected)));
+        const memberRoles = Array.isArray(roleData) ? roleData : [];
+        setHasLeaderRole(memberRoles.some((row: any) => isLeaderRole(row?.role)));
         setLoading(false);
       } catch (err) {
         console.error(err);
@@ -279,6 +296,45 @@ export default function MemberEditPage() {
       );
     } finally {
       setInviteBusy(false);
+    }
+  }
+
+  async function handleRemoveLeaderRole() {
+    if (!id) return;
+
+    const ok = window.confirm(
+      `Fjerne lederrolle for ${fullName}?\n\n` +
+        "Personen blir vanlig medlem igjen, og settes som deltaker i aktiviteter der de var leder."
+    );
+    if (!ok) return;
+
+    setDemoteBusy(true);
+    setError(null);
+    setBanner(null);
+    try {
+      const res = await fetch("/api/admin/member-roles/remove-leader", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberId: id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || "Kunne ikke fjerne lederrolle.");
+      }
+
+      setHasLeaderRole(false);
+      setSelectedRoles((prev) => {
+        const next = { ...prev };
+        for (const aid of Object.keys(next)) {
+          if (next[aid] === "leader") next[aid] = "participant";
+        }
+        return next;
+      });
+      setBanner("Lederrolle fjernet. Personen er nå vanlig medlem.");
+    } catch (e: any) {
+      setError(e?.message || "Noe gikk galt ved fjerning av lederrolle.");
+    } finally {
+      setDemoteBusy(false);
     }
   }
 
@@ -534,6 +590,16 @@ export default function MemberEditPage() {
             >
               {inviteBusy ? "Sender…" : "Send innloggingslenke"}
             </button>
+            {hasLeaderRole && (
+              <button
+                type="button"
+                onClick={handleRemoveLeaderRole}
+                disabled={demoteBusy || saving}
+                className="rounded-lg border border-neutral-300 bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 hover:bg-neutral-50 disabled:opacity-50"
+              >
+                {demoteBusy ? "Fjerner leder…" : "Fjern lederrolle"}
+              </button>
+            )}
             <button
               onClick={handleSave}
               disabled={saving}
