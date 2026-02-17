@@ -10,7 +10,6 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { createClientComponentClient } from "@/lib/supabase/browser";
 import { getLeaders, getParticipants } from "@/lib/enrollmentsClient"; // eksisterer hos dere
 
 type AnyObj = Record<string, any>;
@@ -113,7 +112,6 @@ function writeLsCalendar(items: LsCalItem[]) {
 export default function NewSessionPage() {
   const { id: activityId } = useParams() as { id: string };
   const router = useRouter();
-  const supabase = createClientComponentClient();
 
   const [activityName, setActivityName] = useState("Aktivitet");
 
@@ -224,39 +222,30 @@ export default function NewSessionPage() {
     };
 
     try {
-      // DIAG: sjekk om vi er innlogget (hjelper når RLS stopper)
-      const u = await supabase.auth.getUser();
-      const email = u?.data?.user?.email ?? null;
-      if (!email) {
-        throw new Error("Du er ikke innlogget i Supabase (mangler user/session).");
-      }
-
-      // 1) Insert session
-      const ins = await supabase
-        .from("activity_sessions")
-        .insert({
+      // DB via server-endepunkt (leder-auth + service role), unngår RLS-feil i nettleserklient.
+      const res = await fetch("/api/sessions/upsert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           activity_id: activityId,
           title: lsSession.title,
           start_at: startIso,
           end_at: endIso,
           location: lsSession.location ?? null,
           note: lsSession.note ?? null,
-        })
-        .select("id")
-        .single();
+          targets: chosenTargets,
+        }),
+      });
 
-      if (ins.error) throw ins.error;
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(String((json as any)?.error || `HTTP ${res.status}`));
+      }
 
-      const dbSessionId = String(ins.data.id);
-
-      // 2) Insert targets
-      const targetRows = chosenTargets.map((mid) => ({
-        session_id: dbSessionId,
-        member_id: String(mid),
-      }));
-
-      const insT = await supabase.from("activity_session_targets").insert(targetRows);
-      if (insT.error) throw insT.error;
+      const dbSessionId = String((json as any)?.id || "");
+      if (!dbSessionId) {
+        throw new Error("Manglet session-id fra server.");
+      }
 
       // ✅ DB OK → speil også til LS for resten av portalen som fortsatt leser LS
       const map = readLsSessionsMap();
