@@ -105,6 +105,10 @@ function clampPreview(s: string, n = 52) {
   return t.length > n ? t.slice(0, n) + "…" : t;
 }
 
+function cx(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
 /** ------------------------------------------------------------ */
 
 export default function MessagesClient() {
@@ -131,6 +135,7 @@ export default function MessagesClient() {
   const [activeConversationId, setActiveConversationId] = React.useState<string | null>(
     null
   );
+  const [mobilePane, setMobilePane] = React.useState<"list" | "chat">("list");
 
   const [messages, setMessages] = React.useState<MessageRow[]>([]);
   const [attachmentsByMessageId, setAttachmentsByMessageId] = React.useState<
@@ -897,6 +902,10 @@ export default function MessagesClient() {
     );
   }, [conversationAttachments, messages, attachmentsByMessageId]);
 
+  React.useEffect(() => {
+    if (!activeConversationId) setMobilePane("list");
+  }, [activeConversationId]);
+
   /** ------------------- render ------------------- */
   if (booting || permsLoading) {
     return (
@@ -921,13 +930,13 @@ export default function MessagesClient() {
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 text-neutral-900">
       {/* header */}
-      <div className="mb-6 flex items-center justify-between gap-3">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight text-red-600">Follies Messenger</h1>
           <p className="mt-1 text-sm text-neutral-700">Privat chat, grupper og aktivitetsrom – kun det du har tilgang til.</p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <button
             onClick={() => setGroupOpen(true)}
             className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-600"
@@ -950,10 +959,42 @@ export default function MessagesClient() {
         </div>
       ) : null}
 
+      <div className="mb-3 grid grid-cols-2 gap-2 lg:hidden">
+        <button
+          type="button"
+          onClick={() => setMobilePane("list")}
+          className={cx(
+            "rounded-xl border px-3 py-2 text-sm font-semibold transition",
+            mobilePane === "list"
+              ? "border-red-500 bg-red-600 text-white"
+              : "border-neutral-300 bg-white text-neutral-800 hover:bg-neutral-100"
+          )}
+        >
+          Samtaler
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobilePane("chat")}
+          className={cx(
+            "rounded-xl border px-3 py-2 text-sm font-semibold transition",
+            mobilePane === "chat"
+              ? "border-red-500 bg-red-600 text-white"
+              : "border-neutral-300 bg-white text-neutral-800 hover:bg-neutral-100"
+          )}
+        >
+          Chat
+        </button>
+      </div>
+
       <section className="rounded-3xl border border-neutral-200 bg-white shadow">
         <div className="grid gap-0 lg:grid-cols-[minmax(0,0.9fr),minmax(0,1.6fr)]">
           {/* LEFT: conversation list */}
-          <aside className="border-b border-neutral-200 bg-neutral-50 lg:border-b-0 lg:border-r">
+          <aside
+            className={cx(
+              "border-b border-neutral-200 bg-neutral-50 lg:border-b-0 lg:border-r",
+              mobilePane === "chat" ? "hidden lg:block" : "block"
+            )}
+          >
             <div className="border-b border-neutral-200 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-semibold">Samtaler</div>
@@ -971,7 +1012,7 @@ export default function MessagesClient() {
               </div>
             </div>
 
-            <div className="max-h-[70vh] overflow-y-auto">
+            <div className="max-h-[62vh] overflow-y-auto lg:max-h-[70vh]">
               {filteredConversations.length === 0 ? (
                 <div className="p-4 text-sm text-neutral-700">
                   Ingen samtaler ennå. Gå til et medlem og trykk <span className="font-semibold">Messenger</span>.
@@ -989,7 +1030,10 @@ export default function MessagesClient() {
                     return (
                       <li key={c.id}>
                         <button
-                          onClick={() => setActiveConversationId(c.id)}
+                          onClick={() => {
+                            setActiveConversationId(c.id);
+                            setMobilePane("chat");
+                          }}
                           className={
                             "flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition " +
                             (active ? "bg-red-50" : "hover:bg-white")
@@ -1032,10 +1076,24 @@ export default function MessagesClient() {
           </aside>
 
           {/* RIGHT: chat */}
-          <section className="flex min-h-[520px] flex-col bg-neutral-50">
+          <section
+            className={cx(
+              "flex min-h-[520px] flex-col bg-neutral-50",
+              mobilePane === "list" ? "hidden lg:flex" : "flex"
+            )}
+          >
             {/* chat header */}
             <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3">
-              <div>
+              <div className="min-w-0">
+                <div className="mb-1 lg:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setMobilePane("list")}
+                    className="rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-xs font-semibold text-neutral-800 hover:bg-neutral-100"
+                  >
+                    ← Samtaler
+                  </button>
+                </div>
                 <div className="text-sm font-semibold text-neutral-900">
                   {activeInfo ? activeInfo.title : "Velg en samtale"}
                 </div>
@@ -1054,7 +1112,7 @@ export default function MessagesClient() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 {activeConversationId ? (
                   <button
                     onClick={() => setAttachmentsOpen(true)}
@@ -1077,7 +1135,11 @@ export default function MessagesClient() {
             {/* messages */}
             <div className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
               {!activeConversationId ? (
-                <div className="text-sm text-neutral-700">Velg en samtale til venstre.</div>
+                <div className="text-sm text-neutral-700">
+                  {mobilePane === "chat"
+                    ? "Velg en samtale for å åpne chatten."
+                    : "Velg en samtale."}
+                </div>
               ) : messages.length === 0 ? (
                 <div className="text-sm text-neutral-700">Ingen meldinger ennå. Skriv den første 👇</div>
               ) : (
@@ -1241,7 +1303,7 @@ export default function MessagesClient() {
       {groupOpen ? (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/40" onClick={() => setGroupOpen(false)} />
-          <div className="absolute left-1/2 top-1/2 w-[min(680px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-neutral-200 bg-white p-5 shadow-2xl">
+          <div className="absolute inset-x-3 bottom-3 top-3 overflow-y-auto rounded-3xl border border-neutral-200 bg-white p-5 shadow-2xl md:inset-x-auto md:bottom-auto md:left-1/2 md:top-1/2 md:w-[min(680px,92vw)] md:max-h-[90vh] md:-translate-x-1/2 md:-translate-y-1/2">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-lg font-semibold text-neutral-900">Ny gruppe</div>
@@ -1319,7 +1381,7 @@ export default function MessagesClient() {
       {attachmentsOpen ? (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/40" onClick={() => setAttachmentsOpen(false)} />
-          <div className="absolute left-1/2 top-1/2 w-[min(760px,94vw)] -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-neutral-200 bg-white p-5 shadow-2xl">
+          <div className="absolute inset-x-3 bottom-3 top-3 overflow-y-auto rounded-3xl border border-neutral-200 bg-white p-5 shadow-2xl md:inset-x-auto md:bottom-auto md:left-1/2 md:top-1/2 md:w-[min(760px,94vw)] md:max-h-[90vh] md:-translate-x-1/2 md:-translate-y-1/2">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-lg font-semibold text-neutral-900">Alle vedlegg</div>
